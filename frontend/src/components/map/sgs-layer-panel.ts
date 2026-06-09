@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { layerServiceContext } from '../../context';
-import type { LayerService, OfficialLayerState } from '../../services/LayerService';
+import type { LayerService, MapLayerState } from '../../services/LayerService';
 import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
 import '../search/sgs-search-panel';
@@ -79,7 +79,7 @@ export class SgsLayerPanel extends LitElement {
 
   @state() private tab: PanelTab = 'search';
 
-  private layers?: ObservableController<OfficialLayerState[]>;
+  private layers?: ObservableController<MapLayerState[]>;
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
@@ -107,7 +107,7 @@ export class SgsLayerPanel extends LitElement {
     `;
   }
 
-  private renderTab(layers: OfficialLayerState[]) {
+  private renderTab(layers: MapLayerState[]) {
     switch (this.tab) {
       case 'search':
         return html`<sgs-search-panel></sgs-search-panel>`;
