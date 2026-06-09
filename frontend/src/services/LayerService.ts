@@ -13,6 +13,7 @@ import type { LayerSpec } from '../protocol/v1';
 import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
 import { buildDataLayerStyle } from '../map/dataLayerStyle';
 import { loadLayerOverrides } from '../layers/loadLayerTree';
+import { languageChanged$ } from '../i18n/i18n';
 
 interface BaseLayerState {
   id: string;
@@ -53,7 +54,23 @@ export class LayerService {
   constructor(
     private readonly mapService: MapService,
     private readonly catalog: CatalogService,
-  ) {}
+  ) {
+    // Official layer labels follow the UI language.
+    languageChanged$.subscribe(() => void this.refreshLabels());
+  }
+
+  private async refreshLabels(): Promise<void> {
+    const config = await this.catalog.getConfig();
+    this.update(
+      this.layersSubject.value.map((layer) => {
+        if (layer.kind !== 'official') {
+          return layer;
+        }
+        const updated = config.get(layer.id);
+        return updated ? { ...layer, label: updated.label, config: updated } : layer;
+      }),
+    );
+  }
 
   get layers$(): Observable<MapLayerState[]> {
     return this.layersSubject.asObservable();
