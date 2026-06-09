@@ -34,5 +34,25 @@
     "remove": "Rimuovere il livello",
     "moveUp": "Sposta in alto",
     "moveDown": "Sposta in basso"
+  },
+  "chat": {
+    "title": "Chat",
+    "placeholder": "Fai una domanda sui geodati svizzeri …",
+    "send": "Invia",
+    "cancel": "Annulla",
+    "welcome": "Fai domande sui geodati svizzeri – per esempio:",
+    "exampleFlood": "Mostrami i pericoli di piena in Vallese",
+    "exampleSolar": "I tetti di Berna sono adatti agli impianti solari?",
+    "error": "Si è verificato un errore durante l'elaborazione.",
+    "cancelled": "Richiesta annullata.",
+    "addToMap": "Mostra sulla mappa",
+    "layerAdded": "Sulla mappa",
+    "formatUnsupported": "Questo formato di dati non è ancora supportato.",
+    "featureCount": "{{count}} oggetti",
+    "connection": {
+      "open": "Connesso",
+      "connecting": "Connessione …",
+      "closed": "Disconnesso"
+    }
   }
 }

@@ -70,6 +70,16 @@ export class MapService {
     this.map.getView().animate({ center: fromLonLat(lonLat), zoom, duration: 400 });
   }
 
+  /** Current viewport as a WGS84 bbox (for the agent's map_context). */
+  getViewBBox(): BBox | undefined {
+    const size = this.map.getSize();
+    if (!size) {
+      return undefined;
+    }
+    const extent = this.map.getView().calculateExtent(size);
+    return transformExtent(extent, 'EPSG:3857', 'EPSG:4326') as BBox;
+  }
+
   fitBBox(bbox: BBox): void {
     this.map.getView().fit(transformExtent(bbox, 'EPSG:4326', 'EPSG:3857'), {
       padding: [48, 48, 48, 48],

@@ -76,13 +76,25 @@ cd sgs-llm
 
 ## Usage
 
-Run the frontend in development mode:
+Run the bundled mock agent (simulates the agent backend, terminal 1):
+
+```bash
+cd mock-agent
+npm install
+npm start          # WebSocket on ws://localhost:8787/ws/v1
+```
+
+Run the frontend in development mode (terminal 2):
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+The chat speaks the WebSocket protocol documented in
+[docs/protocol.md](docs/protocol.md); the agent endpoint is configured via
+`frontend/public/config.json`.
 
 Other frontend commands:
 
