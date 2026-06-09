@@ -33,7 +33,11 @@ export async function initI18n(): Promise<void> {
       lookupLocalStorage: 'sgs-llm.lang',
     },
   });
-  i18next.on('languageChanged', () => languageChangedSubject.next(currentLanguage()));
+  i18next.on('languageChanged', () => {
+    document.documentElement.lang = currentLanguage();
+    languageChangedSubject.next(currentLanguage());
+  });
+  document.documentElement.lang = currentLanguage();
 }
 
 export function currentLanguage(): AppLanguage {
