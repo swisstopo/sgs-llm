@@ -10,5 +10,29 @@
   "map": {
     "basemapGrey": "National map (grey)",
     "basemapAerial": "Aerial imagery"
+  },
+  "panel": {
+    "search": "Search",
+    "catalog": "Catalog",
+    "layers": "Layers"
+  },
+  "search": {
+    "placeholder": "Search for a place or dataset …",
+    "locations": "Places",
+    "layers": "Datasets",
+    "noResults": "No results.",
+    "notDisplayable": "Not available as a map layer",
+    "added": "Added"
+  },
+  "catalog": {
+    "loading": "Loading catalog …",
+    "error": "The catalog could not be loaded."
+  },
+  "layers": {
+    "empty": "No layers on the map yet.",
+    "opacity": "Opacity",
+    "remove": "Remove layer",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
   }
 }

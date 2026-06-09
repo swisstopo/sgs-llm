@@ -10,5 +10,29 @@
   "map": {
     "basemapGrey": "Carte nationale (gris)",
     "basemapAerial": "Photo aérienne"
+  },
+  "panel": {
+    "search": "Recherche",
+    "catalog": "Catalogue",
+    "layers": "Couches"
+  },
+  "search": {
+    "placeholder": "Rechercher un lieu ou un jeu de données …",
+    "locations": "Lieux",
+    "layers": "Jeux de données",
+    "noResults": "Aucun résultat.",
+    "notDisplayable": "Non disponible comme couche cartographique",
+    "added": "Ajouté"
+  },
+  "catalog": {
+    "loading": "Chargement du catalogue …",
+    "error": "Le catalogue n'a pas pu être chargé."
+  },
+  "layers": {
+    "empty": "Aucune couche sur la carte.",
+    "opacity": "Opacité",
+    "remove": "Supprimer la couche",
+    "moveUp": "Monter",
+    "moveDown": "Descendre"
   }
 }

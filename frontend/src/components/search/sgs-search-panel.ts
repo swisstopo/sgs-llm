@@ -1,0 +1,219 @@
+import { LitElement, css, html, nothing } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { consume } from '@lit/context';
+import { catalogServiceContext, layerServiceContext, mapServiceContext } from '../../context';
+import type { CatalogService } from '../../services/CatalogService';
+import type { LayerService } from '../../services/LayerService';
+import type { MapService } from '../../services/MapService';
+import type { LayerSearchResult, LocationSearchResult } from '../../swisstopo/searchApi';
+import { ObservableController } from '../../lib/ObservableController';
+import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
+
+const MIN_QUERY_LENGTH = 2;
+const DEBOUNCE_MS = 300;
+const MAX_LOCATIONS = 5;
+const MAX_LAYERS = 10;
+
+/** Combined location + layer search against the Swisstopo SearchServer. */
+@customElement('sgs-search-panel')
+export class SgsSearchPanel extends LitElement {
+  static override styles = css`
+    :host {
+      display: block;
+    }
+
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      font: inherit;
+      padding: 0.5rem 0.625rem;
+      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-radius: 0.25rem;
+    }
+
+    input:focus {
+      outline: 2px solid var(--sgc-color-brand, #d8232a);
+      outline-offset: -1px;
+    }
+
+    h3 {
+      margin: 0.75rem 0 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--sgc-color-text--secondary, #4b5a68);
+    }
+
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    li button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: none;
+      font: inherit;
+      font-size: 0.875rem;
+      padding: 0.375rem 0.5rem;
+      border-radius: 0.25rem;
+      cursor: pointer;
+    }
+
+    li button:hover:not(:disabled) {
+      background: var(--sgc-color-bg--grey, #f0f2f4);
+    }
+
+    li button:disabled {
+      cursor: default;
+      color: var(--sgc-color-text--disabled, #98a6b3);
+    }
+
+    .detail {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--sgc-color-text--secondary, #4b5a68);
+    }
+
+    .empty {
+      margin: 0.75rem 0 0;
+      font-size: 0.875rem;
+      color: var(--sgc-color-text--secondary, #4b5a68);
+    }
+  `;
+
+  @consume({ context: catalogServiceContext })
+  private catalogService!: CatalogService;
+
+  @consume({ context: mapServiceContext })
+  private mapService!: MapService;
+
+  @consume({ context: layerServiceContext })
+  private layerService!: LayerService;
+
+  @state() private locations: LocationSearchResult[] = [];
+  @state() private layers: (LayerSearchResult & { displayable: boolean })[] = [];
+  @state() private searched = false;
+
+  private debounceHandle?: ReturnType<typeof setTimeout>;
+  private requestCounter = 0;
+
+  private readonly _language = new ObservableController(this, languageChanged$);
+
+  override render() {
+    const hasResults = this.locations.length > 0 || this.layers.length > 0;
+    return html`
+      <input
+        type="search"
+        placeholder=${t('search.placeholder')}
+        @input=${this.onInput}
+        aria-label=${t('search.placeholder')}
+      />
+      ${this.locations.length > 0
+        ? html`
+            <h3>${t('search.locations')}</h3>
+            <ul>
+              ${this.locations.map(
+                (location) => html`
+                  <li>
+                    <button @click=${() => this.goToLocation(location)}>
+                      ${location.label}
+                      ${location.detail !== location.label.toLowerCase()
+                        ? html`<span class="detail">${location.detail}</span>`
+                        : nothing}
+                    </button>
+                  </li>
+                `,
+              )}
+            </ul>
+          `
+        : nothing}
+      ${this.layers.length > 0
+        ? html`
+            <h3>${t('search.layers')}</h3>
+            <ul>
+              ${this.layers.map(
+                (layer) => html`
+                  <li>
+                    <button
+                      ?disabled=${!layer.displayable || this.layerService.isActive(layer.layerId)}
+                      title=${layer.displayable ? '' : t('search.notDisplayable')}
+                      @click=${() => this.addLayer(layer.layerId)}
+                    >
+                      ${layer.label}
+                      ${!layer.displayable
+                        ? html`<span class="detail">${t('search.notDisplayable')}</span>`
+                        : this.layerService.isActive(layer.layerId)
+                          ? html`<span class="detail">${t('search.added')}</span>`
+                          : nothing}
+                    </button>
+                  </li>
+                `,
+              )}
+            </ul>
+          `
+        : nothing}
+      ${this.searched && !hasResults
+        ? html`<p class="empty">${t('search.noResults')}</p>`
+        : nothing}
+    `;
+  }
+
+  private onInput(event: Event): void {
+    const query = (event.target as HTMLInputElement).value.trim();
+    clearTimeout(this.debounceHandle);
+    if (query.length < MIN_QUERY_LENGTH) {
+      this.locations = [];
+      this.layers = [];
+      this.searched = false;
+      return;
+    }
+    this.debounceHandle = setTimeout(() => void this.search(query), DEBOUNCE_MS);
+  }
+
+  private async search(query: string): Promise<void> {
+    const requestId = ++this.requestCounter;
+    try {
+      const [locations, layers] = await Promise.all([
+        this.catalogService.searchLocations(query),
+        this.catalogService.searchLayers(query, currentLanguage()),
+      ]);
+      if (requestId !== this.requestCounter) {
+        return; // a newer search superseded this one
+      }
+      this.locations = locations.slice(0, MAX_LOCATIONS);
+      this.layers = layers.slice(0, MAX_LAYERS);
+      this.searched = true;
+    } catch (error) {
+      if (requestId === this.requestCounter) {
+        console.error('Search failed', error);
+        this.locations = [];
+        this.layers = [];
+        this.searched = true;
+      }
+    }
+  }
+
+  private goToLocation(location: LocationSearchResult): void {
+    if (location.bbox) {
+      this.mapService.fitBBox(location.bbox);
+    } else {
+      this.mapService.flyTo([location.lon, location.lat]);
+    }
+  }
+
+  private async addLayer(layerId: string): Promise<void> {
+    await this.layerService.addOfficialLayer(layerId);
+    this.requestUpdate();
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'sgs-search-panel': SgsSearchPanel;
+  }
+}
