@@ -23,3 +23,21 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
+
+  mock-agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mock-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node --check server.mjs
+      - name: Smoke-start the server
+        run: |
+          npm start &
+          sleep 2
+          curl -sf http://localhost:8787/data/sample-places.geojson > /dev/null
