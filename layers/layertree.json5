@@ -1,0 +1,64 @@
+// Curated layer tree for the SGS LLM map catalog.
+//
+// Children are bare Swisstopo layer ids (`layerBodId`); their display labels,
+// tile parameters, and attribution are resolved at runtime from the
+// api3.geo.admin.ch layersConfig endpoint, so this file never duplicates
+// official metadata. Group labels are inline and multilingual.
+{
+  groups: [
+    {
+      id: 'environment',
+      label: {
+        de: 'Umwelt & Natur',
+        fr: 'Environnement & nature',
+        it: 'Ambiente & natura',
+        en: 'Environment & nature',
+      },
+      children: [
+        'ch.bafu.waldreservate',
+        'ch.bafu.wrz-wildruhezonen_portal',
+        'ch.bafu.bundesinventare-bln',
+        'ch.bafu.landesforstinventar-vegetationshoehenmodell',
+        'ch.bafu.hydrologie-gewaesserzustandsmessstationen',
+      ],
+    },
+    {
+      id: 'mobility',
+      label: {
+        de: 'Mobilität & Verkehr',
+        fr: 'Mobilité & transports',
+        it: 'Mobilità & trasporti',
+        en: 'Mobility & transport',
+      },
+      children: [
+        'ch.bav.haltestellen-oev',
+        'ch.swisstopo.swisstlm3d-wanderwege',
+        'ch.astra.unfaelle-personenschaeden_alle',
+      ],
+    },
+    {
+      id: 'energy',
+      label: {
+        de: 'Energie',
+        fr: 'Énergie',
+        it: 'Energia',
+        en: 'Energy',
+      },
+      children: ['ch.bfe.solarenergie-eignung-daecher'],
+    },
+    {
+      id: 'buildings',
+      label: {
+        de: 'Geologie & Gebäude',
+        fr: 'Géologie & bâtiments',
+        it: 'Geologia & edifici',
+        en: 'Geology & buildings',
+      },
+      children: [
+        'ch.swisstopo.geologie-geologische_karte',
+        'ch.bfs.gebaeude_wohnungs_register',
+        'ch.swisstopo.amtliches-gebaeudeadressverzeichnis',
+      ],
+    },
+  ],
+}

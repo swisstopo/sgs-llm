@@ -4,6 +4,7 @@ import { consume } from '@lit/context';
 import { mapServiceContext } from '../../context';
 import type { MapService } from '../../services/MapService';
 import './sgs-basemap-switcher';
+import './sgs-layer-panel';
 
 /**
  * Hosts the OpenLayers map. Renders in light DOM because `ol/ol.css`
@@ -23,6 +24,7 @@ export class SgsMap extends LitElement {
     return html`
       <div class="sgs-map-target"></div>
       <sgs-basemap-switcher></sgs-basemap-switcher>
+      <sgs-layer-panel></sgs-layer-panel>
     `;
   }
 

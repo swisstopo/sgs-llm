@@ -10,5 +10,29 @@
   "map": {
     "basemapGrey": "Landeskarte (grau)",
     "basemapAerial": "Luftbild"
+  },
+  "panel": {
+    "search": "Suche",
+    "catalog": "Katalog",
+    "layers": "Ebenen"
+  },
+  "search": {
+    "placeholder": "Ort oder Datensatz suchen …",
+    "locations": "Orte",
+    "layers": "Datensätze",
+    "noResults": "Keine Treffer.",
+    "notDisplayable": "Nicht als Kartenebene verfügbar",
+    "added": "Hinzugefügt"
+  },
+  "catalog": {
+    "loading": "Katalog wird geladen …",
+    "error": "Katalog konnte nicht geladen werden."
+  },
+  "layers": {
+    "empty": "Noch keine Ebenen auf der Karte.",
+    "opacity": "Deckkraft",
+    "remove": "Ebene entfernen",
+    "moveUp": "Nach oben",
+    "moveDown": "Nach unten"
   }
 }

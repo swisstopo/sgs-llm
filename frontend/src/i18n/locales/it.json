@@ -10,5 +10,29 @@
   "map": {
     "basemapGrey": "Carta nazionale (grigio)",
     "basemapAerial": "Foto aerea"
+  },
+  "panel": {
+    "search": "Ricerca",
+    "catalog": "Catalogo",
+    "layers": "Livelli"
+  },
+  "search": {
+    "placeholder": "Cercare un luogo o un set di dati …",
+    "locations": "Luoghi",
+    "layers": "Set di dati",
+    "noResults": "Nessun risultato.",
+    "notDisplayable": "Non disponibile come livello cartografico",
+    "added": "Aggiunto"
+  },
+  "catalog": {
+    "loading": "Caricamento del catalogo …",
+    "error": "Impossibile caricare il catalogo."
+  },
+  "layers": {
+    "empty": "Nessun livello sulla mappa.",
+    "opacity": "Opacità",
+    "remove": "Rimuovere il livello",
+    "moveUp": "Sposta in alto",
+    "moveDown": "Sposta in basso"
   }
 }
