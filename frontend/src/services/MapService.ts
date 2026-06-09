@@ -1,10 +1,18 @@
 import OlMap from 'ol/Map';
 import View from 'ol/View';
+import Feature from 'ol/Feature';
+import GeoJSON from 'ol/format/GeoJSON';
 import TileLayer from 'ol/layer/Tile';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
 import XYZ from 'ol/source/XYZ';
+import Fill from 'ol/style/Fill';
+import Stroke from 'ol/style/Stroke';
+import CircleStyle from 'ol/style/Circle';
+import Style from 'ol/style/Style';
 import { defaults as defaultControls } from 'ol/control/defaults';
 import { fromLonLat, transformExtent } from 'ol/proj';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
 import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
@@ -30,6 +38,8 @@ export class MapService {
 
   private readonly basemapSubject = new BehaviorSubject<BasemapId>(DEFAULT_BASEMAP);
   private readonly basemapLayers = new Map<BasemapId, TileLayer<XYZ>>();
+  private readonly clickSubject = new Subject<[number, number]>();
+  private readonly highlightSource = new VectorSource();
 
   constructor(private readonly catalog: CatalogService) {
     this.map = new OlMap({
@@ -40,7 +50,65 @@ export class MapService {
         maxZoom: 18,
       }),
     });
+    this.map.addLayer(
+      new VectorLayer({
+        source: this.highlightSource,
+        zIndex: 1000,
+        style: new Style({
+          fill: new Fill({ color: 'rgba(255, 200, 0, 0.25)' }),
+          stroke: new Stroke({ color: '#ff9000', width: 3 }),
+          image: new CircleStyle({
+            radius: 9,
+            stroke: new Stroke({ color: '#ff9000', width: 3 }),
+            fill: new Fill({ color: 'rgba(255, 200, 0, 0.4)' }),
+          }),
+        }),
+      }),
+    );
+    this.map.on('singleclick', (event) => {
+      this.clickSubject.next(event.coordinate as [number, number]);
+    });
     void this.initBasemaps();
+  }
+
+  /** Single clicks on the map, EPSG:3857. */
+  get click$(): Observable<[number, number]> {
+    return this.clickSubject.asObservable();
+  }
+
+  /** Replaces the identify highlight with GeoJSON geometries (EPSG:3857). */
+  setHighlight(geometries: unknown[]): void {
+    this.highlightSource.clear();
+    const format = new GeoJSON();
+    for (const geometry of geometries) {
+      if (!geometry) {
+        continue;
+      }
+      try {
+        this.highlightSource.addFeature(new Feature(format.readGeometry(geometry)));
+      } catch {
+        // skip unparseable geometries
+      }
+    }
+  }
+
+  clearHighlight(): void {
+    this.highlightSource.clear();
+  }
+
+  /** Identify context: current extent and viewport size. */
+  getIdentifyContext():
+    | { mapExtent: [number, number, number, number]; size: [number, number] }
+    | undefined {
+    const size = this.map.getSize();
+    if (!size) {
+      return undefined;
+    }
+    const extent = this.map.getView().calculateExtent(size);
+    return {
+      mapExtent: extent as [number, number, number, number],
+      size: [size[0]!, size[1]!],
+    };
   }
 
   get basemap$(): Observable<BasemapId> {

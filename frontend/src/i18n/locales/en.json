@@ -34,7 +34,8 @@
     "remove": "Remove layer",
     "moveUp": "Move up",
     "moveDown": "Move down",
-    "zoomTo": "Zoom to layer"
+    "zoomTo": "Zoom to layer",
+    "legend": "Legend"
   },
   "chat": {
     "title": "Chat",
@@ -55,5 +56,14 @@
       "connecting": "Connecting …",
       "closed": "Disconnected"
     }
+  },
+  "identify": {
+    "loading": "Querying features …",
+    "empty": "No features at this location.",
+    "close": "Close"
+  },
+  "legend": {
+    "loading": "Loading legend …",
+    "error": "The legend could not be loaded."
   }
 }

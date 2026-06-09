@@ -34,7 +34,8 @@
     "remove": "Supprimer la couche",
     "moveUp": "Monter",
     "moveDown": "Descendre",
-    "zoomTo": "Zoomer sur la couche"
+    "zoomTo": "Zoomer sur la couche",
+    "legend": "Légende"
   },
   "chat": {
     "title": "Chat",
@@ -55,5 +56,14 @@
       "connecting": "Connexion …",
       "closed": "Déconnecté"
     }
+  },
+  "identify": {
+    "loading": "Interrogation des objets …",
+    "empty": "Aucun objet à cet endroit.",
+    "close": "Fermer"
+  },
+  "legend": {
+    "loading": "Chargement de la légende …",
+    "error": "La légende n'a pas pu être chargée."
   }
 }
