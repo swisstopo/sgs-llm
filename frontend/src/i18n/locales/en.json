@@ -6,5 +6,9 @@
   "scaffold": {
     "placeholder": "Application scaffold – map and chat coming next.",
     "action": "Get started"
+  },
+  "map": {
+    "basemapGrey": "National map (grey)",
+    "basemapAerial": "Aerial imagery"
   }
 }

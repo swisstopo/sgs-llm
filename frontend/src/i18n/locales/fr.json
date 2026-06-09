@@ -6,5 +6,9 @@
   "scaffold": {
     "placeholder": "Squelette de l'application – la carte et le chat suivront.",
     "action": "C'est parti"
+  },
+  "map": {
+    "basemapGrey": "Carte nationale (gris)",
+    "basemapAerial": "Photo aérienne"
   }
 }
