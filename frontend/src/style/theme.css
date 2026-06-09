@@ -1,0 +1,8 @@
+/*
+ * SGS LLM brand overrides for the @swissgeol/ui-core design system.
+ * The ui-core components are themed entirely through --sgc-* custom
+ * properties; only the brand accents are overridden here.
+ */
+:root {
+  --sgc-color-brand: #d8232a;
+}

@@ -1,0 +1,10 @@
+{
+  "app": {
+    "title": "SGS LLM",
+    "subtitle": "Swiss geodata in dialogue"
+  },
+  "scaffold": {
+    "placeholder": "Application scaffold – map and chat coming next.",
+    "action": "Get started"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "app": {
+    "title": "SGS LLM",
+    "subtitle": "Les géodonnées suisses en dialogue"
+  },
+  "scaffold": {
+    "placeholder": "Squelette de l'application – la carte et le chat suivront.",
+    "action": "C'est parti"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "app": {
+    "title": "SGS LLM",
+    "subtitle": "Geodati svizzeri in dialogo"
+  },
+  "scaffold": {
+    "placeholder": "Struttura dell'applicazione – mappa e chat seguiranno.",
+    "action": "Iniziamo"
+  }
+}
