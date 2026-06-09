@@ -76,8 +76,21 @@ cd sgs-llm
 
 ## Usage
 
-Development, build, test, and deployment commands will be added with the first application
-scaffold.
+Run the frontend in development mode:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Other frontend commands:
+
+```bash
+npm run build   # type-check and create a production build in dist/
+npm test        # run the unit tests (vitest)
+npm run lint    # run eslint
+```
 
 ## Support
 

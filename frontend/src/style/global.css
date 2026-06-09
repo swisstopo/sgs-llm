@@ -1,0 +1,16 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--sgc-font-family, 'Inter', sans-serif);
+  color: var(--sgc-color-text, #1c2834);
+  background: var(--sgc-color-bg, #ffffff);
+}
+
+sgs-app {
+  display: block;
+  height: 100%;
+}

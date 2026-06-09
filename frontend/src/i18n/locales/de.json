@@ -1,0 +1,10 @@
+{
+  "app": {
+    "title": "SGS LLM",
+    "subtitle": "Schweizer Geodaten im Dialog"
+  },
+  "scaffold": {
+    "placeholder": "Anwendungsgerüst – Karte und Chat folgen.",
+    "action": "Los geht's"
+  }
+}
