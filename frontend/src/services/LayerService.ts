@@ -1,25 +1,44 @@
+import GeoJSON from 'ol/format/GeoJSON';
 import TileLayer from 'ol/layer/Tile';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
 import XYZ from 'ol/source/XYZ';
+import type BaseLayer from 'ol/layer/Base';
 import { BehaviorSubject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
-import type { MapService } from './MapService';
+import type { MapService, BBox } from './MapService';
 import type { LayerConfig } from '../swisstopo/layersConfigApi';
+import type { LayerSpec } from '../protocol/v1';
 import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
+import { buildDataLayerStyle } from '../map/dataLayerStyle';
 import { loadLayerOverrides } from '../layers/loadLayerTree';
 
-export interface OfficialLayerState {
-  kind: 'official';
+interface BaseLayerState {
   id: string;
-  config: LayerConfig;
+  label: string;
   visible: boolean;
   opacity: number;
 }
 
-export type AddLayerResult = 'added' | 'exists' | 'unsupported' | 'unknown';
+/** An official Swisstopo WMTS overlay. */
+export interface OfficialLayerState extends BaseLayerState {
+  kind: 'official';
+  config: LayerConfig;
+}
 
-/** Official overlays render above the basemap (zIndex 0). */
-const OFFICIAL_BASE_Z_INDEX = 10;
+/** A data layer produced by the agent (chat result). */
+export interface DataLayerState extends BaseLayerState {
+  kind: 'data';
+  spec: LayerSpec;
+}
+
+export type MapLayerState = OfficialLayerState | DataLayerState;
+
+export type AddLayerResult = 'added' | 'exists' | 'unsupported' | 'unknown' | 'failed';
+
+/** Official overlays and data layers render above the basemap (zIndex 0). */
+const OVERLAY_BASE_Z_INDEX = 10;
 
 /**
  * Manages the user's active map layers: state for the layer panel and the
@@ -27,8 +46,8 @@ const OFFICIAL_BASE_Z_INDEX = 10;
  * order, first entry on top.
  */
 export class LayerService {
-  private readonly layersSubject = new BehaviorSubject<OfficialLayerState[]>([]);
-  private readonly olLayers = new Map<string, TileLayer<XYZ>>();
+  private readonly layersSubject = new BehaviorSubject<MapLayerState[]>([]);
+  private readonly olLayers = new Map<string, BaseLayer>();
   private readonly overrides = loadLayerOverrides();
 
   constructor(
@@ -36,11 +55,11 @@ export class LayerService {
     private readonly catalog: CatalogService,
   ) {}
 
-  get layers$(): Observable<OfficialLayerState[]> {
+  get layers$(): Observable<MapLayerState[]> {
     return this.layersSubject.asObservable();
   }
 
-  get layers(): OfficialLayerState[] {
+  get layers(): MapLayerState[] {
     return this.layersSubject.value;
   }
 
@@ -68,12 +87,56 @@ export class LayerService {
       }),
       opacity,
     });
-    this.olLayers.set(id, olLayer);
-    this.mapService.map.addLayer(olLayer);
-    this.update([
-      { kind: 'official', id, config, visible: true, opacity },
-      ...this.layersSubject.value,
-    ]);
+    this.insert(olLayer, {
+      kind: 'official',
+      id,
+      label: config.label,
+      config,
+      visible: true,
+      opacity,
+    });
+    return 'added';
+  }
+
+  /** Fetches a chat data layer (GeoJSON) and puts it on the map. */
+  async addDataLayer(spec: LayerSpec): Promise<AddLayerResult> {
+    if (this.olLayers.has(spec.id)) {
+      return 'exists';
+    }
+    if (spec.format !== 'geojson') {
+      return 'unsupported';
+    }
+    let data: unknown;
+    try {
+      const response = await fetch(spec.url);
+      if (!response.ok) {
+        throw new Error(`data layer request failed: ${response.status}`);
+      }
+      data = await response.json();
+    } catch (error) {
+      console.error(`Failed to load data layer ${spec.id}`, error);
+      return 'failed';
+    }
+    const features = new GeoJSON().readFeatures(data, {
+      dataProjection: 'EPSG:4326',
+      featureProjection: 'EPSG:3857',
+    });
+    const olLayer = new VectorLayer({
+      source: new VectorSource({ features }),
+      style: buildDataLayerStyle(spec),
+      properties: spec.attribution ? { attribution: spec.attribution } : {},
+    });
+    this.insert(olLayer, {
+      kind: 'data',
+      id: spec.id,
+      label: spec.name,
+      spec,
+      visible: true,
+      opacity: 1,
+    });
+    if (spec.bbox) {
+      this.mapService.fitBBox(spec.bbox);
+    }
     return 'added';
   }
 
@@ -101,6 +164,19 @@ export class LayerService {
     );
   }
 
+  /** Bbox a layer can be zoomed to (data layers only). */
+  getZoomBBox(id: string): BBox | undefined {
+    const layer = this.layers.find((entry) => entry.id === id);
+    return layer?.kind === 'data' ? layer.spec.bbox : undefined;
+  }
+
+  zoomToLayer(id: string): void {
+    const bbox = this.getZoomBBox(id);
+    if (bbox) {
+      this.mapService.fitBBox(bbox);
+    }
+  }
+
   /** Moves a layer one position up (towards the top) or down. */
   moveLayer(id: string, direction: 'up' | 'down'): void {
     const layers = [...this.layersSubject.value];
@@ -114,10 +190,16 @@ export class LayerService {
     this.update(layers);
   }
 
+  private insert(olLayer: BaseLayer, state: MapLayerState): void {
+    this.olLayers.set(state.id, olLayer);
+    this.mapService.map.addLayer(olLayer);
+    this.update([state, ...this.layersSubject.value]);
+  }
+
   /** Recomputes z-indices from array order (first entry on top) and emits. */
-  private update(layers: OfficialLayerState[]): void {
+  private update(layers: MapLayerState[]): void {
     layers.forEach((layer, index) => {
-      this.olLayers.get(layer.id)?.setZIndex(OFFICIAL_BASE_Z_INDEX + (layers.length - index));
+      this.olLayers.get(layer.id)?.setZIndex(OVERLAY_BASE_Z_INDEX + (layers.length - index));
     });
     this.layersSubject.next(layers);
   }

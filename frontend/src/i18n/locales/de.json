@@ -33,7 +33,8 @@
     "opacity": "Deckkraft",
     "remove": "Ebene entfernen",
     "moveUp": "Nach oben",
-    "moveDown": "Nach unten"
+    "moveDown": "Nach unten",
+    "zoomTo": "Hinzoomen"
   },
   "chat": {
     "title": "Chat",

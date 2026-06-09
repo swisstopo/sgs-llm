@@ -33,7 +33,8 @@
     "opacity": "Opacità",
     "remove": "Rimuovere il livello",
     "moveUp": "Sposta in alto",
-    "moveDown": "Sposta in basso"
+    "moveDown": "Sposta in basso",
+    "zoomTo": "Zoom sul livello"
   },
   "chat": {
     "title": "Chat",

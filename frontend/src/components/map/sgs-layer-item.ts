@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { layerServiceContext } from '../../context';
-import type { LayerService, OfficialLayerState } from '../../services/LayerService';
+import type { LayerService, MapLayerState } from '../../services/LayerService';
 import { t } from '../../i18n/i18n';
 
 /** One active layer row: visibility, opacity, reorder, remove. */
@@ -74,7 +74,7 @@ export class SgsLayerItem extends LitElement {
   @consume({ context: layerServiceContext })
   private layerService!: LayerService;
 
-  @property({ attribute: false }) layer!: OfficialLayerState;
+  @property({ attribute: false }) layer!: MapLayerState;
   @property({ type: Boolean }) isFirst = false;
   @property({ type: Boolean }) isLast = false;
 
@@ -82,15 +82,26 @@ export class SgsLayerItem extends LitElement {
     const { layer } = this;
     return html`
       <div class="row">
-        <label class="name" title=${layer.config.label}>
+        <label class="name" title=${layer.label}>
           <input
             type="checkbox"
             .checked=${layer.visible}
             @change=${(e: Event) =>
               this.layerService.setVisible(layer.id, (e.target as HTMLInputElement).checked)}
           />
-          <span class="label-text">${layer.config.label}</span>
+          <span class="label-text">${layer.label}</span>
         </label>
+        ${this.layerService.getZoomBBox(layer.id)
+          ? html`
+              <button
+                title=${t('layers.zoomTo')}
+                aria-label=${t('layers.zoomTo')}
+                @click=${() => this.layerService.zoomToLayer(layer.id)}
+              >
+                ⌖
+              </button>
+            `
+          : ''}
         <button
           title=${t('layers.moveUp')}
           aria-label=${t('layers.moveUp')}

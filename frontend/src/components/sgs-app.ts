@@ -69,10 +69,12 @@ export class SgsApp extends LitElement {
     `;
   }
 
-  private onAddDataLayer(event: CustomEvent<AddLayerEventDetail>): void {
-    // Data-layer rendering lands in the next milestone; acknowledge the card.
-    console.info('add data layer requested', event.detail.layer);
-    this.querySelector<SgsChatPanel>('sgs-chat-panel')?.markLayerAdded(event.detail.layer.id);
+  private async onAddDataLayer(event: CustomEvent<AddLayerEventDetail>): Promise<void> {
+    const { layer } = event.detail;
+    const result = await this.layerService.addDataLayer(layer);
+    if (result === 'added' || result === 'exists') {
+      this.querySelector<SgsChatPanel>('sgs-chat-panel')?.markLayerAdded(layer.id);
+    }
   }
 }
 

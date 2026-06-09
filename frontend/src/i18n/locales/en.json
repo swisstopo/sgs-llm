@@ -33,7 +33,8 @@
     "opacity": "Opacity",
     "remove": "Remove layer",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "zoomTo": "Zoom to layer"
   },
   "chat": {
     "title": "Chat",
