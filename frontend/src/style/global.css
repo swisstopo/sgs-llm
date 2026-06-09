@@ -43,3 +43,10 @@ sgs-map .sgs-map-target {
   height: 100%;
   background: #e8ecef;
 }
+
+/* Anchor element managed by ol/Overlay; the popup positions itself above it. */
+sgs-map .sgs-identify-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+}

@@ -8,6 +8,7 @@ import { languageChanged$, t } from '../../i18n/i18n';
 import '../search/sgs-search-panel';
 import './sgs-catalog-tree';
 import './sgs-layer-item';
+import './sgs-legend-dialog';
 
 type PanelTab = 'search' | 'catalog' | 'layers';
 
@@ -103,8 +104,15 @@ export class SgsLayerPanel extends LitElement {
           `,
         )}
       </nav>
-      <div class="tab-content">${this.renderTab(layers)}</div>
+      <div class="tab-content" @sgs-show-legend=${this.onShowLegend}>${this.renderTab(layers)}</div>
+      <sgs-legend-dialog></sgs-legend-dialog>
     `;
+  }
+
+  private onShowLegend(event: CustomEvent<{ layerId: string; label: string }>): void {
+    void this.renderRoot
+      .querySelector('sgs-legend-dialog')
+      ?.open(event.detail.layerId, event.detail.label);
   }
 
   private renderTab(layers: MapLayerState[]) {

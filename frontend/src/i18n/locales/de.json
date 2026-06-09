@@ -34,7 +34,8 @@
     "remove": "Ebene entfernen",
     "moveUp": "Nach oben",
     "moveDown": "Nach unten",
-    "zoomTo": "Hinzoomen"
+    "zoomTo": "Hinzoomen",
+    "legend": "Legende"
   },
   "chat": {
     "title": "Chat",
@@ -55,5 +56,14 @@
       "connecting": "Verbinde …",
       "closed": "Getrennt"
     }
+  },
+  "identify": {
+    "loading": "Objekte werden abgefragt …",
+    "empty": "Keine Objekte an dieser Stelle.",
+    "close": "Schliessen"
+  },
+  "legend": {
+    "loading": "Legende wird geladen …",
+    "error": "Legende konnte nicht geladen werden."
   }
 }

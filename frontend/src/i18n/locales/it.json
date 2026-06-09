@@ -34,7 +34,8 @@
     "remove": "Rimuovere il livello",
     "moveUp": "Sposta in alto",
     "moveDown": "Sposta in basso",
-    "zoomTo": "Zoom sul livello"
+    "zoomTo": "Zoom sul livello",
+    "legend": "Legenda"
   },
   "chat": {
     "title": "Chat",
@@ -55,5 +56,14 @@
       "connecting": "Connessione …",
       "closed": "Disconnesso"
     }
+  },
+  "identify": {
+    "loading": "Interrogazione degli oggetti …",
+    "empty": "Nessun oggetto in questo punto.",
+    "close": "Chiudere"
+  },
+  "legend": {
+    "loading": "Caricamento della legenda …",
+    "error": "Impossibile caricare la legenda."
   }
 }

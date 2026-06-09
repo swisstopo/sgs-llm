@@ -78,6 +78,16 @@ export class SgsLayerItem extends LitElement {
   @property({ type: Boolean }) isFirst = false;
   @property({ type: Boolean }) isLast = false;
 
+  private showLegend(): void {
+    this.dispatchEvent(
+      new CustomEvent('sgs-show-legend', {
+        detail: { layerId: this.layer.id, label: this.layer.label },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   override render() {
     const { layer } = this;
     return html`
@@ -99,6 +109,17 @@ export class SgsLayerItem extends LitElement {
                 @click=${() => this.layerService.zoomToLayer(layer.id)}
               >
                 ⌖
+              </button>
+            `
+          : ''}
+        ${layer.kind === 'official' && layer.config.hasLegend
+          ? html`
+              <button
+                title=${t('layers.legend')}
+                aria-label=${t('layers.legend')}
+                @click=${() => this.showLegend()}
+              >
+                ☰
               </button>
             `
           : ''}
