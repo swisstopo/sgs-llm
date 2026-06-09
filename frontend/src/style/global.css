@@ -22,18 +22,12 @@ sgs-app {
 
 sgs-app .content {
   display: grid;
-  grid-template-columns: var(--chat-width, 26rem) 1fr;
+  grid-template-columns: var(--chat-width, 26rem) auto 1fr;
   min-height: 0;
 }
 
-sgs-app .chat-placeholder {
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  text-align: center;
-  color: var(--sgc-color-text--secondary, #4b5a68);
-  background: var(--sgc-color-bg--grey, #f0f2f4);
-  border-right: 1px solid var(--sgc-color-border, #d5dbe0);
+sgs-app sgs-chat-panel {
+  min-height: 0;
 }
 
 /* <sgs-map> renders in light DOM so ol/ol.css can style the map controls. */

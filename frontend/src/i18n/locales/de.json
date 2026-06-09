@@ -34,5 +34,25 @@
     "remove": "Ebene entfernen",
     "moveUp": "Nach oben",
     "moveDown": "Nach unten"
+  },
+  "chat": {
+    "title": "Chat",
+    "placeholder": "Frage zu Schweizer Geodaten stellen …",
+    "send": "Senden",
+    "cancel": "Abbrechen",
+    "welcome": "Stellen Sie Fragen zu Schweizer Geodaten – zum Beispiel:",
+    "exampleFlood": "Zeige mir Hochwassergefahren im Wallis",
+    "exampleSolar": "Wie gut eignen sich Dächer in Bern für Solaranlagen?",
+    "error": "Bei der Verarbeitung ist ein Fehler aufgetreten.",
+    "cancelled": "Anfrage abgebrochen.",
+    "addToMap": "Auf Karte anzeigen",
+    "layerAdded": "Auf der Karte",
+    "formatUnsupported": "Dieses Datenformat wird noch nicht unterstützt.",
+    "featureCount": "{{count}} Objekte",
+    "connection": {
+      "open": "Verbunden",
+      "connecting": "Verbinde …",
+      "closed": "Getrennt"
+    }
   }
 }

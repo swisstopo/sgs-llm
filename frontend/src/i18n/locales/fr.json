@@ -34,5 +34,25 @@
     "remove": "Supprimer la couche",
     "moveUp": "Monter",
     "moveDown": "Descendre"
+  },
+  "chat": {
+    "title": "Chat",
+    "placeholder": "Posez une question sur les géodonnées suisses …",
+    "send": "Envoyer",
+    "cancel": "Annuler",
+    "welcome": "Posez des questions sur les géodonnées suisses – par exemple :",
+    "exampleFlood": "Montre-moi les dangers de crues en Valais",
+    "exampleSolar": "Les toits de Berne conviennent-ils aux installations solaires ?",
+    "error": "Une erreur est survenue lors du traitement.",
+    "cancelled": "Requête annulée.",
+    "addToMap": "Afficher sur la carte",
+    "layerAdded": "Sur la carte",
+    "formatUnsupported": "Ce format de données n'est pas encore pris en charge.",
+    "featureCount": "{{count}} objets",
+    "connection": {
+      "open": "Connecté",
+      "connecting": "Connexion …",
+      "closed": "Déconnecté"
+    }
   }
 }

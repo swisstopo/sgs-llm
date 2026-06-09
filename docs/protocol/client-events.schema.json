@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/swisstopo/sgs-llm/docs/protocol/client-events.schema.json",
+  "title": "SGS LLM agent protocol v1 — client events",
+  "oneOf": [{ "$ref": "#/$defs/userMessage" }, { "$ref": "#/$defs/cancel" }],
+  "$defs": {
+    "userMessage": {
+      "type": "object",
+      "required": ["type", "id", "content", "lang"],
+      "properties": {
+        "type": { "const": "user_message" },
+        "id": { "type": "string", "minLength": 1 },
+        "content": { "type": "string", "minLength": 1 },
+        "lang": { "enum": ["de", "fr", "it", "en", "rm"] },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "content"],
+            "properties": {
+              "role": { "enum": ["user", "assistant"] },
+              "content": { "type": "string" }
+            }
+          }
+        },
+        "map_context": {
+          "type": "object",
+          "required": ["bbox", "active_layer_ids"],
+          "properties": {
+            "bbox": { "$ref": "#/$defs/bbox" },
+            "active_layer_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "cancel": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "cancel" },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "bbox": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "[minLon, minLat, maxLon, maxLat] in WGS84"
+    }
+  }
+}

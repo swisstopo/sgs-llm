@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/swisstopo/sgs-llm/docs/protocol/server-events.schema.json",
+  "title": "SGS LLM agent protocol v1 — server events",
+  "oneOf": [
+    { "$ref": "#/$defs/intermediate" },
+    { "$ref": "#/$defs/final" },
+    { "$ref": "#/$defs/error" },
+    { "$ref": "#/$defs/done" }
+  ],
+  "$defs": {
+    "intermediate": {
+      "type": "object",
+      "required": ["type", "message_id", "step_id", "status", "label"],
+      "properties": {
+        "type": { "const": "intermediate" },
+        "message_id": { "type": "string" },
+        "step_id": { "type": "string" },
+        "status": { "enum": ["started", "finished", "failed"] },
+        "label": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "final": {
+      "type": "object",
+      "required": ["type", "message_id", "content_markdown"],
+      "properties": {
+        "type": { "const": "final" },
+        "message_id": { "type": "string" },
+        "content_markdown": { "type": "string" },
+        "layers": { "type": "array", "items": { "$ref": "#/$defs/layerSpec" } }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "message_id", "code", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "message_id": { "type": "string" },
+        "code": { "enum": ["internal", "timeout", "bad_request", "cancelled"] },
+        "message": { "type": "string" }
+      }
+    },
+    "done": {
+      "type": "object",
+      "required": ["type", "message_id"],
+      "properties": {
+        "type": { "const": "done" },
+        "message_id": { "type": "string" }
+      }
+    },
+    "layerSpec": {
+      "type": "object",
+      "required": ["id", "name", "format", "url", "geometry_type"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "format": { "enum": ["geojson", "parquet"] },
+        "url": { "type": "string", "format": "uri" },
+        "geometry_type": { "enum": ["point", "line", "polygon"] },
+        "feature_count": { "type": "number" },
+        "bbox": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[minLon, minLat, maxLon, maxLat] in WGS84"
+        },
+        "attribution": { "type": "string" },
+        "style_hint": {
+          "type": "object",
+          "properties": {
+            "fill_color": { "type": "string" },
+            "stroke_color": { "type": "string" },
+            "stroke_width": { "type": "number" },
+            "point_radius": { "type": "number" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    }
+  }
+}
