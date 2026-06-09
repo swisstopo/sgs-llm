@@ -6,5 +6,9 @@
   "scaffold": {
     "placeholder": "Anwendungsgerüst – Karte und Chat folgen.",
     "action": "Los geht's"
+  },
+  "map": {
+    "basemapGrey": "Landeskarte (grau)",
+    "basemapAerial": "Luftbild"
   }
 }

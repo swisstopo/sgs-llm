@@ -6,5 +6,9 @@
   "scaffold": {
     "placeholder": "Struttura dell'applicazione – mappa e chat seguiranno.",
     "action": "Iniziamo"
+  },
+  "map": {
+    "basemapGrey": "Carta nazionale (grigio)",
+    "basemapAerial": "Foto aerea"
   }
 }
