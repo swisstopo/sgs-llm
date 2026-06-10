@@ -31,6 +31,7 @@ export class SgsMap extends LitElement {
   private overlay?: Overlay;
   private clickSubscription?: Subscription;
   private identifyCounter = 0;
+  private identifyAbort?: AbortController;
 
   protected override createRenderRoot(): HTMLElement {
     return this;
@@ -84,6 +85,9 @@ export class SgsMap extends LitElement {
       return;
     }
     const requestId = ++this.identifyCounter;
+    this.identifyAbort?.abort();
+    const controller = new AbortController();
+    this.identifyAbort = controller;
     this.identifyCoordinate = coordinate;
     this.identifyFeatures = [];
     this.identifyLoading = true;
@@ -95,6 +99,7 @@ export class SgsMap extends LitElement {
         mapExtent: context.mapExtent,
         size: context.size,
         lang: currentLanguage(),
+        signal: controller.signal,
       });
       if (requestId !== this.identifyCounter) {
         return;
@@ -102,7 +107,9 @@ export class SgsMap extends LitElement {
       this.identifyFeatures = features;
       this.mapService.setHighlight(features.map((feature) => feature.geometry));
     } catch (error) {
-      console.error('identify failed', error);
+      if (!controller.signal.aborted) {
+        console.error('identify failed', error);
+      }
       if (requestId === this.identifyCounter) {
         this.identifyFeatures = [];
       }
@@ -115,6 +122,7 @@ export class SgsMap extends LitElement {
 
   private closeIdentify = (): void => {
     this.identifyCounter += 1;
+    this.identifyAbort?.abort();
     this.overlay?.setPosition(undefined);
     this.identifyFeatures = [];
     this.identifyLoading = false;

@@ -72,6 +72,34 @@ Follow-up path: `parquet-wasm` → Arrow → GeoJSON features into the same
 `VectorSource` behind `LayerService.addDataLayer`'s format switch — no
 protocol change required.
 
+## Swisstopo connector
+
+All Swisstopo access lives in `frontend/src/swisstopo/` — thin, typed
+wrappers over the public geo.admin.ch APIs
+([docs.geo.admin.ch](https://docs.geo.admin.ch/)), sharing one HTTP helper
+(`http.ts`: 15 s timeout + caller `AbortSignal`). No offline preprocessing;
+everything is queried live and cached in memory.
+
+| Endpoint | Module | Limits honored |
+| --- | --- | --- |
+| `SearchServer?type=locations` | `searchApi.ts` | explicit `limit` (API max 50); 10-word query truncation; optional bbox mode for "search within view" features (`sr=2056` + `bbox` — the API only accepts a bbox in the request `sr`, LV03/LV95 only, and the bbox **filters**, so the global geocoding box deliberately omits it; `lat`/`lon` attrs stay WGS84) |
+| `SearchServer?type=layers` | `searchApi.ts` | explicit `limit` (API max 30); 10-word truncation |
+| `MapServer/identify` | `identifyApi.ts` | `limit=200` (API max; default 50, applied per underlying table); `geometryFormat=geojson` (avoids ESRI-JSON conversion); superseded clicks aborted |
+| `MapServer/layersConfig` | `layersConfigApi.ts` | ~1 MB per language, promise-cached per language with retry-on-failure |
+| `{topic}/CatalogServer` + topics | `catalogApi.ts` | promise-cached per topic + language; non-`prod` staging entries dropped |
+| `MapServer/{layer}/legend`, htmlPopup | `legendApi.ts`, `identifyApi.ts` | untrusted HTML, sandboxed iframes only |
+| `wmts.geo.admin.ch` XYZ tiles | `wmts.ts` | format/timestamp always resolved from layersConfig |
+
+**Deliberately not used by the frontend** (bulk-data concerns owned by the
+future MCP server's `fetch_layer_data`, per the project design):
+identify `offset` paging, grid splitting + cross-cell deduplication, rate
+limiting of fan-out requests, `type=featuresearch`, the STAC download API,
+and `layerDefs` attribute filtering (supported on 11 queryable layers only).
+A click identify (point + pixel tolerance feeding a popup) never needs more
+than one page; ordering is server-side (SearchServer ranks ascending,
+`sortbbox` is the only spatial ordering control; identify has no order
+parameter).
+
 ## Runtime configuration
 
 Vite environment variables are build-time; the agent WebSocket URL must be

@@ -1,5 +1,6 @@
 import { API3_BASE_URL } from '../config';
 import type { AppLanguage } from '../i18n/i18n';
+import { fetchJson } from './http';
 
 /** A topic from the Swisstopo services list (e.g. `ech`, `bafu`). */
 export interface CatalogTopic {
@@ -82,11 +83,7 @@ export function parseCatalogTree(raw: unknown): CatalogFolderNode {
 
 /** Lists the available topics (`GET /rest/services`). */
 export async function fetchTopics(): Promise<CatalogTopic[]> {
-  const response = await fetch(API3_BASE_URL);
-  if (!response.ok) {
-    throw new Error(`topics request failed: ${response.status}`);
-  }
-  return parseTopics(await response.json());
+  return parseTopics(await fetchJson(API3_BASE_URL));
 }
 
 /** Fetches the full layer catalog tree of a topic. */
@@ -94,13 +91,9 @@ export async function fetchCatalogTree(
   topic: string,
   lang: AppLanguage,
 ): Promise<CatalogFolderNode> {
-  const response = await fetch(
-    `${API3_BASE_URL}/${encodeURIComponent(topic)}/CatalogServer?lang=${lang}`,
+  return parseCatalogTree(
+    await fetchJson(`${API3_BASE_URL}/${encodeURIComponent(topic)}/CatalogServer?lang=${lang}`),
   );
-  if (!response.ok) {
-    throw new Error(`CatalogServer request failed: ${response.status}`);
-  }
-  return parseCatalogTree(await response.json());
 }
 
 /**

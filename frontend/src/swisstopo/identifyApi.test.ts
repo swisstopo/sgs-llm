@@ -41,6 +41,7 @@ describe('identify', () => {
     );
     expect(url.searchParams.get('tolerance')).toBe('10');
     expect(url.searchParams.get('geometryFormat')).toBe('geojson');
+    expect(url.searchParams.get('limit')).toBe('200');
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
