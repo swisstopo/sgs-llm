@@ -3,4 +3,8 @@ dist/
 *.log
 mock-agent/feedback.log
 .env
+.env.*
+*.local
+*.pem
+*.key
 .DS_Store
