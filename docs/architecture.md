@@ -13,7 +13,7 @@ over the WebSocket protocol described in [protocol.md](./protocol.md).
 │   Lit 3 + TypeScript + Vite                                 │
 │   OpenLayers map · @swissgeol/ui-core design system         │
 │                                                             │
-│   ├── direct Swisstopo API calls (search, identify,         │
+│   ├── direct Swisstopo API calls (catalog, identify,        │
 │   │   legends, layersConfig, WMTS tiles)                    │
 │   └── WebSocket /ws/v1 ──► Agent backend (askEarth, later)  │
 │                            └─ mock-agent/ in development    │
@@ -22,9 +22,9 @@ over the WebSocket protocol described in [protocol.md](./protocol.md).
 
 Two tracks make the app dynamic before the agent backend exists:
 
-- **Track A — direct Swisstopo interactivity.** Layer catalog search and
-  geocoding (SearchServer), official WMTS overlays, identify-on-click
-  (MapServer identify), and legends, all against the public
+- **Track A — direct Swisstopo interactivity.** Browse the official catalog
+  tree (CatalogServer) with a client-side filter, add WMTS overlays,
+  identify-on-click (MapServer identify), and legends, all against the public
   `api3.geo.admin.ch` / `wmts.geo.admin.ch` services.
 - **Track B — chat against the protocol.** The chat panel speaks protocol
   v1 to a configurable WebSocket endpoint. The bundled `mock-agent/` is the
@@ -39,7 +39,7 @@ Two tracks make the app dynamic before the agent backend exists:
 | OpenLayers | The 2D engine proven in swissgeol-assets-suite with Swisstopo services |
 | @swissgeol/ui-core | Provides the SwissGeo family's Inter font and design-system conventions. Our palette is defined as `--sgc-*` tokens in `frontend/src/style/theme.css` (single source of truth; components reference the vars without per-rule fallbacks) |
 | RxJS services + @lit/context | Service classes own state as `BehaviorSubject`s, provided via context; `ObservableController` bridges emissions into Lit re-renders |
-| SwissGeo-style shell | Left icon rail (search, displayed maps, geocatalog, chat, feedback, about) opening one flyout panel at a time; language selector at the rail bottom — mirrors viewer.swissgeo |
+| SwissGeo-style shell | Left icon rail (chat, displayed maps, geocatalog, feedback, about) opening one flyout panel at a time; language selector at the rail bottom — mirrors viewer.swissgeo |
 | Official geocatalog | Topic list + per-topic catalog tree from the Swisstopo CatalogServer API (cached per topic and language); per-layer presentation overrides in `layers/layers_wmts.json5` |
 | i18next, German fallback | de/fr/it/en; the active language is passed to every Swisstopo API call and WS message |
 | marked + DOMPurify | Agent markdown is sanitized; API HTML (htmlPopup, legends) renders only in sandboxed iframes |
@@ -56,9 +56,9 @@ custom properties inherit through.
 
 | Service | Responsibility |
 | --- | --- |
-| `MapService` | Owns the single `ol/Map`: view, basemaps (WMTS from layersConfig), camera (flyTo/fitBBox), click stream, identify highlight layer |
+| `MapService` | Owns the single `ol/Map`: view, basemaps (WMTS from layersConfig), camera (fitBBox), click stream, identify highlight layer |
 | `LayerService` | Active layers (official WMTS overlays + chat data layers): add/remove, visibility, opacity, order (z-index), zoom-to |
-| `CatalogService` | layersConfig cache per language, geocatalog topics/trees (CatalogServer), layer/location search |
+| `CatalogService` | layersConfig cache per language, geocatalog topics/trees (CatalogServer) |
 | `UiService` | Shell state: which rail flyout panel is open |
 | `ChatService` | Chat state machine over `AgentClient` events (progress steps, markdown, layers, errors, cancel) |
 | `AgentClient` | WebSocket lifecycle: exponential-backoff reconnect, frame parsing with forward-compatible guards |
@@ -82,23 +82,21 @@ everything is queried live and cached in memory.
 
 | Endpoint | Module | Limits honored |
 | --- | --- | --- |
-| `SearchServer?type=locations` | `searchApi.ts` | explicit `limit` (API max 50); 10-word query truncation; optional bbox mode for "search within view" features (`sr=2056` + `bbox` — the API only accepts a bbox in the request `sr`, LV03/LV95 only, and the bbox **filters**, so the global geocoding box deliberately omits it; `lat`/`lon` attrs stay WGS84) |
-| `SearchServer?type=layers` | `searchApi.ts` | explicit `limit` (API max 30); 10-word truncation |
+| `{topic}/CatalogServer` + topics | `catalogApi.ts` | promise-cached per topic + language; non-`prod` staging entries dropped |
 | `MapServer/identify` | `identifyApi.ts` | `limit=200` (API max; default 50, applied per underlying table); `geometryFormat=geojson` (avoids ESRI-JSON conversion); superseded clicks aborted |
 | `MapServer/layersConfig` | `layersConfigApi.ts` | ~1 MB per language, promise-cached per language with retry-on-failure |
-| `{topic}/CatalogServer` + topics | `catalogApi.ts` | promise-cached per topic + language; non-`prod` staging entries dropped |
 | `MapServer/{layer}/legend`, htmlPopup | `legendApi.ts`, `identifyApi.ts` | untrusted HTML, sandboxed iframes only |
 | `wmts.geo.admin.ch` XYZ tiles | `wmts.ts` | format/timestamp always resolved from layersConfig |
 
 **Deliberately not used by the frontend** (bulk-data concerns owned by the
-future MCP server's `fetch_layer_data`, per the project design):
-identify `offset` paging, grid splitting + cross-cell deduplication, rate
-limiting of fan-out requests, `type=featuresearch`, the STAC download API,
-and `layerDefs` attribute filtering (supported on 11 queryable layers only).
-A click identify (point + pixel tolerance feeding a popup) never needs more
-than one page; ordering is server-side (SearchServer ranks ascending,
-`sortbbox` is the only spatial ordering control; identify has no order
-parameter).
+future MCP server's `fetch_layer_data`, per the project design): the
+`SearchServer` (location / layer / feature search — the geocatalog browses
+the CatalogServer tree and filters it client-side instead), identify
+`offset` paging, grid splitting + cross-cell deduplication, rate limiting of
+fan-out requests, the STAC download API, and `layerDefs` attribute filtering
+(supported on 11 queryable layers only). A click identify (point + pixel
+tolerance feeding a popup) never needs more than one page, and identify has
+no order parameter.
 
 ## Runtime configuration
 
@@ -131,16 +129,16 @@ real browser registry; the upgrade path is vitest browser mode +
 ## Demo script (manual verification)
 
 1. `cd mock-agent && npm start` and `cd frontend && npm run dev`
-2. Rail → Geocatalog: pick a topic, filter, add a layer ([+])
-3. Rail → Search: popular chip or "wald" → add a layer; "Bern" → fly-to
-4. Rail → Displayed maps: switch Color/Grey/Aerial via the eye toggles;
-   adjust layer opacity; open a legend
-5. Rail → Chat: ask "Zeige mir Hochwasser im Wallis" → progress steps
+2. Rail → Chat: ask "Zeige mir Hochwasser im Wallis" → progress steps
    stream → markdown answer + layer card → "Auf Karte anzeigen" →
    polygons render, map zooms
-6. Click a feature of an identify-capable layer → popup with LV95 readout
-7. Rail → Feedback: submit (entry lands in mock-agent/feedback.log)
-8. Rail → About: project info panel
-9. Switch the language via the rail's translate icon → labels re-localize
-10. Send a message containing `/error`, then one with `/slow` + cancel
-11. Kill and restart the mock agent → connection badge recovers
+3. Rail → Geocatalog: pick a topic, filter, add a layer ([+]); click it
+   again to remove it from the map
+4. Rail → Displayed maps: switch Color/Grey/Aerial via the eye toggles;
+   adjust layer opacity; open a legend
+5. Click a feature of an identify-capable layer → popup with LV95 readout
+6. Rail → Feedback: submit (entry lands in mock-agent/feedback.log)
+7. Rail → About: project info panel
+8. Switch the language via the rail's translate icon → labels re-localize
+9. Send a message containing `/error`, then one with `/slow` + cancel
+10. Kill and restart the mock agent → connection badge recovers
