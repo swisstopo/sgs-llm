@@ -1,75 +1,41 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { layerServiceContext } from '../../context';
 import type { LayerService, MapLayerState } from '../../services/LayerService';
 import { t } from '../../i18n/i18n';
+import { layerRowStyles } from './layerRowStyles';
+import {
+  chevronDownIcon,
+  chevronUpIcon,
+  eyeClosedIcon,
+  eyeOpenIcon,
+  legendIcon,
+  removeIcon,
+  zoomToIcon,
+} from '../shell/icons';
 
-/** One active layer row: visibility, opacity, reorder, remove. */
+/** One active layer row: visibility, opacity, reorder, zoom, legend, remove. */
 @customElement('sgs-layer-item')
 export class SgsLayerItem extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      padding: 0.5rem 0.25rem;
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
-      font-size: 0.875rem;
-    }
+  static override styles = [
+    layerRowStyles,
+    css`
+      :host {
+        display: block;
+      }
 
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-    }
+      .opacity {
+        display: flex;
+        padding: 0 0.625rem 0.5rem 2.5rem;
+      }
 
-    label.name {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      min-width: 0;
-      cursor: pointer;
-    }
-
-    .label-text {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      margin-top: 0.375rem;
-    }
-
-    input[type='range'] {
-      flex: 1;
-      accent-color: var(--sgc-color-brand, #d8232a);
-    }
-
-    button {
-      border: none;
-      background: none;
-      font: inherit;
-      cursor: pointer;
-      padding: 0.125rem 0.25rem;
-      border-radius: 0.25rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
-      line-height: 1;
-    }
-
-    button:hover:not(:disabled) {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
-      color: var(--sgc-color-text, #1c2834);
-    }
-
-    button:disabled {
-      color: var(--sgc-color-text--disabled, #98a6b3);
-      cursor: default;
-    }
-  `;
+      input[type='range'] {
+        flex: 1;
+        accent-color: var(--sgc-color-brand, #d8232a);
+      }
+    `,
+  ];
 
   @consume({ context: layerServiceContext })
   private layerService!: LayerService;
@@ -90,64 +56,72 @@ export class SgsLayerItem extends LitElement {
 
   override render() {
     const { layer } = this;
+    const canZoom = this.layerService.getZoomBBox(layer.id) !== undefined;
+    const hasLegend = layer.kind === 'official' && layer.config.hasLegend;
     return html`
-      <div class="row">
-        <label class="name" title=${layer.label}>
-          <input
-            type="checkbox"
-            .checked=${layer.visible}
-            @change=${(e: Event) =>
-              this.layerService.setVisible(layer.id, (e.target as HTMLInputElement).checked)}
-          />
-          <span class="label-text">${layer.label}</span>
-        </label>
-        ${this.layerService.getZoomBBox(layer.id)
+      <div class="row" ?data-hidden=${!layer.visible}>
+        <button
+          class="icon-btn eye"
+          aria-pressed=${layer.visible}
+          title=${t('layers.toggle')}
+          aria-label=${t('layers.toggle')}
+          @click=${() => this.layerService.setVisible(layer.id, !layer.visible)}
+        >
+          ${layer.visible ? eyeOpenIcon : eyeClosedIcon}
+        </button>
+        <span class="name" title=${layer.label}>${layer.label}</span>
+        ${canZoom
           ? html`
               <button
+                class="icon-btn"
                 title=${t('layers.zoomTo')}
                 aria-label=${t('layers.zoomTo')}
                 @click=${() => this.layerService.zoomToLayer(layer.id)}
               >
-                ⌖
+                ${zoomToIcon}
               </button>
             `
-          : ''}
-        ${layer.kind === 'official' && layer.config.hasLegend
+          : nothing}
+        ${hasLegend
           ? html`
               <button
+                class="icon-btn"
                 title=${t('layers.legend')}
                 aria-label=${t('layers.legend')}
                 @click=${() => this.showLegend()}
               >
-                ☰
+                ${legendIcon}
               </button>
             `
-          : ''}
+          : nothing}
         <button
+          class="icon-btn"
           title=${t('layers.moveUp')}
           aria-label=${t('layers.moveUp')}
           ?disabled=${this.isFirst}
           @click=${() => this.layerService.moveLayer(layer.id, 'up')}
         >
-          ▲
+          ${chevronUpIcon}
         </button>
         <button
+          class="icon-btn"
           title=${t('layers.moveDown')}
           aria-label=${t('layers.moveDown')}
           ?disabled=${this.isLast}
           @click=${() => this.layerService.moveLayer(layer.id, 'down')}
         >
-          ▼
+          ${chevronDownIcon}
         </button>
         <button
+          class="icon-btn"
           title=${t('layers.remove')}
           aria-label=${t('layers.remove')}
           @click=${() => this.layerService.removeLayer(layer.id)}
         >
-          ✕
+          ${removeIcon}
         </button>
       </div>
-      <div class="controls">
+      <div class="opacity">
         <input
           type="range"
           min="0"

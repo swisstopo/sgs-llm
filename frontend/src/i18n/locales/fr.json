@@ -30,7 +30,8 @@
     "moveUp": "Monter",
     "moveDown": "Descendre",
     "zoomTo": "Zoomer sur la couche",
-    "legend": "Légende"
+    "legend": "Légende",
+    "toggle": "Afficher/masquer la couche"
   },
   "chat": {
     "placeholder": "Posez une question sur les géodonnées suisses …",

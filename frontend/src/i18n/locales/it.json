@@ -30,7 +30,8 @@
     "moveUp": "Sposta in alto",
     "moveDown": "Sposta in basso",
     "zoomTo": "Zoom sul livello",
-    "legend": "Legenda"
+    "legend": "Legenda",
+    "toggle": "Mostra/nascondi il livello"
   },
   "chat": {
     "placeholder": "Fai una domanda sui geodati svizzeri …",
