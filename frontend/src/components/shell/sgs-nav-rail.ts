@@ -1,9 +1,10 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import type { TemplateResult } from 'lit';
-import { uiServiceContext } from '../../context';
+import { layerServiceContext, uiServiceContext } from '../../context';
 import type { PanelId, UiService } from '../../services/UiService';
+import type { LayerService, MapLayerState } from '../../services/LayerService';
 import { ObservableController } from '../../lib/ObservableController';
 import {
   SUPPORTED_LANGUAGES,
@@ -47,6 +48,7 @@ export class SgsNavRail extends LitElement {
     }
 
     button {
+      position: relative;
       display: grid;
       place-items: center;
       width: 2.5rem;
@@ -56,6 +58,24 @@ export class SgsNavRail extends LitElement {
       background: none;
       color: var(--sgc-color-text--secondary);
       cursor: pointer;
+    }
+
+    .badge {
+      position: absolute;
+      top: 0.125rem;
+      right: 0.125rem;
+      min-width: 1rem;
+      height: 1rem;
+      padding: 0 0.25rem;
+      box-sizing: border-box;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--sgc-color-border);
+      color: var(--sgc-color-text);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      line-height: 1;
     }
 
     button:hover {
@@ -119,19 +139,29 @@ export class SgsNavRail extends LitElement {
   @consume({ context: uiServiceContext })
   private uiService!: UiService;
 
+  @consume({ context: layerServiceContext })
+  private layerService!: LayerService;
+
   @state() private languageOpen = false;
 
   private activePanel?: ObservableController<PanelId | null>;
+
+  private layers?: ObservableController<MapLayerState[]>;
+
+  /** Last displayed-layer count, used to fire the badge "pop" only on add. */
+  private previousCount = 0;
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
   override connectedCallback(): void {
     super.connectedCallback();
     this.activePanel ??= new ObservableController(this, this.uiService.activePanel$);
+    this.layers ??= new ObservableController(this, this.layerService.layers$);
   }
 
   override render() {
     const active = this.activePanel?.value ?? this.uiService.activePanel;
+    const count = this.layers?.value?.length ?? 0;
     return html`
       ${RAIL_ITEMS.map(
         (item) => html`
@@ -142,6 +172,7 @@ export class SgsNavRail extends LitElement {
             @click=${() => this.uiService.togglePanel(item.id)}
           >
             ${item.icon}
+            ${item.id === 'maps' && count > 0 ? html`<span class="badge">${count}</span>` : nothing}
           </button>
         `,
       )}
@@ -168,6 +199,27 @@ export class SgsNavRail extends LitElement {
         ${languageIcon}
       </button>
     `;
+  }
+
+  override updated(): void {
+    const count = this.layers?.value?.length ?? 0;
+    if (count > this.previousCount) {
+      this.bumpBadge();
+    }
+    this.previousCount = count;
+  }
+
+  /** One-shot "pop" on the maps badge when a layer is added. */
+  private bumpBadge(): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    this.renderRoot
+      .querySelector('.badge')
+      ?.animate(
+        [{ transform: 'scale(1)' }, { transform: 'scale(1.4)' }, { transform: 'scale(1)' }],
+        { duration: 320, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+      );
   }
 
   private selectLanguage(lang: AppLanguage): void {

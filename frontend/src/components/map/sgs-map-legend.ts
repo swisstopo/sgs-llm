@@ -53,19 +53,25 @@ export class SgsMapLegend extends LitElement {
       max-height: 60vh;
       overflow-y: auto;
       padding: 0.5rem 0.75rem;
-    }
-
-    section + section {
-      margin-top: 0.625rem;
-      padding-top: 0.625rem;
-      border-top: 1px solid var(--sgc-color-border--subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
     }
 
     .layer-label {
-      margin: 0 0 0.25rem;
+      margin: 0 0 0.375rem;
+      padding: 0.25rem 0.5rem;
+      background: var(--sgc-color-bg--grey);
+      border-left: 3px solid var(--sgc-color-brand);
+      border-radius: 0.1875rem;
       font-size: 0.75rem;
       font-weight: 600;
-      color: var(--sgc-color-text--secondary);
+      color: var(--sgc-color-text);
+    }
+
+    sgs-legend-content {
+      display: block;
+      padding-left: 0.5rem;
     }
   `;
 
