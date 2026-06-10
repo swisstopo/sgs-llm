@@ -104,7 +104,12 @@ function handleFeedback(req, res) {
 const wss = new WebSocketServer({ server: httpServer, path: '/ws/v1' });
 
 wss.on('connection', (socket, req) => {
-  const baseUrl = `http://${req.headers.host ?? `localhost:${PORT}`}`;
+  // Behind a TLS-terminating proxy (e.g. CloudFront), derive scheme and host
+  // from the forwarded headers so the data URLs we emit are https/same-origin
+  // and not mixed-content-blocked. Falls back to the local http host.
+  const proto = req.headers['x-forwarded-proto'] ?? 'http';
+  const host = req.headers['x-forwarded-host'] ?? req.headers.host ?? `localhost:${PORT}`;
+  const baseUrl = `${proto}://${host}`;
   /** message id -> { timers: Timeout[], lang: string } */
   const active = new Map();
 
