@@ -1,7 +1,4 @@
 {
-  "app": {
-    "title": "SGS LLM"
-  },
   "map": {
     "basemapGrey": "National map (grey)",
     "basemapAerial": "Aerial imagery",
@@ -79,7 +76,6 @@
     "loading": "Loading geocatalog …",
     "error": "The geocatalog could not be loaded.",
     "add": "Add to map",
-    "added": "On the map",
     "unsupported": "Not available as a map layer.",
     "noMatches": "No matches in the geocatalog.",
     "remove": "Remove from map"

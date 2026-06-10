@@ -25,7 +25,7 @@ export const BASEMAPS = [
 export type BasemapId = (typeof BASEMAPS)[number];
 
 /** Fixed tile used for basemap thumbnails (Bern, verified for all basemaps). */
-export const THUMBNAIL_TILE = { z: 13, x: 4265, y: 2883 } as const;
+const THUMBNAIL_TILE = { z: 13, x: 4265, y: 2883 } as const;
 
 const DEFAULT_BASEMAP: BasemapId = 'ch.swisstopo.pixelkarte-grau';
 
