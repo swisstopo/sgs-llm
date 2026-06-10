@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { fetchLegendHtml } from '../../swisstopo/legendApi';
+import { closeIcon } from '../shell/icons';
 import { currentLanguage, t } from '../../i18n/i18n';
 
 /**
@@ -35,10 +36,12 @@ export class SgsLegendDialog extends LitElement {
     }
 
     .close {
+      display: grid;
+      place-items: center;
       border: none;
       background: none;
       cursor: pointer;
-      font: inherit;
+      line-height: 0;
       color: var(--sgc-color-text--secondary);
     }
 
@@ -86,7 +89,7 @@ export class SgsLegendDialog extends LitElement {
             aria-label=${t('identify.close')}
             @click=${() => this.dialog.close()}
           >
-            ✕
+            ${closeIcon}
           </button>
         </header>
         ${this.failed

@@ -9,6 +9,7 @@ import { filterCatalogTree } from '../../swisstopo/catalogApi';
 import type { CatalogFolderNode, CatalogLayerNode, CatalogNode } from '../../swisstopo/catalogApi';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
+import { checkIcon, chevronRightIcon, closeIcon, plusIcon } from '../shell/icons';
 import { panelBaseStyles } from '../panelStyles';
 
 const DEFAULT_TOPIC = 'ech';
@@ -97,7 +98,9 @@ export class SgsGeocatalog extends LitElement {
 
       .twisty {
         flex: none;
-        width: 0.875rem;
+        display: grid;
+        place-items: center;
+        line-height: 0;
         color: var(--sgc-color-text--secondary);
         transition: transform 0.12s;
       }
@@ -133,8 +136,7 @@ export class SgsGeocatalog extends LitElement {
         border: 1px solid var(--sgc-color-border);
         border-radius: 0.25rem;
         background: var(--sgc-color-bg--white);
-        font-size: 1rem;
-        line-height: 1;
+        line-height: 0;
         cursor: pointer;
         color: var(--sgc-color-text);
       }
@@ -246,7 +248,7 @@ export class SgsGeocatalog extends LitElement {
     return html`
       <li class="folder">
         <button aria-expanded=${open} @click=${() => this.toggleFolder(node.id)}>
-          <span class="twisty" ?data-open=${open}>▸</span>
+          <span class="twisty" ?data-open=${open}>${chevronRightIcon}</span>
           <span>${node.label}</span>
         </button>
         ${open
@@ -276,8 +278,8 @@ export class SgsGeocatalog extends LitElement {
                 : void this.addLayer(node.layerBodId)}
           >
             ${added
-              ? html`<span class="check">✓</span><span class="x">✕</span>`
-              : html`<span>+</span>`}
+              ? html`<span class="check">${checkIcon}</span><span class="x">${closeIcon}</span>`
+              : html`<span class="ic">${plusIcon}</span>`}
           </button>
         </div>
         ${notice ? html`<p class="notice">${t('geocatalog.unsupported')}</p>` : nothing}
