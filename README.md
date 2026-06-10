@@ -26,6 +26,9 @@ The production agent backend (LLM provisioning, orchestration, MCP client) is de
 separately and connects over the same protocol. This is a prototype — not for operational
 use; interfaces and layout may still change.
 
+A live POC instance (frontend + mock-agent) is deployed on AWS at
+**https://denpw8uo5zpkl.cloudfront.net/**. See [Deployment](#deployment).
+
 ## Features
 
 - **SwissGeo-style shell** — a left icon rail opening one flyout panel at a time:
@@ -66,7 +69,8 @@ honors, security notes, and the manual demo script — is in
 frontend/      Lit + TypeScript + Vite chat + map application
 mock-agent/    Node WebSocket server implementing the agent protocol for development
 layers/        Per-layer presentation overrides (layers_wmts.json5)
-docs/          Architecture and the agent WebSocket protocol (+ JSON Schemas)
+docs/          Architecture, the agent WebSocket protocol (+ JSON Schemas), and deployment
+scripts/       Operational helpers (e.g. deploy-frontend.sh)
 ```
 
 ## Getting started
@@ -112,6 +116,30 @@ repository root so the `layers/` catalog is available to the build:
 ```bash
 docker build -f frontend/Dockerfile -t sgs-llm-frontend .
 docker run -p 8080:80 sgs-llm-frontend
+```
+
+## Deployment
+
+A POC is deployed on AWS at **https://denpw8uo5zpkl.cloudfront.net/** — the static
+frontend on **S3 + CloudFront**, with the development **mock-agent** on a single
+**EC2** instance behind the same CloudFront distribution (so the site, the chat
+`wss://` WebSocket, `/feedback`, and `/data/*` are all served from one HTTPS
+origin).
+
+```text
+                 ┌──────────── CloudFront (HTTPS / wss) ───────────┐
+ browser ──────► │  /                         → S3  (private, OAC)  │
+                 │  /ws/v1, /feedback, /data/* → EC2 (mock-agent)    │
+                 └──────────────────────────────────────────────────┘
+```
+
+The full process — reproduce-from-scratch steps, the redeploy script
+([`scripts/deploy-frontend.sh`](scripts/deploy-frontend.sh)), how to operate the
+EC2 mock-agent, cost/teardown, and the CloudFront configuration — is in
+[`docs/deployment.md`](docs/deployment.md). Redeploy the frontend with:
+
+```bash
+PROFILE=swisstopo ./scripts/deploy-frontend.sh
 ```
 
 ## Support
