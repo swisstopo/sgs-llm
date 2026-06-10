@@ -5,6 +5,7 @@ import { FEEDBACK_CATEGORIES, submitFeedback } from '../../feedback/submitFeedba
 import type { FeedbackCategory } from '../../feedback/submitFeedback';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
+import { checkIcon } from '../shell/icons';
 import { panelBaseStyles } from '../panelStyles';
 
 type FormState = 'idle' | 'sending' | 'success' | 'error';
@@ -91,8 +92,14 @@ export class SgsFeedbackPanel extends LitElement {
       }
 
       .success .check {
-        font-size: 2rem;
+        display: grid;
+        place-items: center;
         color: #2e7d32;
+      }
+
+      .success .check svg {
+        width: 2.5rem;
+        height: 2.5rem;
       }
     `,
   ];
@@ -110,7 +117,7 @@ export class SgsFeedbackPanel extends LitElement {
     if (this.formState === 'success') {
       return html`
         <div class="success">
-          <span class="check">✓</span>
+          <span class="check">${checkIcon}</span>
           <p>${t('feedback.success')}</p>
         </div>
       `;

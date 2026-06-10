@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { IdentifyFeature } from '../../swisstopo/identifyApi';
 import { htmlPopupUrl } from '../../swisstopo/identifyApi';
 import { formatLV95 } from '../../lib/projection';
+import { closeIcon } from '../shell/icons';
 import { currentLanguage, t } from '../../i18n/i18n';
 
 /**
@@ -40,11 +41,13 @@ export class SgsIdentifyPopup extends LitElement {
     }
 
     .close {
+      display: grid;
+      place-items: center;
       border: none;
       background: none;
       cursor: pointer;
-      font: inherit;
       padding: 0.125rem 0.25rem;
+      line-height: 0;
       color: var(--sgc-color-text--secondary);
     }
 
@@ -109,7 +112,9 @@ export class SgsIdentifyPopup extends LitElement {
         <span class="coords">
           ${this.coordinate ? html`LV95 ${formatLV95(this.coordinate)}` : nothing}
         </span>
-        <button class="close" aria-label=${t('identify.close')} @click=${this.close}>✕</button>
+        <button class="close" aria-label=${t('identify.close')} @click=${this.close}>
+          ${closeIcon}
+        </button>
       </header>
       <div class="body">
         ${this.loading

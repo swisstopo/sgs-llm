@@ -91,6 +91,19 @@ export const legendIcon = icon(
 
 export const removeIcon = icon(svg`<path d="M6 6l12 12M18 6 6 18" />`, 18);
 
+/** Close (reuses the cross). */
+export const closeIcon = removeIcon;
+
 export const chevronUpIcon = icon(svg`<path d="M6 14l6-6 6 6" />`, 18);
 
 export const chevronDownIcon = icon(svg`<path d="M6 10l6 6 6-6" />`, 18);
+
+/** Collapsed-folder twisty (CSS rotates it 90° when open). */
+export const chevronRightIcon = icon(svg`<path d="M9 6l6 6-6 6" />`, 16);
+
+export const plusIcon = icon(svg`<path d="M12 5v14M5 12h14" />`, 18);
+
+export const checkIcon = icon(svg`<path d="M5 12.5l4.5 4.5L19 7" />`, 18);
+
+/** Small ring for an in-progress step. */
+export const dotIcon = icon(svg`<circle cx="12" cy="12" r="5.5" />`, 16);
