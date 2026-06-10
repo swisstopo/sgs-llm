@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   parseBox2d,
   searchLayers,
@@ -6,11 +6,6 @@ import {
   stripHtml,
   truncateSearchText,
 } from './searchApi';
-import { registerProjections } from '../lib/projection';
-
-beforeAll(() => {
-  registerProjections();
-});
 
 describe('truncateSearchText', () => {
   it('keeps short queries unchanged', () => {
@@ -101,33 +96,6 @@ describe('search requests', () => {
       lat: 46.95,
       bbox: [7.29, 46.91, 7.49, 46.99],
     });
-  });
-
-  it('switches to sr=2056 with bbox ranking and converts box2d to WGS84', async () => {
-    const fetchMock = stubFetch([
-      {
-        attrs: {
-          label: '<b>Bern</b>',
-          detail: 'bern',
-          lon: 7.4397,
-          lat: 46.9511,
-          geom_st_box2d: 'BOX(2599000 1199000,2601000 1201000)',
-        },
-      },
-    ]);
-    const results = await searchLocations('bern', {
-      limit: 5,
-      viewBBox2056: [2590000, 1190000, 2610000, 1210000],
-    });
-    const url = new URL(fetchMock.mock.calls[0]![0] as string);
-    expect(url.searchParams.get('sr')).toBe('2056');
-    expect(url.searchParams.get('bbox')).toBe('2590000,1190000,2610000,1210000');
-    // lat/lon stay WGS84; the LV95 box is converted to WGS84 for fit-to-extent.
-    const bbox = results[0]!.bbox!;
-    expect(bbox[0]).toBeGreaterThan(7.4);
-    expect(bbox[0]).toBeLessThan(7.5);
-    expect(bbox[1]).toBeGreaterThan(46.9);
-    expect(bbox[3]).toBeGreaterThan(bbox[1]);
   });
 
   it('forwards the abort signal', async () => {

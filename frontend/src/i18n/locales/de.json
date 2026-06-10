@@ -1,7 +1,4 @@
 {
-  "app": {
-    "title": "SGS LLM"
-  },
   "map": {
     "basemapGrey": "Landeskarte (grau)",
     "basemapAerial": "Luftbild",
@@ -79,7 +76,6 @@
     "loading": "Geokatalog wird geladen …",
     "error": "Geokatalog konnte nicht geladen werden.",
     "add": "Zur Karte hinzufügen",
-    "added": "Auf der Karte",
     "unsupported": "Nicht als Kartenebene verfügbar.",
     "noMatches": "Keine Treffer im Geokatalog.",
     "remove": "Von der Karte entfernen"

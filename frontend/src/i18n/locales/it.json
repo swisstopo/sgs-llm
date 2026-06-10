@@ -1,7 +1,4 @@
 {
-  "app": {
-    "title": "SGS LLM"
-  },
   "map": {
     "basemapGrey": "Carta nazionale (grigio)",
     "basemapAerial": "Foto aerea",
@@ -79,7 +76,6 @@
     "loading": "Caricamento del geocatalogo …",
     "error": "Impossibile caricare il geocatalogo.",
     "add": "Aggiungere alla mappa",
-    "added": "Sulla mappa",
     "unsupported": "Non disponibile come livello cartografico.",
     "noMatches": "Nessun risultato nel geocatalogo.",
     "remove": "Rimuovere dalla mappa"
