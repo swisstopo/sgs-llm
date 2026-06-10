@@ -90,5 +90,24 @@
     "added": "Sur la carte",
     "unsupported": "Non disponible comme couche cartographique.",
     "noMatches": "Aucun résultat dans le géocatalogue."
+  },
+  "feedback": {
+    "category": "Catégorie",
+    "categories": {
+      "bug": "Signalement de bug",
+      "feature": "Souhait de fonctionnalité",
+      "improvement": "Amélioration",
+      "question": "Question",
+      "other": "Autre"
+    },
+    "message": "Message",
+    "messagePlaceholder": "Décrivez votre demande …",
+    "messageRequired": "Veuillez saisir un message.",
+    "email": "E-mail",
+    "emailHint": "facultatif",
+    "submit": "Envoyer",
+    "sending": "Envoi en cours …",
+    "success": "Merci pour votre feedback !",
+    "error": "Le feedback n'a pas pu être envoyé. Veuillez réessayer."
   }
 }

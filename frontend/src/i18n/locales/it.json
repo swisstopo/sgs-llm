@@ -90,5 +90,24 @@
     "added": "Sulla mappa",
     "unsupported": "Non disponibile come livello cartografico.",
     "noMatches": "Nessun risultato nel geocatalogo."
+  },
+  "feedback": {
+    "category": "Categoria",
+    "categories": {
+      "bug": "Segnalazione di errore",
+      "feature": "Richiesta di funzionalità",
+      "improvement": "Miglioramento",
+      "question": "Domanda",
+      "other": "Altro"
+    },
+    "message": "Messaggio",
+    "messagePlaceholder": "Descriva la sua richiesta …",
+    "messageRequired": "Inserisca un messaggio.",
+    "email": "E-mail",
+    "emailHint": "facoltativo",
+    "submit": "Inviare",
+    "sending": "Invio in corso …",
+    "success": "Grazie per il suo feedback!",
+    "error": "Impossibile inviare il feedback. Riprovi più tardi."
   }
 }

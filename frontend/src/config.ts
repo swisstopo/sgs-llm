@@ -9,10 +9,13 @@
 export interface RuntimeConfig {
   /** WebSocket endpoint of the agent backend (protocol v1). */
   agentWsUrl: string;
+  /** HTTP endpoint receiving feedback form submissions. */
+  feedbackUrl: string;
 }
 
 const DEFAULT_CONFIG: RuntimeConfig = {
   agentWsUrl: 'ws://localhost:8787/ws/v1',
+  feedbackUrl: 'http://localhost:8787/feedback',
 };
 
 /** Swisstopo REST services (search, identify, legends, layer metadata). */
@@ -33,6 +36,10 @@ export function mergeConfig(raw: unknown): RuntimeConfig {
       typeof candidate.agentWsUrl === 'string' && candidate.agentWsUrl.length > 0
         ? candidate.agentWsUrl
         : DEFAULT_CONFIG.agentWsUrl,
+    feedbackUrl:
+      typeof candidate.feedbackUrl === 'string' && candidate.feedbackUrl.length > 0
+        ? candidate.feedbackUrl
+        : DEFAULT_CONFIG.feedbackUrl,
   };
 }
 
