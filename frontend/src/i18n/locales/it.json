@@ -9,7 +9,8 @@
   },
   "map": {
     "basemapGrey": "Carta nazionale (grigio)",
-    "basemapAerial": "Foto aerea"
+    "basemapAerial": "Foto aerea",
+    "basemapColor": "Carta nazionale (a colori)"
   },
   "panel": {
     "search": "Ricerca",
@@ -23,7 +24,11 @@
     "layers": "Set di dati",
     "noResults": "Nessun risultato.",
     "notDisplayable": "Non disponibile come livello cartografico",
-    "added": "Aggiunto"
+    "added": "Aggiunto",
+    "popular": "Ricerche popolari:",
+    "popularFlood": "Piene",
+    "popularSolar": "Energia solare",
+    "popularForest": "Bosco"
   },
   "catalog": {
     "loading": "Caricamento del catalogo …",
@@ -75,5 +80,9 @@
     "feedback": "Feedback",
     "about": "Informazioni sul progetto",
     "language": "Scegliere la lingua"
+  },
+  "maps": {
+    "background": "Mappa di sfondo",
+    "activeLayers": "Livelli sulla mappa"
   }
 }
