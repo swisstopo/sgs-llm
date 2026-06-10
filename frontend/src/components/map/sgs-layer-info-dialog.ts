@@ -104,11 +104,7 @@ export class SgsLayerInfoDialog extends LitElement {
       <dialog @cancel=${this.onClose} @click=${this.onBackdropClick}>
         <header>
           <h2>${this.titleTask.value ?? this.layerLabel ?? this.layerId}</h2>
-          <button
-            title=${t('dialog.close')}
-            aria-label=${t('dialog.close')}
-            @click=${this.onClose}
-          >
+          <button title=${t('dialog.close')} aria-label=${t('dialog.close')} @click=${this.onClose}>
             ${closeIcon}
           </button>
         </header>

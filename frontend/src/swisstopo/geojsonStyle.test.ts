@@ -7,11 +7,7 @@ import CircleStyle from 'ol/style/Circle';
 import Icon from 'ol/style/Icon';
 import RegularShape from 'ol/style/RegularShape';
 import Style from 'ol/style/Style';
-import {
-  defaultGeoJsonStyle,
-  parseGeoAdminStyle,
-  resolveStyleUrl,
-} from './geojsonStyle';
+import { defaultGeoJsonStyle, parseGeoAdminStyle, resolveStyleUrl } from './geojsonStyle';
 
 function point(properties: Record<string, unknown>): Feature {
   const feature = new Feature(new Point([0, 0]));
@@ -97,14 +93,21 @@ describe('parseGeoAdminStyle', () => {
     expect(labeled.getText()?.getText()).toBe('Bern');
     expect(labeled.getText()?.getFont()).toBe('bold 12px sans-serif');
     expect(style(point({ symbol_design: 0.1, name: 'Bern' }), 50)).toBe(labeled);
-    expect((style(point({ symbol_design: 0.1, name: 'Chur' }), 50) as Style).getText()?.getText()).toBe('Chur');
+    expect(
+      (style(point({ symbol_design: 0.1, name: 'Chur' }), 50) as Style).getText()?.getText(),
+    ).toBe('Chur');
   });
 
   it('returns no style when no rule matches', () => {
     const style = parseGeoAdminStyle(UNIQUE_SPEC)!;
     expect(style(point({ symbol_design: 9 }), 200)).toBeUndefined();
     // Wrong geometry category for the point rules.
-    const line = new Feature(new LineString([[0, 0], [1, 1]]));
+    const line = new Feature(
+      new LineString([
+        [0, 0],
+        [1, 1],
+      ]),
+    );
     line.set('symbol_design', 0.1);
     expect(style(line, 200)).toBeUndefined();
   });
@@ -115,7 +118,9 @@ describe('parseGeoAdminStyle', () => {
     expect((low.getImage() as CircleStyle).getRadius()).toBe(6);
     // Overlapping bound: the first matching rule wins.
     expect((style(point({ value: 30 }), 100) as Style).getImage()).toBe(low.getImage());
-    expect((style(point({ value: 45 }), 100) as Style as Style).getImage()).not.toBe(low.getImage());
+    expect((style(point({ value: 45 }), 100) as Style as Style).getImage()).not.toBe(
+      low.getImage(),
+    );
     expect(style(point({ value: -5 }), 100)).toBeUndefined();
     expect(style(point({ value: 'n/a' }), 100)).toBeUndefined();
   });
@@ -139,11 +144,23 @@ describe('parseGeoAdminStyle', () => {
         {
           geomType: 'polygon',
           value: 'zone',
-          vectorOptions: { fill: { color: 'rgba(0,0,255,0.3)' }, stroke: { color: 'blue', width: 2 } },
+          vectorOptions: {
+            fill: { color: 'rgba(0,0,255,0.3)' },
+            stroke: { color: 'blue', width: 2 },
+          },
         },
       ],
     })!;
-    const polygon = new Feature(new Polygon([[[0, 0], [1, 0], [1, 1], [0, 0]]]));
+    const polygon = new Feature(
+      new Polygon([
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      ]),
+    );
     polygon.set('kind', 'zone');
     const styled = style(polygon, 100) as Style;
     expect(styled.getFill()?.getColor()).toBe('rgba(0,0,255,0.3)');

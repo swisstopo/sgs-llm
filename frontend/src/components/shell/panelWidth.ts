@@ -12,7 +12,10 @@ export const PANEL_WIDTH_STORAGE_KEY = 'sgs-llm.panelWidth';
 
 /** Clamps a desired flyout width (px) against the viewport. */
 export function clampPanelWidth(width: number, viewportWidth: number): number {
-  const max = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, viewportWidth - RAIL_WIDTH - MIN_MAP_STRIP));
+  const max = Math.max(
+    MIN_PANEL_WIDTH,
+    Math.min(MAX_PANEL_WIDTH, viewportWidth - RAIL_WIDTH - MIN_MAP_STRIP),
+  );
   return Math.round(Math.max(MIN_PANEL_WIDTH, Math.min(max, width)));
 }
 
