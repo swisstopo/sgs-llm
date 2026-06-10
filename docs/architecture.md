@@ -102,14 +102,14 @@ parameter).
 
 ## Runtime configuration
 
-Vite environment variables are build-time; the agent WebSocket URL must be
-deploy-time. The app loads `/config.json` at startup
-(`frontend/public/config.json`, served with `Cache-Control: no-store` by
-the bundled nginx config) — replace it in the deployment to point at the
-real agent backend. All Swisstopo API base URLs live in
-`frontend/src/config.ts` so a proxy can be slotted in if needed (the public
-APIs allow cross-origin requests today, but that is operational behavior,
-not a contract).
+Vite environment variables are build-time; the agent WebSocket URL and the
+feedback endpoint must be deploy-time. The app loads `/config.json` at
+startup (`frontend/public/config.json` → `{ agentWsUrl, feedbackUrl }`,
+served with `Cache-Control: no-store` by the bundled nginx config) — replace
+it in the deployment to point at the real agent backend and feedback
+service. All Swisstopo API base URLs live in `frontend/src/config.ts` so a
+proxy can be slotted in if needed (the public APIs allow cross-origin
+requests today, but that is operational behavior, not a contract).
 
 ## Security notes
 
@@ -141,6 +141,6 @@ real browser registry; the upgrade path is vitest browser mode +
 6. Click a feature of an identify-capable layer → popup with LV95 readout
 7. Rail → Feedback: submit (entry lands in mock-agent/feedback.log)
 8. Rail → About: project info panel
-9. Switch the language via the rail's globe icon → labels re-localize
+9. Switch the language via the rail's translate icon → labels re-localize
 10. Send a message containing `/error`, then one with `/slow` + cancel
 11. Kill and restart the mock agent → connection badge recovers
