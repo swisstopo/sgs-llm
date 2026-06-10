@@ -1,0 +1,15 @@
+{
+  "name": "sgs-llm-mock-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mock agent backend speaking the SGS LLM WebSocket protocol v1",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

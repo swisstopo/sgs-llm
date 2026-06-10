@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "name": "Bern", "kind": "capital" }, "geometry": { "type": "Point", "coordinates": [7.4474, 46.9480] } },
+    { "type": "Feature", "properties": { "name": "Zürich", "kind": "city" }, "geometry": { "type": "Point", "coordinates": [8.5417, 47.3769] } },
+    { "type": "Feature", "properties": { "name": "Genève", "kind": "city" }, "geometry": { "type": "Point", "coordinates": [6.1432, 46.2044] } },
+    { "type": "Feature", "properties": { "name": "Lugano", "kind": "city" }, "geometry": { "type": "Point", "coordinates": [8.9511, 46.0037] } },
+    { "type": "Feature", "properties": { "name": "Chur", "kind": "city" }, "geometry": { "type": "Point", "coordinates": [9.5320, 46.8508] } }
+  ]
+}

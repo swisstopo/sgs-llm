@@ -1,0 +1,8 @@
+// Per-layer presentation overrides for curated layers. Only deviations from
+// the Swisstopo layersConfig defaults belong here.
+{
+  layers: [
+    { id: 'ch.bfe.solarenergie-eignung-daecher', defaultOpacity: 0.8 },
+    { id: 'ch.bafu.landesforstinventar-vegetationshoehenmodell', defaultOpacity: 0.7 },
+  ],
+}

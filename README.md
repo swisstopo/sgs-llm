@@ -10,74 +10,109 @@ an interactive web map, Swisstopo API connectors, and LLM-based orchestration so
 discover, query, and visualize official geodata without needing GIS expertise.
 
 The project is developed in the context of the Swiss Geoinformation Strategy (SGS). It
-continues prior SGS work on large language models and geodata, and explores how
-conversational access, MCP-compatible connectors, and agent-based workflows can support
-future Swiss geodata services.
+explores how conversational access, MCP-compatible connectors, and agent-based workflows can
+support future Swiss geodata services. The prototype is hosted on Swisstopo's GitHub
+organization and is intended to run on Swisstopo infrastructure.
 
-The prototype is hosted on Swisstopo's GitHub organization and is intended to run on
-Swisstopo infrastructure.
+## Status
 
-## Disclaimer
+This repository currently contains the **frontend work package**: a runnable chat + web map
+application (`frontend/`) plus a small **mock agent** (`mock-agent/`) that stands in for the
+LLM agent backend during development. The frontend talks to the public Swisstopo APIs
+directly for map interactivity, and to the agent backend over a versioned WebSocket protocol
+([`docs/protocol.md`](docs/protocol.md)).
 
-This repository has been initialized for the 2026 prototype.
+The production agent backend (LLM provisioning, orchestration, MCP client) is developed
+separately and connects over the same protocol. This is a prototype — not for operational
+use; interfaces and layout may still change.
 
-The first implementation work will add the application scaffold, development setup,
-connector modules, test framework, and deployment documentation. Until then, this README
-describes the project purpose and planned structure rather than a runnable application.
+## Features
 
-All contents of this repository are subject to change during the prototype phase, including
-the architecture, interfaces, module boundaries, repository layout, development commands,
-and deployment approach.
-
-## Planned capabilities
-
-- Conversational interface for natural language questions about Swiss geodata
-- Interactive map for displaying layers, query results, and spatial context
-- Dataset and layer discovery across Swisstopo geodata services
-- Swisstopo API connectors for search, access, and filtering operations
-- MCP-compatible tool definitions for use by LLM agents
-- Multilingual interaction patterns for Swiss public-sector use cases
-- Test framework for end-to-end, component, and multilingual evaluation
-- Deployment documentation for Swisstopo-managed infrastructure
+- **SwissGeo-style shell** — a left icon rail opening one flyout panel at a time:
+  - **Chat** — natural-language conversation with streamed tool-progress, sanitized markdown
+    answers, and data layers rendered on the map
+  - **Displayed maps** — three Swisstopo basemaps (color / grey / aerial) and the active
+    layer list with visibility, opacity, ordering, zoom-to, and legends
+  - **Geocatalog** — the official Swisstopo catalog tree (CatalogServer): topic selector,
+    in-tree filter, add/remove layers
+  - **Feedback** — a feedback form posted to a configurable endpoint
+  - **About** — project, partners, and data-source information
+- **Identify on click** — feature attributes from the MapServer identify endpoint, with an
+  LV95 coordinate readout
+- **Multilingual** — German, French, Italian, English; the active language is passed to every
+  Swisstopo API call and chat message
+- **Lean live connectors** — thin, typed wrappers over the public geo.admin.ch APIs with
+  request timeouts, cancellation of superseded requests, and the API's paging/word limits
+  respected (see [`docs/architecture.md`](docs/architecture.md))
 
 ## Architecture overview
 
-The prototype is planned as a chat and map application backed by an agent integration layer
-and Swisstopo API connectors.
-
 ```text
-User
-  |
-  v
-Chat + web map frontend
-  |
-  v
-LLM / agent integration
-  |
-  v
-Swisstopo connector layer
-  |
-  v
-Swisstopo geodata services
+Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core)
+  ├── direct calls ─────────────►  Swisstopo public APIs
+  │                                (api3.geo.admin.ch, wmts.geo.admin.ch)
+  └── WebSocket /ws/v1 ─────────►  Agent backend (askEarth, separate)
+                                   └─ mock-agent/ during development
 ```
 
-The connector layer is expected to expose search, access, and filtering capabilities to the
-LLM integration layer. The application should keep official geodata in Swisstopo source
-systems and access data through supported APIs.
+The full design — stack decisions, services, the Swisstopo connector and the API limits it
+honors, security notes, and the manual demo script — is in
+[`docs/architecture.md`](docs/architecture.md). The chat/agent contract is in
+[`docs/protocol.md`](docs/protocol.md) with JSON Schemas under [`docs/protocol/`](docs/protocol/).
+
+## Repository layout
+
+```text
+frontend/      Lit + TypeScript + Vite chat + map application
+mock-agent/    Node WebSocket server implementing the agent protocol for development
+layers/        Per-layer presentation overrides (layers_wmts.json5)
+docs/          Architecture and the agent WebSocket protocol (+ JSON Schemas)
+```
 
 ## Getting started
-
-Clone the repository:
 
 ```bash
 git clone https://github.com/swisstopo/sgs-llm.git
 cd sgs-llm
 ```
 
-## Usage
+### Run the mock agent (terminal 1)
 
-Development, build, test, and deployment commands will be added with the first application
-scaffold.
+```bash
+cd mock-agent
+npm install
+npm start          # WebSocket on ws://localhost:8787/ws/v1, feedback on /feedback
+```
+
+### Run the frontend (terminal 2)
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+```
+
+The agent WebSocket URL and feedback endpoint are configured at runtime in
+`frontend/public/config.json` (no rebuild needed to repoint them in a deployment).
+
+### Other frontend commands
+
+```bash
+npm run build       # type-check and produce a production build in dist/
+npm test            # unit tests (vitest)
+npm run lint        # eslint
+npm run typecheck   # tsc --noEmit
+```
+
+### Docker
+
+A production image (static build served by nginx, with SPA fallback) is built from the
+repository root so the `layers/` catalog is available to the build:
+
+```bash
+docker build -f frontend/Dockerfile -t sgs-llm-frontend .
+docker run -p 8080:80 sgs-llm-frontend
+```
 
 ## Support
 

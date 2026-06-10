@@ -1,0 +1,4 @@
+{
+  "agentWsUrl": "ws://localhost:8787/ws/v1",
+  "feedbackUrl": "http://localhost:8787/feedback"
+}

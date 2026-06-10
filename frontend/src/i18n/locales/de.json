@@ -1,0 +1,106 @@
+{
+  "map": {
+    "basemapGrey": "Landeskarte (grau)",
+    "basemapAerial": "Luftbild",
+    "basemapColor": "Landeskarte (farbig)"
+  },
+  "panel": {
+    "close": "Panel einklappen"
+  },
+  "layers": {
+    "empty": "Noch keine Ebenen auf der Karte.",
+    "opacity": "Deckkraft",
+    "remove": "Ebene entfernen",
+    "moveUp": "Nach oben",
+    "moveDown": "Nach unten",
+    "zoomTo": "Hinzoomen",
+    "legend": "Legende",
+    "toggle": "Ebene ein-/ausblenden"
+  },
+  "chat": {
+    "placeholder": "Frage zu Schweizer Geodaten stellen …",
+    "send": "Senden",
+    "cancel": "Abbrechen",
+    "welcome": "Stellen Sie Fragen zu Schweizer Geodaten – zum Beispiel:",
+    "exampleFlood": "Zeige mir Hochwassergefahren im Wallis",
+    "exampleSolar": "Wie gut eignen sich Dächer in Bern für Solaranlagen?",
+    "error": "Bei der Verarbeitung ist ein Fehler aufgetreten.",
+    "cancelled": "Anfrage abgebrochen.",
+    "addToMap": "Auf Karte anzeigen",
+    "layerAdded": "Auf der Karte",
+    "formatUnsupported": "Dieses Datenformat wird noch nicht unterstützt.",
+    "featureCount": "{{count}} Objekte",
+    "connection": {
+      "open": "Verbunden",
+      "connecting": "Verbinde …",
+      "closed": "Getrennt"
+    }
+  },
+  "identify": {
+    "loading": "Objekte werden abgefragt …",
+    "empty": "Keine Objekte an dieser Stelle.",
+    "close": "Schliessen"
+  },
+  "legend": {
+    "loading": "Legende wird geladen …",
+    "error": "Legende konnte nicht geladen werden."
+  },
+  "rail": {
+    "maps": "Dargestellte Karten",
+    "catalog": "Geokatalog",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "Über das Projekt",
+    "language": "Sprache wählen"
+  },
+  "maps": {
+    "background": "Hintergrundkarte",
+    "activeLayers": "Ebenen auf der Karte"
+  },
+  "geocatalog": {
+    "topic": "Thema:",
+    "filterPlaceholder": "Im Geokatalog suchen …",
+    "loading": "Geokatalog wird geladen …",
+    "error": "Geokatalog konnte nicht geladen werden.",
+    "add": "Zur Karte hinzufügen",
+    "unsupported": "Nicht als Kartenebene verfügbar.",
+    "noMatches": "Keine Treffer im Geokatalog.",
+    "remove": "Von der Karte entfernen"
+  },
+  "feedback": {
+    "category": "Kategorie",
+    "categories": {
+      "bug": "Fehlermeldung",
+      "feature": "Funktionswunsch",
+      "improvement": "Verbesserung",
+      "question": "Frage",
+      "other": "Anderes"
+    },
+    "message": "Nachricht",
+    "messagePlaceholder": "Beschreiben Sie Ihr Anliegen …",
+    "messageRequired": "Bitte geben Sie eine Nachricht ein.",
+    "email": "E-Mail",
+    "emailHint": "optional",
+    "submit": "Senden",
+    "sending": "Wird gesendet …",
+    "success": "Vielen Dank für Ihr Feedback!",
+    "error": "Das Feedback konnte nicht gesendet werden. Bitte versuchen Sie es erneut."
+  },
+  "about": {
+    "description": "SGS LLM ist ein Open-Source-Prototyp, der Schweizer Geodaten des Bundes über natürliche Sprache zugänglich macht: eine Chat-Oberfläche, eine interaktive Karte und Konnektoren zu den offiziellen Swisstopo-Diensten. Das Projekt entsteht im Rahmen der Strategie Geoinformation Schweiz (SGS).",
+    "builtByTitle": "Entwickelt von",
+    "builtBy": {
+      "ageospatial": "Frontend, Webkarte und Swisstopo-API-Konnektoren",
+      "askearth": "LLM-Bereitstellung, Agent- und MCP-Integration, Testframework",
+      "for": "Im Auftrag von swisstopo, finanziert im Rahmen der Strategie Geoinformation Schweiz (SGS)."
+    },
+    "dataSourcesTitle": "Datenquellen",
+    "dataSources": {
+      "geoadmin": "Öffentliche REST-Dienste der Geoinformationsplattform des Bundes (geo.admin.ch)"
+    },
+    "projectTitle": "Projekt",
+    "github": "Quellcode auf GitHub",
+    "license": "Open Source, BSD-3-Clause-Lizenz",
+    "disclaimer": "Prototyp – nicht für den operativen Gebrauch. Inhalte und Funktionalität können sich während der Prototypphase jederzeit ändern."
+  }
+}
