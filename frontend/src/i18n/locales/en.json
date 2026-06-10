@@ -14,7 +14,8 @@
   "panel": {
     "search": "Search",
     "catalog": "Catalog",
-    "layers": "Layers"
+    "layers": "Layers",
+    "close": "Collapse panel"
   },
   "search": {
     "placeholder": "Search for a place or dataset …",
@@ -65,5 +66,14 @@
   "legend": {
     "loading": "Loading legend …",
     "error": "The legend could not be loaded."
+  },
+  "rail": {
+    "search": "Search",
+    "maps": "Displayed maps",
+    "catalog": "Geocatalog",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "About the project",
+    "language": "Choose language"
   }
 }

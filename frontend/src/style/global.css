@@ -22,11 +22,38 @@ sgs-app {
 
 sgs-app .content {
   display: grid;
-  grid-template-columns: var(--chat-width, 26rem) auto 1fr;
+  grid-template-columns: 3.5rem auto 1fr;
   min-height: 0;
 }
 
-sgs-app sgs-chat-panel {
+sgs-app .content > sgs-nav-rail {
+  grid-column: 1;
+}
+
+sgs-app .content > sgs-flyout {
+  grid-column: 2;
+}
+
+/* The map always occupies the last column, flyout open or not. */
+sgs-app .content > sgs-map {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+/* Flyout host sizing belongs to the shell grid (single source of truth). */
+sgs-app sgs-flyout {
+  width: 26rem;
+  max-width: calc(100vw - 3.5rem);
+  min-height: 0;
+}
+
+sgs-app sgs-flyout[wide] {
+  width: 30rem;
+}
+
+sgs-app .sgs-panel-pad {
+  padding: 1rem;
+  overflow-y: auto;
   min-height: 0;
 }
 

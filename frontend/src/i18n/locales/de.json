@@ -14,7 +14,8 @@
   "panel": {
     "search": "Suche",
     "catalog": "Katalog",
-    "layers": "Ebenen"
+    "layers": "Ebenen",
+    "close": "Panel einklappen"
   },
   "search": {
     "placeholder": "Ort oder Datensatz suchen …",
@@ -65,5 +66,14 @@
   "legend": {
     "loading": "Legende wird geladen …",
     "error": "Legende konnte nicht geladen werden."
+  },
+  "rail": {
+    "search": "Suche",
+    "maps": "Dargestellte Karten",
+    "catalog": "Geokatalog",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "Über das Projekt",
+    "language": "Sprache wählen"
   }
 }

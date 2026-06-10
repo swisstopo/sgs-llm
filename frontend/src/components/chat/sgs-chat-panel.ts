@@ -7,30 +7,17 @@ import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
 import './sgs-chat-message';
 import './sgs-composer';
-import './sgs-connection-badge';
 
-/** Chat column: header with connection badge, message list, composer. */
+/** Chat panel body: message list + composer (title/badge live in the flyout header). */
 @customElement('sgs-chat-panel')
 export class SgsChatPanel extends LitElement {
   static override styles = css`
     :host {
       display: grid;
-      grid-template-rows: auto 1fr auto;
+      grid-template-rows: 1fr auto;
       height: 100%;
       min-height: 0;
       background: var(--sgc-color-bg--grey, #f0f2f4);
-      border-right: 1px solid var(--sgc-color-border, #d5dbe0);
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.625rem 1rem;
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
-      background: var(--sgc-color-bg--white, #ffffff);
-      font-size: 0.875rem;
-      font-weight: 600;
     }
 
     .messages {
@@ -83,10 +70,6 @@ export class SgsChatPanel extends LitElement {
   override render() {
     const messages = this.messages?.value ?? [];
     return html`
-      <header>
-        <span>${t('chat.title')}</span>
-        <sgs-connection-badge></sgs-connection-badge>
-      </header>
       <div class="messages">
         ${messages.length === 0
           ? html`
