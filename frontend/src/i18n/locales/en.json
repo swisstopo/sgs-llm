@@ -30,7 +30,8 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "zoomTo": "Zoom to layer",
-    "legend": "Legend"
+    "legend": "Legend",
+    "toggle": "Toggle layer visibility"
   },
   "chat": {
     "placeholder": "Ask a question about Swiss geodata …",

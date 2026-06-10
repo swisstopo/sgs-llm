@@ -30,7 +30,8 @@
     "moveUp": "Nach oben",
     "moveDown": "Nach unten",
     "zoomTo": "Hinzoomen",
-    "legend": "Legende"
+    "legend": "Legende",
+    "toggle": "Ebene ein-/ausblenden"
   },
   "chat": {
     "placeholder": "Frage zu Schweizer Geodaten stellen …",
