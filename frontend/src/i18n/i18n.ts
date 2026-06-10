@@ -6,9 +6,10 @@ import de from './locales/de.json';
 import fr from './locales/fr.json';
 import it from './locales/it.json';
 import en from './locales/en.json';
+import rm from './locales/rm.json';
 
 /** Languages supported by the UI and passed to the Swisstopo APIs. */
-export const SUPPORTED_LANGUAGES = ['de', 'fr', 'it', 'en'] as const;
+export const SUPPORTED_LANGUAGES = ['de', 'fr', 'it', 'en', 'rm'] as const;
 export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 const languageChangedSubject = new Subject<AppLanguage>();
@@ -25,6 +26,7 @@ export async function initI18n(): Promise<void> {
       fr: { translation: fr },
       it: { translation: it },
       en: { translation: en },
+      rm: { translation: rm },
     },
     interpolation: { escapeValue: false },
     detection: {

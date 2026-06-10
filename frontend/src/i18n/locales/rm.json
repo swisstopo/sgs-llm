@@ -1,0 +1,140 @@
+{
+  "map": {
+    "basemapGrey": "Charta naziunala (grischa)",
+    "basemapAerial": "Maletgs aerials",
+    "basemapColor": "Charta naziunala (colur)",
+    "zoomIn": "Zoomar pli datier",
+    "zoomOut": "Zoomar pli lontan"
+  },
+  "panel": {
+    "close": "Reducir il panel"
+  },
+  "layers": {
+    "empty": "Anc nagins nivels sin la charta.",
+    "opacity": "Opacitad",
+    "remove": "Allontanar il nivel",
+    "moveUp": "Spustar ensi",
+    "moveDown": "Spustar engiu",
+    "zoomTo": "Zoomar sin il nivel",
+    "legend": "Legenda",
+    "toggle": "Midar la visibladad dal nivel",
+    "info": "Infurmaziuns davart il nivel",
+    "dragToReorder": "Trair per reordinar",
+    "performanceHint": "Blers nivels activs pon retardar la charta.",
+    "dismissHint": "Zuppentar l'indicaziun"
+  },
+  "chat": {
+    "placeholder": "Fai ina dumonda davart geodatas svizras …",
+    "send": "Trametter",
+    "newConversation": "Nova conversaziun",
+    "cancel": "Interrumper",
+    "welcome": "Fai dumondas davart geodatas svizras – per exempel:",
+    "exampleFlood": "Mussa ma ils privels d'inundaziun en il Vallais",
+    "exampleSolar": "Quant adattads èn ils tetgs a Berna per panels solars?",
+    "error": "Ina errur è capitada durant l'elavuraziun.",
+    "cancelled": "Dumonda interrutta.",
+    "addToMap": "Mussar sin la charta",
+    "layerAdded": "Sin la charta",
+    "formatUnsupported": "Quest format da datas n'è anc betg sustegnì.",
+    "featureCount": "{{count}} elements",
+    "connection": {
+      "open": "Connectà",
+      "connecting": "Al connectar …",
+      "closed": "Disconnectà"
+    }
+  },
+  "identify": {
+    "loading": "Interrogaziun dals elements …",
+    "empty": "Nagins elements a quest lieu.",
+    "close": "Serrar"
+  },
+  "legend": {
+    "loading": "Chargiar la legenda …",
+    "error": "La legenda n'ha betg pudì vegnir chargiada."
+  },
+  "rail": {
+    "maps": "Cartas mussadas",
+    "catalog": "Geocatalog",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "Davart il project",
+    "language": "Tscherner la lingua"
+  },
+  "maps": {
+    "background": "Charta da fund",
+    "activeLayers": "Nivels sin la charta"
+  },
+  "geocatalog": {
+    "topic": "Tema:",
+    "filterPlaceholder": "Tschertgar en il geocatalog …",
+    "loading": "Chargiar il geocatalog …",
+    "error": "Il geocatalog n'ha betg pudì vegnir chargià.",
+    "add": "Agiuntar a la charta",
+    "unsupported": "Betg disponibel sco nivel da charta.",
+    "loadFailed": "Il nivel n'ha betg pudì vegnir chargià.",
+    "noMatches": "Nagins resultats en il geocatalog.",
+    "remove": "Allontanar da la charta",
+    "topics": {
+      "ech": "Tema principal",
+      "are": "Svilup dal territori (ARE)",
+      "astra": "Vias (ASTRA)",
+      "bafu": "Ambient (UFAM)",
+      "bav": "Traffic public (UFT)",
+      "bfs": "Statistica (UST)",
+      "blw": "Agricultura (UFAG)",
+      "swisstopo": "swisstopo",
+      "meteoschweiz": "Meteorologia (MeteoSvizra)",
+      "energie": "Energia (UFE)",
+      "verteidigung": "Defensiun (DDPS)",
+      "geol": "Geologia",
+      "inspire": "INSPIRE",
+      "cadastre": "Cataster"
+    }
+  },
+  "feedback": {
+    "category": "Categoria",
+    "categories": {
+      "bug": "Rapport d'errur",
+      "feature": "Giavisch da funcziunalitad",
+      "improvement": "Meglieraziun",
+      "question": "Dumonda",
+      "other": "Auter"
+    },
+    "message": "Messadi",
+    "messagePlaceholder": "Descriva tia dumonda …",
+    "messageRequired": "Endatescha per plaschair in messadi.",
+    "email": "E-mail",
+    "emailHint": "facultativ",
+    "submit": "Trametter",
+    "sending": "Al trametter …",
+    "success": "Grazia fitg per tia resposta!",
+    "error": "La resposta n'ha betg pudì vegnir tramessa. Emprova per plaschair anc ina giada."
+  },
+  "about": {
+    "description": "SGS LLM è in prototip open-source che renda accessiblas las geodatas federalas svizras tras lingua natirala: ina interfatscha da chat, ina charta interactiva e connecturs als servetschs uffizials da swisstopo. Il project vegn sviluppà en il context da la Strategia svizra da geoinfurmaziun (SGS).",
+    "builtByTitle": "Realisà da",
+    "builtBy": {
+      "ageospatial": "Frontend, charta web e connecturs API da swisstopo",
+      "askearth": "Provediment da LLM, integraziun d'agent e MCP, framework da test",
+      "for": "Per swisstopo, finanzià en il context da la Strategia svizra da geoinfurmaziun (SGS)."
+    },
+    "dataSourcesTitle": "Funtaunas da datas",
+    "dataSources": {
+      "geoadmin": "Servetschs REST publics da la plattafurma federala da geoinfurmaziun (geo.admin.ch)"
+    },
+    "projectTitle": "Project",
+    "github": "Code da funtauna sin GitHub",
+    "license": "Open source, licenza BSD-3-Clause",
+    "disclaimer": "Prototip – betg per diever operativ. Il cuntegn e la funcziunalitad pon midar da tut temp durant la fasa da prototip."
+  },
+  "locate": {
+    "show": "Mussar mia posiziun",
+    "hide": "Zuppentar mia posiziun",
+    "outside": "Vossa posiziun sa chatta ordaifer la Svizra.",
+    "denied": "L'access a la posiziun è vegnì refusà.",
+    "unavailable": "La posiziun n'ha betg pudì vegnir determinada."
+  },
+  "dialog": {
+    "close": "Serrar"
+  }
+}

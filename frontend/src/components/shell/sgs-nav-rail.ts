@@ -106,7 +106,7 @@ export class SgsNavRail extends LitElement {
     }
 
     .lang-list.open {
-      max-height: 8rem;
+      max-height: 11rem;
       opacity: 1;
     }
 
