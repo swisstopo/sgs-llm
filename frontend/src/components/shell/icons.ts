@@ -26,7 +26,7 @@ function icon(body: SVGTemplateResult, size = 22): TemplateResult {
 
 // --- Navigation rail ---------------------------------------------------------
 
-export const searchIcon = icon(svg`<circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" />`);
+export const searchIcon = icon(svg`<circle cx="10" cy="10" r="7" /><path d="M15 15l6 6" />`);
 
 export const mapsIcon = icon(
   svg`<path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z" /><path d="M9 4v13.5M15 6.5V20" />`,
@@ -36,10 +36,10 @@ export const catalogIcon = icon(
   svg`<path d="M12 3l9 4.5-9 4.5-9-4.5z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5 12 21l9-4.5" />`,
 );
 
-export const chatIcon = icon(svg`<path d="M4 5h16v11H9l-5 4z" />`);
+export const chatIcon = icon(svg`<path d="M3 4.5h18v12H9l-6 5z" />`);
 
 export const feedbackIcon = icon(
-  svg`<path d="M4 5h16v11H9l-5 4z" /><path d="M12 13.2l-2.1-1.9c-.8-.7-.7-1.9.1-2.4.7-.5 1.6-.3 2 .4.4-.7 1.3-.9 2-.4.8.5.9 1.7.1 2.4z" />`,
+  svg`<path d="M3 4.5h18v12H9l-6 5z" /><path d="M12 13.6l-2.4-2.2c-.9-.8-.8-2.1.1-2.7.8-.5 1.8-.3 2.3.5.5-.8 1.5-1 2.3-.5.9.6 1 1.9.1 2.7z" />`,
 );
 
 export const aboutIcon = icon(
@@ -47,9 +47,11 @@ export const aboutIcon = icon(
 );
 
 // "Translate" glyph (文A). Filled, so it is built directly rather than via
-// the stroked icon() helper. Path from Material Symbols (Apache-2.0).
+// the stroked icon() helper. The viewBox is inset with padding so the solid
+// glyph renders at the same optical size as the outline rail icons.
+// Path from Material Symbols (Apache-2.0).
 export const languageIcon = html`<svg
-  viewBox="0 0 24 24"
+  viewBox="-3.5 -3.5 31 31"
   width="22"
   height="22"
   fill="currentColor"
