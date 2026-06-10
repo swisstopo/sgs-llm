@@ -140,14 +140,27 @@ export class SgsGeocatalog extends LitElement {
       color: var(--sgc-color-text, #1c2834);
     }
 
-    .add:hover:not(:disabled) {
+    .add:hover {
       border-color: var(--sgc-color-brand, #d8232a);
       color: var(--sgc-color-brand, #d8232a);
     }
 
-    .add:disabled {
-      color: var(--sgc-color-text--disabled, #98a6b3);
-      cursor: default;
+    .add[data-added] {
+      border-color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand, #d8232a);
+    }
+
+    /* Added: show ✓, swap to ✕ on hover to signal removal. */
+    .add .x {
+      display: none;
+    }
+
+    .add[data-added]:hover .check {
+      display: none;
+    }
+
+    .add[data-added]:hover .x {
+      display: block;
     }
 
     .notice {
@@ -254,12 +267,17 @@ export class SgsGeocatalog extends LitElement {
           <span class="label" title=${node.label} ?data-added=${added}>${node.label}</span>
           <button
             class="add"
-            ?disabled=${added}
-            title=${added ? t('geocatalog.added') : t('geocatalog.add')}
-            aria-label=${added ? t('geocatalog.added') : t('geocatalog.add')}
-            @click=${() => void this.addLayer(node.layerBodId)}
+            ?data-added=${added}
+            title=${added ? t('geocatalog.remove') : t('geocatalog.add')}
+            aria-label=${added ? t('geocatalog.remove') : t('geocatalog.add')}
+            @click=${() =>
+              added
+                ? this.layerService.removeLayer(node.layerBodId)
+                : void this.addLayer(node.layerBodId)}
           >
-            ${added ? '✓' : '+'}
+            ${added
+              ? html`<span class="check">✓</span><span class="x">✕</span>`
+              : html`<span>+</span>`}
           </button>
         </div>
         ${notice ? html`<p class="notice">${t('geocatalog.unsupported')}</p>` : nothing}

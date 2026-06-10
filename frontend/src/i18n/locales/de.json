@@ -1,7 +1,6 @@
 {
   "app": {
-    "title": "SGS LLM",
-    "subtitle": "Schweizer Geodaten im Dialog"
+    "title": "SGS LLM"
   },
   "map": {
     "basemapGrey": "Landeskarte (grau)",
@@ -82,7 +81,8 @@
     "add": "Zur Karte hinzufügen",
     "added": "Auf der Karte",
     "unsupported": "Nicht als Kartenebene verfügbar.",
-    "noMatches": "Keine Treffer im Geokatalog."
+    "noMatches": "Keine Treffer im Geokatalog.",
+    "remove": "Von der Karte entfernen"
   },
   "feedback": {
     "category": "Kategorie",

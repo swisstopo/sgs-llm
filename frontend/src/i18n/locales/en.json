@@ -1,7 +1,6 @@
 {
   "app": {
-    "title": "SGS LLM",
-    "subtitle": "Swiss geodata in dialogue"
+    "title": "SGS LLM"
   },
   "map": {
     "basemapGrey": "National map (grey)",
@@ -82,7 +81,8 @@
     "add": "Add to map",
     "added": "On the map",
     "unsupported": "Not available as a map layer.",
-    "noMatches": "No matches in the geocatalog."
+    "noMatches": "No matches in the geocatalog.",
+    "remove": "Remove from map"
   },
   "feedback": {
     "category": "Category",
