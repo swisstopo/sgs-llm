@@ -9,7 +9,7 @@
  * stretches all delays 4x; a `cancel` event stops the running scenario.
  */
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -17,7 +17,14 @@ import { routeScenario } from './scenarios/index.mjs';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DATA_DIR = fileURLToPath(new URL('./data', import.meta.url));
+const FEEDBACK_LOG = fileURLToPath(new URL('./feedback.log', import.meta.url));
 const SUPPORTED_LANGS = new Set(['de', 'fr', 'it', 'en', 'rm']);
+const FEEDBACK_CATEGORIES = new Set(['bug', 'feature', 'improvement', 'question', 'other']);
+const FEEDBACK_CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'POST, OPTIONS',
+  'access-control-allow-headers': 'content-type',
+};
 
 const CANCEL_MESSAGES = {
   de: 'Anfrage abgebrochen.',
@@ -28,6 +35,10 @@ const CANCEL_MESSAGES = {
 
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
+  if (url.pathname === '/feedback') {
+    handleFeedback(req, res);
+    return;
+  }
   if (req.method !== 'GET' || !url.pathname.startsWith('/data/')) {
     res.writeHead(404).end();
     return;
@@ -49,6 +60,46 @@ const httpServer = createServer(async (req, res) => {
     res.writeHead(404, { 'access-control-allow-origin': '*' }).end();
   }
 });
+
+/** Receives feedback form submissions and appends them to a JSONL log. */
+function handleFeedback(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, FEEDBACK_CORS).end();
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.writeHead(405, FEEDBACK_CORS).end();
+    return;
+  }
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk;
+    if (body.length > 32_768) {
+      req.destroy();
+    }
+  });
+  req.on('end', async () => {
+    try {
+      const data = JSON.parse(body);
+      const valid =
+        FEEDBACK_CATEGORIES.has(data.category) &&
+        typeof data.message === 'string' &&
+        data.message.trim().length > 0;
+      if (!valid) {
+        res.writeHead(400, FEEDBACK_CORS).end();
+        return;
+      }
+      await appendFile(
+        FEEDBACK_LOG,
+        JSON.stringify({ ts: new Date().toISOString(), ...data }) + '\n',
+      );
+      console.log(`[${new Date().toISOString()}] feedback (${data.category}) received`);
+      res.writeHead(204, FEEDBACK_CORS).end();
+    } catch {
+      res.writeHead(400, FEEDBACK_CORS).end();
+    }
+  });
+}
 
 const wss = new WebSocketServer({ server: httpServer, path: '/ws/v1' });
 

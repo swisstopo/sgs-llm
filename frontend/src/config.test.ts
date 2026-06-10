@@ -17,4 +17,11 @@ describe('mergeConfig', () => {
     expect(mergeConfig({ agentWsUrl: '' }).agentWsUrl).toBe('ws://localhost:8787/ws/v1');
     expect(mergeConfig({ agentWsUrl: 42 }).agentWsUrl).toBe('ws://localhost:8787/ws/v1');
   });
+
+  it('merges feedbackUrl with default fallback', () => {
+    expect(mergeConfig({ feedbackUrl: 'https://agent.example.ch/feedback' }).feedbackUrl).toBe(
+      'https://agent.example.ch/feedback',
+    );
+    expect(mergeConfig({}).feedbackUrl).toBe('http://localhost:8787/feedback');
+  });
 });

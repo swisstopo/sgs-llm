@@ -90,5 +90,24 @@
     "added": "On the map",
     "unsupported": "Not available as a map layer.",
     "noMatches": "No matches in the geocatalog."
+  },
+  "feedback": {
+    "category": "Category",
+    "categories": {
+      "bug": "Bug report",
+      "feature": "Feature request",
+      "improvement": "Improvement",
+      "question": "Question",
+      "other": "Other"
+    },
+    "message": "Message",
+    "messagePlaceholder": "Describe your request …",
+    "messageRequired": "Please enter a message.",
+    "email": "Email",
+    "emailHint": "optional",
+    "submit": "Submit",
+    "sending": "Sending …",
+    "success": "Thank you for your feedback!",
+    "error": "The feedback could not be sent. Please try again."
   }
 }

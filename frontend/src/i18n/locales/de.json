@@ -90,5 +90,24 @@
     "added": "Auf der Karte",
     "unsupported": "Nicht als Kartenebene verfügbar.",
     "noMatches": "Keine Treffer im Geokatalog."
+  },
+  "feedback": {
+    "category": "Kategorie",
+    "categories": {
+      "bug": "Fehlermeldung",
+      "feature": "Funktionswunsch",
+      "improvement": "Verbesserung",
+      "question": "Frage",
+      "other": "Anderes"
+    },
+    "message": "Nachricht",
+    "messagePlaceholder": "Beschreiben Sie Ihr Anliegen …",
+    "messageRequired": "Bitte geben Sie eine Nachricht ein.",
+    "email": "E-Mail",
+    "emailHint": "optional",
+    "submit": "Senden",
+    "sending": "Wird gesendet …",
+    "success": "Vielen Dank für Ihr Feedback!",
+    "error": "Das Feedback konnte nicht gesendet werden. Bitte versuchen Sie es erneut."
   }
 }
