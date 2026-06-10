@@ -37,7 +37,7 @@ Two tracks make the app dynamic before the agent backend exists:
 | --- | --- |
 | Lit 3 web components | Consistency with swissgeol-viewer-suite (the swissgeol.ch flagship); first-class fit with the shared design system |
 | OpenLayers | The 2D engine proven in swissgeol-assets-suite with Swisstopo services |
-| @swissgeol/ui-core | The SwissGeo design system (Stencil web components, `--sgc-*` CSS variables, Inter font); brand override in `frontend/src/style/theme.css` |
+| @swissgeol/ui-core | Provides the SwissGeo family's Inter font and design-system conventions. Our palette is defined as `--sgc-*` tokens in `frontend/src/style/theme.css` (single source of truth; components reference the vars without per-rule fallbacks) |
 | RxJS services + @lit/context | Service classes own state as `BehaviorSubject`s, provided via context; `ObservableController` bridges emissions into Lit re-renders |
 | SwissGeo-style shell | Left icon rail (search, displayed maps, geocatalog, chat, feedback, about) opening one flyout panel at a time; language selector at the rail bottom — mirrors viewer.swissgeo |
 | Official geocatalog | Topic list + per-topic catalog tree from the Swisstopo CatalogServer API (cached per topic and language); per-layer presentation overrides in `layers/layers_wmts.json5` |
