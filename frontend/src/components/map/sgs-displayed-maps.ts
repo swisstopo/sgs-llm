@@ -9,6 +9,7 @@ import type { LayerService, MapLayerState } from '../../services/LayerService';
 import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
 import { layerRowStyles } from './layerRowStyles';
+import { panelBaseStyles } from '../panelStyles';
 import { eyeClosedIcon, eyeOpenIcon } from '../shell/icons';
 import './sgs-layer-item';
 import './sgs-legend-dialog';
@@ -26,15 +27,9 @@ const BASEMAP_LABEL_KEYS: Record<BasemapId, string> = {
 @customElement('sgs-displayed-maps')
 export class SgsDisplayedMaps extends LitElement {
   static override styles = [
+    panelBaseStyles,
     layerRowStyles,
     css`
-      :host {
-        display: block;
-        padding: 1rem;
-        overflow-y: auto;
-        min-height: 0;
-      }
-
       img.thumb,
       .thumb-placeholder {
         flex: none;

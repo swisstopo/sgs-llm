@@ -51,12 +51,6 @@ sgs-app sgs-flyout[wide] {
   width: 30rem;
 }
 
-sgs-app .sgs-panel-pad {
-  padding: 1rem;
-  overflow-y: auto;
-  min-height: 0;
-}
-
 /* <sgs-map> renders in light DOM so ol/ol.css can style the map controls. */
 sgs-map {
   display: block;

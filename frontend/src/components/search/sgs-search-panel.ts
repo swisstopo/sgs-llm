@@ -8,6 +8,7 @@ import type { MapService } from '../../services/MapService';
 import type { LayerSearchResult, LocationSearchResult } from '../../swisstopo/searchApi';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
+import { panelBaseStyles } from '../panelStyles';
 
 const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 300;
@@ -17,103 +18,102 @@ const MAX_LAYERS = 10;
 /** Combined location + layer search against the Swisstopo SearchServer. */
 @customElement('sgs-search-panel')
 export class SgsSearchPanel extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-    }
+  static override styles = [
+    panelBaseStyles,
+    css`
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        padding: 0.5rem 0.625rem;
+        border: 1px solid var(--sgc-color-border);
+        border-radius: 0.25rem;
+      }
 
-    input {
-      width: 100%;
-      box-sizing: border-box;
-      font: inherit;
-      padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border);
-      border-radius: 0.25rem;
-    }
+      input:focus {
+        outline: 2px solid var(--sgc-color-brand);
+        outline-offset: -1px;
+      }
 
-    input:focus {
-      outline: 2px solid var(--sgc-color-brand);
-      outline-offset: -1px;
-    }
+      h3 {
+        margin: 0.75rem 0 0.25rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--sgc-color-text--secondary);
+      }
 
-    h3 {
-      margin: 0.75rem 0 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--sgc-color-text--secondary);
-    }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
 
-    ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
+      li button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: none;
+        background: none;
+        font: inherit;
+        font-size: 0.875rem;
+        padding: 0.375rem 0.5rem;
+        border-radius: 0.25rem;
+        cursor: pointer;
+      }
 
-    li button {
-      display: block;
-      width: 100%;
-      text-align: left;
-      border: none;
-      background: none;
-      font: inherit;
-      font-size: 0.875rem;
-      padding: 0.375rem 0.5rem;
-      border-radius: 0.25rem;
-      cursor: pointer;
-    }
+      li button:hover:not(:disabled) {
+        background: var(--sgc-color-bg--grey);
+      }
 
-    li button:hover:not(:disabled) {
-      background: var(--sgc-color-bg--grey);
-    }
+      li button:disabled {
+        cursor: default;
+        color: var(--sgc-color-text--disabled);
+      }
 
-    li button:disabled {
-      cursor: default;
-      color: var(--sgc-color-text--disabled);
-    }
+      .detail {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--sgc-color-text--secondary);
+      }
 
-    .detail {
-      display: block;
-      font-size: 0.75rem;
-      color: var(--sgc-color-text--secondary);
-    }
+      .empty {
+        margin: 0.75rem 0 0;
+        font-size: 0.875rem;
+        color: var(--sgc-color-text--secondary);
+      }
 
-    .empty {
-      margin: 0.75rem 0 0;
-      font-size: 0.875rem;
-      color: var(--sgc-color-text--secondary);
-    }
+      .popular {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.375rem;
+        margin-top: 0.75rem;
+      }
 
-    .popular {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.375rem;
-      margin-top: 0.75rem;
-    }
+      .popular-label {
+        font-size: 0.8125rem;
+        color: var(--sgc-color-text--secondary);
+        margin-right: 0.125rem;
+      }
 
-    .popular-label {
-      font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary);
-      margin-right: 0.125rem;
-    }
+      .chip {
+        font: inherit;
+        font-size: 0.8125rem;
+        padding: 0.25rem 0.625rem;
+        border: 1px solid var(--sgc-color-border);
+        border-radius: 999px;
+        background: var(--sgc-color-bg--white);
+        cursor: pointer;
+      }
 
-    .chip {
-      font: inherit;
-      font-size: 0.8125rem;
-      padding: 0.25rem 0.625rem;
-      border: 1px solid var(--sgc-color-border);
-      border-radius: 999px;
-      background: var(--sgc-color-bg--white);
-      cursor: pointer;
-    }
-
-    .chip:hover {
-      border-color: var(--sgc-color-brand);
-      color: var(--sgc-color-brand);
-    }
-  `;
+      .chip:hover {
+        border-color: var(--sgc-color-brand);
+        color: var(--sgc-color-brand);
+      }
+    `,
+  ];
 
   @consume({ context: catalogServiceContext })
   private catalogService!: CatalogService;

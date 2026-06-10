@@ -9,6 +9,7 @@ import { filterCatalogTree } from '../../swisstopo/catalogApi';
 import type { CatalogFolderNode, CatalogLayerNode, CatalogNode } from '../../swisstopo/catalogApi';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
+import { panelBaseStyles } from '../panelStyles';
 
 const DEFAULT_TOPIC = 'ech';
 
@@ -18,157 +19,156 @@ const DEFAULT_TOPIC = 'ech';
  */
 @customElement('sgs-geocatalog')
 export class SgsGeocatalog extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      padding: 1rem;
-      overflow-y: auto;
-      min-height: 0;
-      font-size: 0.875rem;
-    }
+  static override styles = [
+    panelBaseStyles,
+    css`
+      :host {
+        font-size: 0.875rem;
+      }
 
-    .topic-row {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.625rem;
-    }
+      .topic-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.625rem;
+      }
 
-    .topic-row label {
-      color: var(--sgc-color-text--secondary);
-    }
+      .topic-row label {
+        color: var(--sgc-color-text--secondary);
+      }
 
-    select {
-      flex: 1;
-      font: inherit;
-      padding: 0.375rem 0.5rem;
-      border: 1px solid var(--sgc-color-border);
-      border-radius: 0.25rem;
-      background: var(--sgc-color-bg--white);
-    }
+      select {
+        flex: 1;
+        font: inherit;
+        padding: 0.375rem 0.5rem;
+        border: 1px solid var(--sgc-color-border);
+        border-radius: 0.25rem;
+        background: var(--sgc-color-bg--white);
+      }
 
-    input[type='search'] {
-      width: 100%;
-      box-sizing: border-box;
-      font: inherit;
-      padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border);
-      border-radius: 0.25rem;
-      margin-bottom: 0.625rem;
-    }
+      input[type='search'] {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        padding: 0.5rem 0.625rem;
+        border: 1px solid var(--sgc-color-border);
+        border-radius: 0.25rem;
+        margin-bottom: 0.625rem;
+      }
 
-    input[type='search']:focus,
-    select:focus {
-      outline: 2px solid var(--sgc-color-brand);
-      outline-offset: -1px;
-    }
+      input[type='search']:focus,
+      select:focus {
+        outline: 2px solid var(--sgc-color-brand);
+        outline-offset: -1px;
+      }
 
-    .status {
-      color: var(--sgc-color-text--secondary);
-      margin: 0.5rem 0 0;
-    }
+      .status {
+        color: var(--sgc-color-text--secondary);
+        margin: 0.5rem 0 0;
+      }
 
-    ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
 
-    ul ul {
-      padding-left: 1rem;
-    }
+      ul ul {
+        padding-left: 1rem;
+      }
 
-    .folder > button {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      width: 100%;
-      border: none;
-      background: none;
-      font: inherit;
-      text-align: left;
-      padding: 0.3125rem 0.25rem;
-      border-radius: 0.25rem;
-      cursor: pointer;
-    }
+      .folder > button {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        width: 100%;
+        border: none;
+        background: none;
+        font: inherit;
+        text-align: left;
+        padding: 0.3125rem 0.25rem;
+        border-radius: 0.25rem;
+        cursor: pointer;
+      }
 
-    .folder > button:hover {
-      background: var(--sgc-color-bg--grey);
-    }
+      .folder > button:hover {
+        background: var(--sgc-color-bg--grey);
+      }
 
-    .twisty {
-      flex: none;
-      width: 0.875rem;
-      color: var(--sgc-color-text--secondary);
-      transition: transform 0.12s;
-    }
+      .twisty {
+        flex: none;
+        width: 0.875rem;
+        color: var(--sgc-color-text--secondary);
+        transition: transform 0.12s;
+      }
 
-    .twisty[data-open] {
-      transform: rotate(90deg);
-    }
+      .twisty[data-open] {
+        transform: rotate(90deg);
+      }
 
-    .leaf {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.25rem 0.25rem 0.25rem 1.25rem;
-    }
+      .leaf {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.25rem 0.25rem 0.25rem 1.25rem;
+      }
 
-    .leaf .label {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+      .leaf .label {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
 
-    .leaf .label[data-added] {
-      color: var(--sgc-color-text--disabled);
-    }
+      .leaf .label[data-added] {
+        color: var(--sgc-color-text--disabled);
+      }
 
-    .add {
-      flex: none;
-      display: grid;
-      place-items: center;
-      width: 1.5rem;
-      height: 1.5rem;
-      border: 1px solid var(--sgc-color-border);
-      border-radius: 0.25rem;
-      background: var(--sgc-color-bg--white);
-      font-size: 1rem;
-      line-height: 1;
-      cursor: pointer;
-      color: var(--sgc-color-text);
-    }
+      .add {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        border: 1px solid var(--sgc-color-border);
+        border-radius: 0.25rem;
+        background: var(--sgc-color-bg--white);
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+        color: var(--sgc-color-text);
+      }
 
-    .add:hover {
-      border-color: var(--sgc-color-brand);
-      color: var(--sgc-color-brand);
-    }
+      .add:hover {
+        border-color: var(--sgc-color-brand);
+        color: var(--sgc-color-brand);
+      }
 
-    .add[data-added] {
-      border-color: var(--sgc-color-brand);
-      color: var(--sgc-color-brand);
-    }
+      .add[data-added] {
+        border-color: var(--sgc-color-brand);
+        color: var(--sgc-color-brand);
+      }
 
-    /* Added: show ✓, swap to ✕ on hover to signal removal. */
-    .add .x {
-      display: none;
-    }
+      /* Added: show ✓, swap to ✕ on hover to signal removal. */
+      .add .x {
+        display: none;
+      }
 
-    .add[data-added]:hover .check {
-      display: none;
-    }
+      .add[data-added]:hover .check {
+        display: none;
+      }
 
-    .add[data-added]:hover .x {
-      display: block;
-    }
+      .add[data-added]:hover .x {
+        display: block;
+      }
 
-    .notice {
-      font-size: 0.75rem;
-      color: var(--sgc-color-brand);
-      padding: 0 0.25rem 0.25rem 1.25rem;
-    }
-  `;
+      .notice {
+        font-size: 0.75rem;
+        color: var(--sgc-color-brand);
+        padding: 0 0.25rem 0.25rem 1.25rem;
+      }
+    `,
+  ];
 
   @consume({ context: catalogServiceContext })
   private catalogService!: CatalogService;

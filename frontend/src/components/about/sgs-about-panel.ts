@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
+import { panelBaseStyles } from '../panelStyles';
 
 const REPO_URL = 'https://github.com/swisstopo/sgs-llm';
 const GEOADMIN_API_URL = 'https://api3.geo.admin.ch';
@@ -11,95 +12,94 @@ const ASKEARTH_URL = 'https://ask.earth';
 /** "About the project" panel: description, partners, sources, disclaimer. */
 @customElement('sgs-about-panel')
 export class SgsAboutPanel extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      padding: 1rem;
-      overflow-y: auto;
-      min-height: 0;
-      font-size: 0.875rem;
-      line-height: 1.55;
-    }
+  static override styles = [
+    panelBaseStyles,
+    css`
+      :host {
+        font-size: 0.875rem;
+        line-height: 1.55;
+      }
 
-    .identity {
-      display: flex;
-      align-items: center;
-      gap: 1.25rem;
-      flex-wrap: wrap;
-      padding-bottom: 0.875rem;
-      margin-bottom: 0.875rem;
-      border-bottom: 1px solid var(--sgc-color-border);
-    }
+      .identity {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+        padding-bottom: 0.875rem;
+        margin-bottom: 0.875rem;
+        border-bottom: 1px solid var(--sgc-color-border);
+      }
 
-    .identity img {
-      height: 2.5rem;
-      width: auto;
-      max-width: 45%;
-      object-fit: contain;
-    }
+      .identity img {
+        height: 2.5rem;
+        width: auto;
+        max-width: 45%;
+        object-fit: contain;
+      }
 
-    p {
-      margin: 0 0 0.75rem;
-    }
+      p {
+        margin: 0 0 0.75rem;
+      }
 
-    h3 {
-      margin: 1.25rem 0 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--sgc-color-text--secondary);
-    }
+      h3 {
+        margin: 1.25rem 0 0.375rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--sgc-color-text--secondary);
+      }
 
-    ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 0.375rem;
-    }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.375rem;
+      }
 
-    .builder {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
+      .builder {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
 
-    .builder img {
-      flex: none;
-      height: 1.75rem;
-      width: auto;
-      max-width: 6rem;
-      object-fit: contain;
-    }
+      .builder img {
+        flex: none;
+        height: 1.75rem;
+        width: auto;
+        max-width: 6rem;
+        object-fit: contain;
+      }
 
-    .builder .text {
-      min-width: 0;
-    }
+      .builder .text {
+        min-width: 0;
+      }
 
-    a {
-      color: var(--sgc-color-brand);
-      text-decoration: none;
-    }
+      a {
+        color: var(--sgc-color-brand);
+        text-decoration: none;
+      }
 
-    a:hover {
-      text-decoration: underline;
-    }
+      a:hover {
+        text-decoration: underline;
+      }
 
-    .role {
-      display: block;
-      font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary);
-    }
+      .role {
+        display: block;
+        font-size: 0.8125rem;
+        color: var(--sgc-color-text--secondary);
+      }
 
-    .disclaimer {
-      margin-top: 1.25rem;
-      padding-top: 0.875rem;
-      border-top: 1px solid var(--sgc-color-border);
-      font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary);
-    }
-  `;
+      .disclaimer {
+        margin-top: 1.25rem;
+        padding-top: 0.875rem;
+        border-top: 1px solid var(--sgc-color-border);
+        font-size: 0.8125rem;
+        color: var(--sgc-color-text--secondary);
+      }
+    `,
+  ];
 
   private readonly _language = new ObservableController(this, languageChanged$);
 

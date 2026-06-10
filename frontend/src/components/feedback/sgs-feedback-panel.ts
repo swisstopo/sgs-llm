@@ -5,97 +5,97 @@ import { FEEDBACK_CATEGORIES, submitFeedback } from '../../feedback/submitFeedba
 import type { FeedbackCategory } from '../../feedback/submitFeedback';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
+import { panelBaseStyles } from '../panelStyles';
 
 type FormState = 'idle' | 'sending' | 'success' | 'error';
 
 /** Feedback form panel (category, message, optional email). */
 @customElement('sgs-feedback-panel')
 export class SgsFeedbackPanel extends LitElement {
-  static override styles = css`
-    :host {
-      display: block;
-      padding: 1rem;
-      overflow-y: auto;
-      min-height: 0;
-      font-size: 0.875rem;
-    }
+  static override styles = [
+    panelBaseStyles,
+    css`
+      :host {
+        font-size: 0.875rem;
+      }
 
-    label {
-      display: block;
-      font-weight: 600;
-      margin: 0.875rem 0 0.25rem;
-    }
+      label {
+        display: block;
+        font-weight: 600;
+        margin: 0.875rem 0 0.25rem;
+      }
 
-    label:first-of-type {
-      margin-top: 0;
-    }
+      label:first-of-type {
+        margin-top: 0;
+      }
 
-    .hint {
-      font-weight: 400;
-      color: var(--sgc-color-text--secondary);
-    }
+      .hint {
+        font-weight: 400;
+        color: var(--sgc-color-text--secondary);
+      }
 
-    select,
-    textarea,
-    input {
-      width: 100%;
-      box-sizing: border-box;
-      font: inherit;
-      padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border);
-      border-radius: 0.25rem;
-      background: var(--sgc-color-bg--white);
-    }
+      select,
+      textarea,
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        padding: 0.5rem 0.625rem;
+        border: 1px solid var(--sgc-color-border);
+        border-radius: 0.25rem;
+        background: var(--sgc-color-bg--white);
+      }
 
-    select:focus,
-    textarea:focus,
-    input:focus {
-      outline: 2px solid var(--sgc-color-brand);
-      outline-offset: -1px;
-    }
+      select:focus,
+      textarea:focus,
+      input:focus {
+        outline: 2px solid var(--sgc-color-brand);
+        outline-offset: -1px;
+      }
 
-    textarea {
-      min-height: 9rem;
-      resize: vertical;
-    }
+      textarea {
+        min-height: 9rem;
+        resize: vertical;
+      }
 
-    .actions {
-      margin-top: 1rem;
-    }
+      .actions {
+        margin-top: 1rem;
+      }
 
-    button.submit {
-      font: inherit;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
-      border: 1px solid var(--sgc-color-brand);
-      background: var(--sgc-color-brand);
-      color: #fff;
-      cursor: pointer;
-    }
+      button.submit {
+        font: inherit;
+        padding: 0.5rem 1rem;
+        border-radius: 0.375rem;
+        border: 1px solid var(--sgc-color-brand);
+        background: var(--sgc-color-brand);
+        color: #fff;
+        cursor: pointer;
+      }
 
-    button.submit:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
+      button.submit:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
 
-    .error-note {
-      color: var(--sgc-color-brand);
-      margin: 0.5rem 0 0;
-    }
+      .error-note {
+        color: var(--sgc-color-brand);
+        margin: 0.5rem 0 0;
+      }
 
-    .success {
-      display: grid;
-      gap: 0.5rem;
-      padding: 1.5rem 0;
-      text-align: center;
-      color: var(--sgc-color-text);
-    }
+      .success {
+        display: grid;
+        gap: 0.5rem;
+        padding: 1.5rem 0;
+        text-align: center;
+        color: var(--sgc-color-text);
+      }
 
-    .success .check {
-      font-size: 2rem;
-      color: #2e7d32;
-    }
-  `;
+      .success .check {
+        font-size: 2rem;
+        color: #2e7d32;
+      }
+    `,
+  ];
 
   @state() private formState: FormState = 'idle';
   @state() private validationError = false;

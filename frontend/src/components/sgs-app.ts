@@ -113,7 +113,7 @@ export class SgsApp extends LitElement {
   private renderPanel(panel: PanelId) {
     switch (panel) {
       case 'search':
-        return html`<div class="sgs-panel-pad"><sgs-search-panel></sgs-search-panel></div>`;
+        return html`<sgs-search-panel></sgs-search-panel>`;
       case 'chat':
         return html`<sgs-chat-panel></sgs-chat-panel>`;
       case 'maps':
