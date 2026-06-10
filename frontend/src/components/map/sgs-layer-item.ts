@@ -10,7 +10,6 @@ import {
   chevronUpIcon,
   eyeClosedIcon,
   eyeOpenIcon,
-  legendIcon,
   removeIcon,
   zoomToIcon,
 } from '../shell/icons';
@@ -44,20 +43,9 @@ export class SgsLayerItem extends LitElement {
   @property({ type: Boolean }) isFirst = false;
   @property({ type: Boolean }) isLast = false;
 
-  private showLegend(): void {
-    this.dispatchEvent(
-      new CustomEvent('sgs-show-legend', {
-        detail: { layerId: this.layer.id, label: this.layer.label },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
   override render() {
     const { layer } = this;
     const canZoom = this.layerService.getZoomBBox(layer.id) !== undefined;
-    const hasLegend = layer.kind === 'official' && layer.config.hasLegend;
     return html`
       <div class="row" ?data-hidden=${!layer.visible}>
         <button
@@ -79,18 +67,6 @@ export class SgsLayerItem extends LitElement {
                 @click=${() => this.layerService.zoomToLayer(layer.id)}
               >
                 ${zoomToIcon}
-              </button>
-            `
-          : nothing}
-        ${hasLegend
-          ? html`
-              <button
-                class="icon-btn"
-                title=${t('layers.legend')}
-                aria-label=${t('layers.legend')}
-                @click=${() => this.showLegend()}
-              >
-                ${legendIcon}
               </button>
             `
           : nothing}

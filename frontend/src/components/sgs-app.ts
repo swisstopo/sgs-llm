@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { cache } from 'lit/directives/cache.js';
+import { keyed } from 'lit/directives/keyed.js';
 import { provide } from '@lit/context';
 import { ObservableController } from '../lib/ObservableController';
 import { languageChanged$, t } from '../i18n/i18n';
@@ -20,6 +20,7 @@ import { MapService } from '../services/MapService';
 import { UiService } from '../services/UiService';
 import type { PanelId } from '../services/UiService';
 import { getRuntimeConfig } from '../config';
+import { plusIcon } from './shell/icons';
 import type { AddLayerEventDetail } from './chat/sgs-layer-result-card';
 import type { SgsChatPanel } from './chat/sgs-chat-panel';
 import './sgs-header';
@@ -32,6 +33,7 @@ import './catalog/sgs-geocatalog';
 import './feedback/sgs-feedback-panel';
 import './map/sgs-displayed-maps';
 import './map/sgs-map';
+import './map/sgs-map-legend';
 
 const PANEL_TITLE_KEYS: Record<PanelId, string> = {
   chat: 'rail.chat',
@@ -75,6 +77,10 @@ export class SgsApp extends LitElement {
 
   private activePanel?: ObservableController<PanelId | null>;
 
+  // Last panel shown; kept while closing so its content stays visible during
+  // the slide-out, and so switching cross-fades from the previous panel.
+  private _displayedPanel: PanelId | null = null;
+
   // Re-render the whole shell on language change.
   private readonly _language = new ObservableController(this, languageChanged$);
 
@@ -89,21 +95,42 @@ export class SgsApp extends LitElement {
 
   override render() {
     const active = this.activePanel?.value ?? this.uiService.activePanel;
+    if (active) {
+      this._displayedPanel = active;
+    }
+    const shown = this._displayedPanel;
     return html`
       <sgs-header></sgs-header>
       <div class="content" @sgs-add-layer=${this.onAddDataLayer}>
         <sgs-nav-rail></sgs-nav-rail>
-        ${active
-          ? html`
-              <sgs-flyout heading=${t(PANEL_TITLE_KEYS[active])}>
-                ${active === 'chat'
-                  ? html`<sgs-connection-badge slot="header-extra"></sgs-connection-badge>`
-                  : nothing}
-                ${cache(this.renderPanel(active))}
-              </sgs-flyout>
-            `
-          : nothing}
         <sgs-map></sgs-map>
+        <sgs-map-legend></sgs-map-legend>
+        <div class="flyout-layer ${active ? 'open' : ''}">
+          ${shown
+            ? html`
+                <sgs-flyout heading=${t(PANEL_TITLE_KEYS[shown])}>
+                  ${shown === 'chat'
+                    ? html`
+                        <sgs-connection-badge slot="header-extra"></sgs-connection-badge>
+                        <button
+                          class="chat-new"
+                          slot="header-extra"
+                          title=${t('chat.newConversation')}
+                          aria-label=${t('chat.newConversation')}
+                          @click=${() => this.chatService.clear()}
+                        >
+                          ${plusIcon}
+                        </button>
+                      `
+                    : nothing}
+                  ${keyed(
+                    shown,
+                    html`<div class="flyout-content">${this.renderPanel(shown)}</div>`,
+                  )}
+                </sgs-flyout>
+              `
+            : nothing}
+        </div>
       </div>
     `;
   }

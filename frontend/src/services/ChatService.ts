@@ -102,6 +102,15 @@ export class ChatService {
     this.client.send({ type: 'cancel', id: active.id });
   }
 
+  /** Resets the conversation, stopping any in-flight exchange. */
+  clear(): void {
+    if (this.busy) {
+      this.cancel();
+    }
+    this.messagesSubject.next([]);
+    this.busySubject.next(false);
+  }
+
   private activeAssistantMessage(): AssistantChatMessage | undefined {
     return this.messages.find(
       (message): message is AssistantChatMessage =>

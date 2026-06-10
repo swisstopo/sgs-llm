@@ -15,4 +15,9 @@
   --sgc-color-border--subtle: #eef1f3;
   --sgc-color-bg--white: #ffffff;
   --sgc-color-bg--grey: #f0f2f4;
+
+  /* Motion: shared duration/easing for menu open-close animations. */
+  --sgs-motion-duration: 220ms;
+  --sgs-motion-duration--fast: 160ms;
+  --sgs-motion-ease: cubic-bezier(0.2, 0, 0, 1); /* decelerate */
 }
