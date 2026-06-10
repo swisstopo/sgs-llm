@@ -31,15 +31,18 @@ A live POC instance (frontend + mock-agent) is deployed on AWS at
 
 ## Features
 
-- **SwissGeo-style shell** — a left icon rail opening one flyout panel at a time:
+- **SwissGeo-style shell** — a left icon rail; clicking an icon slides its flyout panel in as
+  an animated overlay over the map (one open at a time):
   - **Chat** — natural-language conversation with streamed tool-progress, sanitized markdown
-    answers, and data layers rendered on the map
+    answers, and data layers rendered on the map; a "+" button starts a new conversation
   - **Displayed maps** — three Swisstopo basemaps (color / grey / aerial) and the active
-    layer list with visibility, opacity, ordering, zoom-to, and legends
+    layer list with visibility, opacity, ordering, and zoom-to
   - **Geocatalog** — the official Swisstopo catalog tree (CatalogServer): topic selector,
-    in-tree filter, add/remove layers
+    in-tree filter, add/remove layers; entries that can't be shown on the map are greyed out
   - **Feedback** — a feedback form posted to a configurable endpoint
   - **About** — project, partners, and data-source information
+- **Automatic legends** — while a layer with a legend is visible, its official Swisstopo legend
+  appears in a panel at the map's top-right, and disappears when the layer is hidden or removed
 - **Identify on click** — feature attributes from the MapServer identify endpoint, with an
   LV95 coordinate readout
 - **Multilingual** — German, French, Italian, English; the active language is passed to every

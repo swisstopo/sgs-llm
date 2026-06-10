@@ -23,9 +23,11 @@ over the WebSocket protocol described in [protocol.md](./protocol.md).
 Two tracks make the app dynamic before the agent backend exists:
 
 - **Track A — direct Swisstopo interactivity.** Browse the official catalog
-  tree (CatalogServer) with a client-side filter, add WMTS overlays,
-  identify-on-click (MapServer identify), and legends, all against the public
-  `api3.geo.admin.ch` / `wmts.geo.admin.ch` services.
+  tree (CatalogServer) with a client-side filter (entries that can't be shown
+  as a map layer are greyed out), add WMTS overlays, identify-on-click
+  (MapServer identify), and per-layer legends shown automatically in a
+  top-right map overlay — all against the public `api3.geo.admin.ch` /
+  `wmts.geo.admin.ch` services.
 - **Track B — chat against the protocol.** The chat panel speaks protocol
   v1 to a configurable WebSocket endpoint. The bundled `mock-agent/` is the
   executable reference implementation, streaming progress events, markdown
@@ -39,10 +41,10 @@ Two tracks make the app dynamic before the agent backend exists:
 | OpenLayers | The 2D engine proven in swissgeol-assets-suite with Swisstopo services |
 | @swissgeol/ui-core | Provides the SwissGeo family's Inter font and design-system conventions. Our palette is defined as `--sgc-*` tokens in `frontend/src/style/theme.css` (single source of truth; components reference the vars without per-rule fallbacks) |
 | RxJS services + @lit/context | Service classes own state as `BehaviorSubject`s, provided via context; `ObservableController` bridges emissions into Lit re-renders |
-| SwissGeo-style shell | Left icon rail (chat, displayed maps, geocatalog, feedback, about) opening one flyout panel at a time; language selector at the rail bottom — mirrors viewer.swissgeo |
+| SwissGeo-style shell | Left icon rail (chat, displayed maps, geocatalog, feedback, about) opening one flyout panel at a time, sliding in as an animated overlay over the map; language selector at the rail bottom — mirrors viewer.swissgeo |
 | Official geocatalog | Topic list + per-topic catalog tree from the Swisstopo CatalogServer API (cached per topic and language); per-layer presentation overrides in `layers/layers_wmts.json5` |
 | i18next, German fallback | de/fr/it/en; the active language is passed to every Swisstopo API call and WS message |
-| marked + DOMPurify | Agent markdown is sanitized; API HTML (htmlPopup, legends) renders only in sandboxed iframes |
+| marked + DOMPurify | Agent markdown and Swisstopo legend fragments are sanitized with DOMPurify (legends shown inline in the map legend overlay); the richer identify htmlPopup renders only in a sandboxed iframe |
 
 ## Light DOM exceptions
 
@@ -85,7 +87,8 @@ everything is queried live and cached in memory.
 | `{topic}/CatalogServer` + topics | `catalogApi.ts` | promise-cached per topic + language; non-`prod` staging entries dropped |
 | `MapServer/identify` | `identifyApi.ts` | `limit=200` (API max; default 50, applied per underlying table); `geometryFormat=geojson` (avoids ESRI-JSON conversion); superseded clicks aborted |
 | `MapServer/layersConfig` | `layersConfigApi.ts` | ~1 MB per language, promise-cached per language with retry-on-failure |
-| `MapServer/{layer}/legend`, htmlPopup | `legendApi.ts`, `identifyApi.ts` | untrusted HTML, sandboxed iframes only |
+| `MapServer/{layer}/legend` | `legendApi.ts` | untrusted HTML, DOMPurify-sanitized and rendered inline in the map legend overlay |
+| `MapServer/.../htmlPopup` | `identifyApi.ts` | untrusted HTML, rendered only inside a `sandbox=""` iframe |
 | `wmts.geo.admin.ch` XYZ tiles | `wmts.ts` | format/timestamp always resolved from layersConfig |
 
 **Deliberately not used by the frontend** (bulk-data concerns owned by the
@@ -111,17 +114,19 @@ requests today, but that is operational behavior, not a contract).
 
 ## Security notes
 
-- Agent markdown: sanitized with DOMPurify (no raw HTML, safe link targets).
-- Swisstopo htmlPopup and legend fragments: untrusted HTML, rendered
-  exclusively inside `sandbox=""` iframes.
+- Agent markdown and Swisstopo legend fragments: untrusted HTML sanitized with
+  DOMPurify (scripts/styles/iframes stripped, safe link targets); the sanitized
+  legend renders inline in the map legend overlay.
+- Swisstopo identify `htmlPopup`: richer untrusted HTML, rendered exclusively
+  inside a `sandbox=""` iframe.
 - No authentication, no user data storage (public prototype, by design).
 
 ## Testing
 
 `vitest` (node environment) covers the logic surface: protocol guards,
 AgentClient state machine, ChatService reducer, catalog parsing/merging,
-style mapping, API wrappers with mocked fetch. The markdown renderer runs
-under jsdom (DOMPurify needs a DOM). Lit component DOM tests are
+style mapping, API wrappers with mocked fetch. The markdown renderer and the
+legend sanitizer run under jsdom (DOMPurify needs a DOM). Lit component DOM tests are
 deliberately out of scope for the POC: ui-core's Stencil elements need a
 real browser registry; the upgrade path is vitest browser mode +
 `@open-wc/testing`.
@@ -131,11 +136,14 @@ real browser registry; the upgrade path is vitest browser mode +
 1. `cd mock-agent && npm start` and `cd frontend && npm run dev`
 2. Rail → Chat: ask "Zeige mir Hochwasser im Wallis" → progress steps
    stream → markdown answer + layer card → "Auf Karte anzeigen" →
-   polygons render, map zooms
+   polygons render, map zooms. The "+" button in the chat header clears the
+   thread to start a new conversation
 3. Rail → Geocatalog: pick a topic, filter, add a layer ([+]); click it
    again to remove it from the map
 4. Rail → Displayed maps: switch Color/Grey/Aerial via the eye toggles;
-   adjust layer opacity; open a legend
+   adjust layer opacity, visibility, and order. While a layer with a legend is
+   visible, its legend shows automatically in a panel at the map's top-right
+   (and disappears when the layer is hidden or removed)
 5. Click a feature of an identify-capable layer → popup with LV95 readout
 6. Rail → Feedback: submit (entry lands in mock-agent/feedback.log)
 7. Rail → About: project info panel
