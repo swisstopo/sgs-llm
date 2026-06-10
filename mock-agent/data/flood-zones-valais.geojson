@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Rhoneebene Sion", "hazard": "high", "return_period": 30 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[7.31, 46.215], [7.40, 46.21], [7.42, 46.225], [7.36, 46.24], [7.31, 46.235], [7.31, 46.215]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Rhoneebene Sierre", "hazard": "medium", "return_period": 100 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[7.50, 46.27], [7.58, 46.27], [7.60, 46.29], [7.53, 46.305], [7.49, 46.29], [7.50, 46.27]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Rhoneebene Martigny", "hazard": "high", "return_period": 30 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[7.04, 46.09], [7.12, 46.085], [7.135, 46.105], [7.08, 46.125], [7.035, 46.11], [7.04, 46.09]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Visp Süd", "hazard": "medium", "return_period": 100 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[7.86, 46.285], [7.92, 46.28], [7.935, 46.30], [7.89, 46.315], [7.855, 46.30], [7.86, 46.285]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Brig-Glis", "hazard": "low", "return_period": 300 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[7.97, 46.305], [8.02, 46.30], [8.035, 46.32], [7.99, 46.33], [7.965, 46.32], [7.97, 46.305]]]
+      }
+    }
+  ]
+}

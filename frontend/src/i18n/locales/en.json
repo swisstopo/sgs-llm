@@ -1,0 +1,106 @@
+{
+  "map": {
+    "basemapGrey": "National map (grey)",
+    "basemapAerial": "Aerial imagery",
+    "basemapColor": "National map (color)"
+  },
+  "panel": {
+    "close": "Collapse panel"
+  },
+  "layers": {
+    "empty": "No layers on the map yet.",
+    "opacity": "Opacity",
+    "remove": "Remove layer",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "zoomTo": "Zoom to layer",
+    "legend": "Legend",
+    "toggle": "Toggle layer visibility"
+  },
+  "chat": {
+    "placeholder": "Ask a question about Swiss geodata …",
+    "send": "Send",
+    "cancel": "Cancel",
+    "welcome": "Ask questions about Swiss geodata – for example:",
+    "exampleFlood": "Show me flood hazards in Valais",
+    "exampleSolar": "How suitable are roofs in Bern for solar panels?",
+    "error": "An error occurred while processing.",
+    "cancelled": "Request cancelled.",
+    "addToMap": "Show on map",
+    "layerAdded": "On the map",
+    "formatUnsupported": "This data format is not supported yet.",
+    "featureCount": "{{count}} features",
+    "connection": {
+      "open": "Connected",
+      "connecting": "Connecting …",
+      "closed": "Disconnected"
+    }
+  },
+  "identify": {
+    "loading": "Querying features …",
+    "empty": "No features at this location.",
+    "close": "Close"
+  },
+  "legend": {
+    "loading": "Loading legend …",
+    "error": "The legend could not be loaded."
+  },
+  "rail": {
+    "maps": "Displayed maps",
+    "catalog": "Geocatalog",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "About the project",
+    "language": "Choose language"
+  },
+  "maps": {
+    "background": "Background Map",
+    "activeLayers": "Layers on the map"
+  },
+  "geocatalog": {
+    "topic": "Topic:",
+    "filterPlaceholder": "Search in geocatalog …",
+    "loading": "Loading geocatalog …",
+    "error": "The geocatalog could not be loaded.",
+    "add": "Add to map",
+    "unsupported": "Not available as a map layer.",
+    "noMatches": "No matches in the geocatalog.",
+    "remove": "Remove from map"
+  },
+  "feedback": {
+    "category": "Category",
+    "categories": {
+      "bug": "Bug report",
+      "feature": "Feature request",
+      "improvement": "Improvement",
+      "question": "Question",
+      "other": "Other"
+    },
+    "message": "Message",
+    "messagePlaceholder": "Describe your request …",
+    "messageRequired": "Please enter a message.",
+    "email": "Email",
+    "emailHint": "optional",
+    "submit": "Submit",
+    "sending": "Sending …",
+    "success": "Thank you for your feedback!",
+    "error": "The feedback could not be sent. Please try again."
+  },
+  "about": {
+    "description": "SGS LLM is an open-source prototype making Swiss federal geodata accessible through natural language: a chat interface, an interactive map, and connectors to the official swisstopo services. The project is developed in the context of the Swiss Geoinformation Strategy (SGS).",
+    "builtByTitle": "Built by",
+    "builtBy": {
+      "ageospatial": "Frontend, web map, and swisstopo API connectors",
+      "askearth": "LLM provisioning, agent and MCP integration, testing framework",
+      "for": "For swisstopo, financed in the context of the Swiss Geoinformation Strategy (SGS)."
+    },
+    "dataSourcesTitle": "Data sources",
+    "dataSources": {
+      "geoadmin": "Public REST services of the federal geoinformation platform (geo.admin.ch)"
+    },
+    "projectTitle": "Project",
+    "github": "Source code on GitHub",
+    "license": "Open source, BSD-3-Clause license",
+    "disclaimer": "Prototype – not for operational use. Content and functionality may change at any time during the prototype phase."
+  }
+}

@@ -1,0 +1,69 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--sgc-font-family, 'Inter', sans-serif);
+  color: var(--sgc-color-text);
+  background: var(--sgc-color-bg--white);
+}
+
+/*
+ * <sgs-app> and <sgs-map> render in light DOM (see their components), so
+ * their layout styles live here at document level.
+ */
+sgs-app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+sgs-app .content {
+  display: grid;
+  grid-template-columns: 3.5rem auto 1fr;
+  min-height: 0;
+}
+
+sgs-app .content > sgs-nav-rail {
+  grid-column: 1;
+}
+
+sgs-app .content > sgs-flyout {
+  grid-column: 2;
+}
+
+/* The map always occupies the last column, flyout open or not. */
+sgs-app .content > sgs-map {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+/* Flyout host sizing belongs to the shell grid (single source of truth). */
+sgs-app sgs-flyout {
+  width: 26rem;
+  max-width: calc(100vw - 3.5rem);
+  min-height: 0;
+}
+
+/* <sgs-map> renders in light DOM so ol/ol.css can style the map controls. */
+sgs-map {
+  display: block;
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+
+sgs-map .sgs-map-target {
+  width: 100%;
+  height: 100%;
+  background: #e8ecef;
+}
+
+/* Anchor element managed by ol/Overlay; the popup positions itself above it. */
+sgs-map .sgs-identify-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+}

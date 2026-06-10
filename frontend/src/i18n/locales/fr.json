@@ -1,0 +1,106 @@
+{
+  "map": {
+    "basemapGrey": "Carte nationale (gris)",
+    "basemapAerial": "Photo aérienne",
+    "basemapColor": "Carte nationale (couleur)"
+  },
+  "panel": {
+    "close": "Réduire le panneau"
+  },
+  "layers": {
+    "empty": "Aucune couche sur la carte.",
+    "opacity": "Opacité",
+    "remove": "Supprimer la couche",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "zoomTo": "Zoomer sur la couche",
+    "legend": "Légende",
+    "toggle": "Afficher/masquer la couche"
+  },
+  "chat": {
+    "placeholder": "Posez une question sur les géodonnées suisses …",
+    "send": "Envoyer",
+    "cancel": "Annuler",
+    "welcome": "Posez des questions sur les géodonnées suisses – par exemple :",
+    "exampleFlood": "Montre-moi les dangers de crues en Valais",
+    "exampleSolar": "Les toits de Berne conviennent-ils aux installations solaires ?",
+    "error": "Une erreur est survenue lors du traitement.",
+    "cancelled": "Requête annulée.",
+    "addToMap": "Afficher sur la carte",
+    "layerAdded": "Sur la carte",
+    "formatUnsupported": "Ce format de données n'est pas encore pris en charge.",
+    "featureCount": "{{count}} objets",
+    "connection": {
+      "open": "Connecté",
+      "connecting": "Connexion …",
+      "closed": "Déconnecté"
+    }
+  },
+  "identify": {
+    "loading": "Interrogation des objets …",
+    "empty": "Aucun objet à cet endroit.",
+    "close": "Fermer"
+  },
+  "legend": {
+    "loading": "Chargement de la légende …",
+    "error": "La légende n'a pas pu être chargée."
+  },
+  "rail": {
+    "maps": "Cartes affichées",
+    "catalog": "Géocatalogue",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "À propos du projet",
+    "language": "Choisir la langue"
+  },
+  "maps": {
+    "background": "Carte de fond",
+    "activeLayers": "Couches sur la carte"
+  },
+  "geocatalog": {
+    "topic": "Thème :",
+    "filterPlaceholder": "Rechercher dans le géocatalogue …",
+    "loading": "Chargement du géocatalogue …",
+    "error": "Le géocatalogue n'a pas pu être chargé.",
+    "add": "Ajouter à la carte",
+    "unsupported": "Non disponible comme couche cartographique.",
+    "noMatches": "Aucun résultat dans le géocatalogue.",
+    "remove": "Retirer de la carte"
+  },
+  "feedback": {
+    "category": "Catégorie",
+    "categories": {
+      "bug": "Signalement de bug",
+      "feature": "Souhait de fonctionnalité",
+      "improvement": "Amélioration",
+      "question": "Question",
+      "other": "Autre"
+    },
+    "message": "Message",
+    "messagePlaceholder": "Décrivez votre demande …",
+    "messageRequired": "Veuillez saisir un message.",
+    "email": "E-mail",
+    "emailHint": "facultatif",
+    "submit": "Envoyer",
+    "sending": "Envoi en cours …",
+    "success": "Merci pour votre feedback !",
+    "error": "Le feedback n'a pas pu être envoyé. Veuillez réessayer."
+  },
+  "about": {
+    "description": "SGS LLM est un prototype open source qui rend les géodonnées fédérales suisses accessibles en langage naturel : une interface de chat, une carte interactive et des connecteurs vers les services officiels de swisstopo. Le projet s'inscrit dans la Stratégie suisse pour la géoinformation (SGS).",
+    "builtByTitle": "Développé par",
+    "builtBy": {
+      "ageospatial": "Frontend, carte web et connecteurs aux API swisstopo",
+      "askearth": "Mise à disposition du LLM, intégration agent et MCP, framework de test",
+      "for": "Pour le compte de swisstopo, financé dans le cadre de la Stratégie suisse pour la géoinformation (SGS)."
+    },
+    "dataSourcesTitle": "Sources de données",
+    "dataSources": {
+      "geoadmin": "Services REST publics de la plateforme fédérale de géoinformation (geo.admin.ch)"
+    },
+    "projectTitle": "Projet",
+    "github": "Code source sur GitHub",
+    "license": "Open source, licence BSD-3-Clause",
+    "disclaimer": "Prototype – pas destiné à un usage opérationnel. Le contenu et les fonctionnalités peuvent changer à tout moment pendant la phase de prototype."
+  }
+}

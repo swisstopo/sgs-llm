@@ -1,0 +1,13 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "address": "Bundesgasse 3", "suitability": "excellent", "kwh_year": 24500 }, "geometry": { "type": "Point", "coordinates": [7.444, 46.9468] } },
+    { "type": "Feature", "properties": { "address": "Marktgasse 12", "suitability": "good", "kwh_year": 11200 }, "geometry": { "type": "Point", "coordinates": [7.4474, 46.9484] } },
+    { "type": "Feature", "properties": { "address": "Kramgasse 49", "suitability": "good", "kwh_year": 9800 }, "geometry": { "type": "Point", "coordinates": [7.4515, 46.9479] } },
+    { "type": "Feature", "properties": { "address": "Länggassstrasse 21", "suitability": "excellent", "kwh_year": 31200 }, "geometry": { "type": "Point", "coordinates": [7.4338, 46.9542] } },
+    { "type": "Feature", "properties": { "address": "Breitenrainplatz 28", "suitability": "medium", "kwh_year": 7600 }, "geometry": { "type": "Point", "coordinates": [7.4516, 46.9591] } },
+    { "type": "Feature", "properties": { "address": "Eigerplatz 5", "suitability": "excellent", "kwh_year": 28900 }, "geometry": { "type": "Point", "coordinates": [7.4312, 46.9376] } },
+    { "type": "Feature", "properties": { "address": "Ostring 30", "suitability": "good", "kwh_year": 13400 }, "geometry": { "type": "Point", "coordinates": [7.4689, 46.9407] } },
+    { "type": "Feature", "properties": { "address": "Wankdorffeldstrasse 102", "suitability": "excellent", "kwh_year": 45100 }, "geometry": { "type": "Point", "coordinates": [7.4639, 46.9655] } }
+  ]
+}
