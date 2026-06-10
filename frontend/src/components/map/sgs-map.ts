@@ -9,8 +9,6 @@ import type { LayerService } from '../../services/LayerService';
 import { identify } from '../../swisstopo/identifyApi';
 import type { IdentifyFeature } from '../../swisstopo/identifyApi';
 import { currentLanguage } from '../../i18n/i18n';
-import './sgs-basemap-switcher';
-import './sgs-layer-panel';
 import './sgs-identify-popup';
 
 /**
@@ -49,8 +47,6 @@ export class SgsMap extends LitElement {
           @sgs-close=${this.closeIdentify}
         ></sgs-identify-popup>
       </div>
-      <sgs-basemap-switcher></sgs-basemap-switcher>
-      <sgs-layer-panel></sgs-layer-panel>
     `;
   }
 

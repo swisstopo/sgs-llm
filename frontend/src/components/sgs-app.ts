@@ -28,6 +28,7 @@ import './shell/sgs-flyout';
 import './chat/sgs-chat-panel';
 import './chat/sgs-connection-badge';
 import './search/sgs-search-panel';
+import './map/sgs-displayed-maps';
 import './map/sgs-map';
 
 const PANEL_TITLE_KEYS: Record<PanelId, string> = {
@@ -113,6 +114,7 @@ export class SgsApp extends LitElement {
       case 'chat':
         return html`<sgs-chat-panel></sgs-chat-panel>`;
       case 'maps':
+        return html`<sgs-displayed-maps></sgs-displayed-maps>`;
       case 'catalog':
       case 'feedback':
       case 'about':

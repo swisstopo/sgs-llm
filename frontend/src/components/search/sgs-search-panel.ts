@@ -84,6 +84,35 @@ export class SgsSearchPanel extends LitElement {
       font-size: 0.875rem;
       color: var(--sgc-color-text--secondary, #4b5a68);
     }
+
+    .popular {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.375rem;
+      margin-top: 0.75rem;
+    }
+
+    .popular-label {
+      font-size: 0.8125rem;
+      color: var(--sgc-color-text--secondary, #4b5a68);
+      margin-right: 0.125rem;
+    }
+
+    .chip {
+      font: inherit;
+      font-size: 0.8125rem;
+      padding: 0.25rem 0.625rem;
+      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-radius: 999px;
+      background: var(--sgc-color-bg--white, #ffffff);
+      cursor: pointer;
+    }
+
+    .chip:hover {
+      border-color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand, #d8232a);
+    }
   `;
 
   @consume({ context: catalogServiceContext })
@@ -113,6 +142,20 @@ export class SgsSearchPanel extends LitElement {
         @input=${this.onInput}
         aria-label=${t('search.placeholder')}
       />
+      ${!this.searched
+        ? html`
+            <div class="popular">
+              <span class="popular-label">${t('search.popular')}</span>
+              ${['search.popularFlood', 'search.popularSolar', 'search.popularForest'].map(
+                (key) => html`
+                  <button class="chip" @click=${() => this.usePopularSearch(t(key))}>
+                    ${t(key)}
+                  </button>
+                `,
+              )}
+            </div>
+          `
+        : nothing}
       ${this.locations.length > 0
         ? html`
             <h3>${t('search.locations')}</h3>
@@ -161,6 +204,14 @@ export class SgsSearchPanel extends LitElement {
         ? html`<p class="empty">${t('search.noResults')}</p>`
         : nothing}
     `;
+  }
+
+  private usePopularSearch(term: string): void {
+    const input = this.renderRoot.querySelector('input');
+    if (input) {
+      input.value = term;
+    }
+    void this.search(term);
   }
 
   private onInput(event: Event): void {

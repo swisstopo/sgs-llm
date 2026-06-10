@@ -9,7 +9,8 @@
   },
   "map": {
     "basemapGrey": "National map (grey)",
-    "basemapAerial": "Aerial imagery"
+    "basemapAerial": "Aerial imagery",
+    "basemapColor": "National map (color)"
   },
   "panel": {
     "search": "Search",
@@ -23,7 +24,11 @@
     "layers": "Datasets",
     "noResults": "No results.",
     "notDisplayable": "Not available as a map layer",
-    "added": "Added"
+    "added": "Added",
+    "popular": "Popular searches:",
+    "popularFlood": "Flood",
+    "popularSolar": "Solar energy",
+    "popularForest": "Forest"
   },
   "catalog": {
     "loading": "Loading catalog …",
@@ -75,5 +80,9 @@
     "feedback": "Feedback",
     "about": "About the project",
     "language": "Choose language"
+  },
+  "maps": {
+    "background": "Background Map",
+    "activeLayers": "Layers on the map"
   }
 }

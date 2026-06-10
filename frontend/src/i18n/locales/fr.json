@@ -9,7 +9,8 @@
   },
   "map": {
     "basemapGrey": "Carte nationale (gris)",
-    "basemapAerial": "Photo aérienne"
+    "basemapAerial": "Photo aérienne",
+    "basemapColor": "Carte nationale (couleur)"
   },
   "panel": {
     "search": "Recherche",
@@ -23,7 +24,11 @@
     "layers": "Jeux de données",
     "noResults": "Aucun résultat.",
     "notDisplayable": "Non disponible comme couche cartographique",
-    "added": "Ajouté"
+    "added": "Ajouté",
+    "popular": "Recherches populaires :",
+    "popularFlood": "Crues",
+    "popularSolar": "Énergie solaire",
+    "popularForest": "Forêt"
   },
   "catalog": {
     "loading": "Chargement du catalogue …",
@@ -75,5 +80,9 @@
     "feedback": "Feedback",
     "about": "À propos du projet",
     "language": "Choisir la langue"
+  },
+  "maps": {
+    "background": "Carte de fond",
+    "activeLayers": "Couches sur la carte"
   }
 }

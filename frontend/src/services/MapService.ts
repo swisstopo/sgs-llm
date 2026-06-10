@@ -17,8 +17,15 @@ import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
 import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
 
-export const BASEMAPS = ['ch.swisstopo.pixelkarte-grau', 'ch.swisstopo.swissimage'] as const;
+export const BASEMAPS = [
+  'ch.swisstopo.pixelkarte-farbe',
+  'ch.swisstopo.pixelkarte-grau',
+  'ch.swisstopo.swissimage',
+] as const;
 export type BasemapId = (typeof BASEMAPS)[number];
+
+/** Fixed tile used for basemap thumbnails (Bern, verified for all basemaps). */
+export const THUMBNAIL_TILE = { z: 13, x: 4265, y: 2883 } as const;
 
 const DEFAULT_BASEMAP: BasemapId = 'ch.swisstopo.pixelkarte-grau';
 
@@ -136,6 +143,18 @@ export class MapService {
 
   flyTo(lonLat: [number, number], zoom = 12): void {
     this.map.getView().animate({ center: fromLonLat(lonLat), zoom, duration: 400 });
+  }
+
+  /** Thumbnail image URL for a basemap (tile params from layersConfig). */
+  async getBasemapThumbnailUrl(id: BasemapId): Promise<string | undefined> {
+    const config = (await this.catalog.getConfig()).get(id);
+    if (!config || !isWmtsDisplayable(config)) {
+      return undefined;
+    }
+    return wmtsTileUrl(config)
+      .replace('{z}', String(THUMBNAIL_TILE.z))
+      .replace('{x}', String(THUMBNAIL_TILE.x))
+      .replace('{y}', String(THUMBNAIL_TILE.y));
   }
 
   /** Current viewport as a WGS84 bbox (for the agent's map_context). */
