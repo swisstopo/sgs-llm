@@ -129,6 +129,27 @@ describe('ChatService', () => {
     expect(client.sent.at(-1)).toEqual({ type: 'cancel', id });
   });
 
+  it('clears messages and busy, cancelling any in-flight exchange', () => {
+    service.send('test');
+    const id = lastUserMessageId();
+    service.clear();
+    expect(client.sent.at(-1)).toEqual({ type: 'cancel', id });
+    expect(service.messages).toEqual([]);
+    expect(service.busy).toBe(false);
+  });
+
+  it('clears an idle conversation without sending a cancel', () => {
+    service.send('first');
+    const id = lastUserMessageId();
+    client.events$.next({ type: 'final', message_id: id, content_markdown: 'answer one' });
+    client.events$.next({ type: 'done', message_id: id });
+    const sentBefore = client.sent.length;
+    service.clear();
+    expect(client.sent).toHaveLength(sentBefore);
+    expect(service.messages).toEqual([]);
+    expect(service.busy).toBe(false);
+  });
+
   it('builds history from completed exchanges only', () => {
     service.send('first');
     const id = lastUserMessageId();

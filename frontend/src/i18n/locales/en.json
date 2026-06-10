@@ -20,6 +20,7 @@
   "chat": {
     "placeholder": "Ask a question about Swiss geodata …",
     "send": "Send",
+    "newConversation": "New conversation",
     "cancel": "Cancel",
     "welcome": "Ask questions about Swiss geodata – for example:",
     "exampleFlood": "Show me flood hazards in Valais",

@@ -20,6 +20,7 @@
   "chat": {
     "placeholder": "Posez une question sur les géodonnées suisses …",
     "send": "Envoyer",
+    "newConversation": "Nouvelle conversation",
     "cancel": "Annuler",
     "welcome": "Posez des questions sur les géodonnées suisses – par exemple :",
     "exampleFlood": "Montre-moi les dangers de crues en Valais",

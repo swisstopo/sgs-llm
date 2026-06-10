@@ -20,6 +20,7 @@
   "chat": {
     "placeholder": "Frage zu Schweizer Geodaten stellen …",
     "send": "Senden",
+    "newConversation": "Neue Unterhaltung",
     "cancel": "Abbrechen",
     "welcome": "Stellen Sie Fragen zu Schweizer Geodaten – zum Beispiel:",
     "exampleFlood": "Zeige mir Hochwassergefahren im Wallis",

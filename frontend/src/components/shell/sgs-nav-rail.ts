@@ -77,6 +77,23 @@ export class SgsNavRail extends LitElement {
       flex-direction: column;
       align-items: center;
       gap: 0.125rem;
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      transition:
+        max-height var(--sgs-motion-duration--fast) var(--sgs-motion-ease),
+        opacity var(--sgs-motion-duration--fast) var(--sgs-motion-ease);
+    }
+
+    .lang-list.open {
+      max-height: 8rem;
+      opacity: 1;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .lang-list {
+        transition: none;
+      }
     }
 
     .lang-list button {
@@ -129,22 +146,18 @@ export class SgsNavRail extends LitElement {
         `,
       )}
       <span class="spacer"></span>
-      ${this.languageOpen
-        ? html`
-            <div class="lang-list">
-              ${SUPPORTED_LANGUAGES.map(
-                (lang) => html`
-                  <button
-                    aria-current=${lang === currentLanguage()}
-                    @click=${() => this.selectLanguage(lang)}
-                  >
-                    ${lang}
-                  </button>
-                `,
-              )}
-            </div>
-          `
-        : ''}
+      <div class="lang-list ${this.languageOpen ? 'open' : ''}" ?inert=${!this.languageOpen}>
+        ${SUPPORTED_LANGUAGES.map(
+          (lang) => html`
+            <button
+              aria-current=${lang === currentLanguage()}
+              @click=${() => this.selectLanguage(lang)}
+            >
+              ${lang}
+            </button>
+          `,
+        )}
+      </div>
       <button
         class="lang-toggle"
         aria-expanded=${this.languageOpen}

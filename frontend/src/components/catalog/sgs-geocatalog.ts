@@ -7,6 +7,7 @@ import type { CatalogService } from '../../services/CatalogService';
 import type { AddLayerResult, LayerService } from '../../services/LayerService';
 import { filterCatalogTree } from '../../swisstopo/catalogApi';
 import type { CatalogFolderNode, CatalogLayerNode, CatalogNode } from '../../swisstopo/catalogApi';
+import { isWmtsDisplayable } from '../../swisstopo/wmts';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
 import { checkIcon, chevronRightIcon, closeIcon, plusIcon } from '../shell/icons';
@@ -146,6 +147,18 @@ export class SgsGeocatalog extends LitElement {
         color: var(--sgc-color-brand);
       }
 
+      .add:disabled,
+      .add:disabled:hover {
+        border-color: var(--sgc-color-border--subtle);
+        color: var(--sgc-color-text--disabled);
+        background: var(--sgc-color-bg--grey);
+        cursor: default;
+      }
+
+      .leaf[data-unavailable] .label {
+        color: var(--sgc-color-text--disabled);
+      }
+
       .add[data-added] {
         border-color: var(--sgc-color-brand);
         color: var(--sgc-color-brand);
@@ -195,6 +208,12 @@ export class SgsGeocatalog extends LitElement {
   private readonly treeTask = new Task(this, {
     args: () => [this.topic, this.language.value ?? currentLanguage()] as const,
     task: ([topic, lang]) => this.catalogService.getCatalogTree(topic, lang),
+  });
+
+  // Layer metadata map, used to tell which leaves can be added as a map layer.
+  private readonly configTask = new Task(this, {
+    args: () => [this.language.value ?? currentLanguage()] as const,
+    task: ([lang]) => this.catalogService.getConfig(lang),
   });
 
   override connectedCallback(): void {
@@ -263,15 +282,26 @@ export class SgsGeocatalog extends LitElement {
   private renderLeaf(node: CatalogLayerNode) {
     const added = this.layerService.isActive(node.layerBodId);
     const notice = this.notice?.layerBodId === node.layerBodId ? this.notice : undefined;
+    // Only mark unavailable once the config map is loaded (avoid false-disabling mid-load).
+    const configMap = this.configTask.value;
+    const config = configMap?.get(node.layerBodId);
+    const unavailable =
+      configMap !== undefined && !(config !== undefined && isWmtsDisplayable(config));
+    const label = unavailable
+      ? t('geocatalog.unsupported')
+      : added
+        ? t('geocatalog.remove')
+        : t('geocatalog.add');
     return html`
       <li>
-        <div class="leaf">
+        <div class="leaf" ?data-unavailable=${unavailable}>
           <span class="label" title=${node.label} ?data-added=${added}>${node.label}</span>
           <button
             class="add"
             ?data-added=${added}
-            title=${added ? t('geocatalog.remove') : t('geocatalog.add')}
-            aria-label=${added ? t('geocatalog.remove') : t('geocatalog.add')}
+            ?disabled=${unavailable}
+            title=${label}
+            aria-label=${label}
             @click=${() =>
               added
                 ? this.layerService.removeLayer(node.layerBodId)

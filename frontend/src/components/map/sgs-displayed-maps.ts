@@ -12,7 +12,6 @@ import { layerRowStyles } from './layerRowStyles';
 import { panelBaseStyles } from '../panelStyles';
 import { eyeClosedIcon, eyeOpenIcon } from '../shell/icons';
 import './sgs-layer-item';
-import './sgs-legend-dialog';
 
 const BASEMAP_LABEL_KEYS: Record<BasemapId, string> = {
   'ch.swisstopo.pixelkarte-farbe': 'map.basemapColor',
@@ -131,19 +130,7 @@ export class SgsDisplayedMaps extends LitElement {
               `,
             )}
       </section>
-
-      <sgs-legend-dialog></sgs-legend-dialog>
     `;
-  }
-
-  override firstUpdated(): void {
-    this.addEventListener('sgs-show-legend', ((
-      event: CustomEvent<{ layerId: string; label: string }>,
-    ) => {
-      void this.renderRoot
-        .querySelector('sgs-legend-dialog')
-        ?.open(event.detail.layerId, event.detail.label);
-    }) as EventListener);
   }
 }
 
