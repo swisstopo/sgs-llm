@@ -31,22 +31,36 @@ A live POC instance (frontend + mock-agent) is deployed on AWS at
 
 ## Features
 
+- **Swiss map projection (LV95)** — the map renders in EPSG:2056 on the official swisstopo
+  zoom ladder (650 → 0.25 m/px), so the national map appears as the familiar clean rectangle:
+  zoomed out you get the generalized country view including the neighboring borders, zooming
+  in reveals the detailed map styles — exactly as on map.geo.admin.ch / SwissGeo
+- **All catalog layer types render** — official layers are added as WMTS tiles, WMS
+  (tiled or single-image, per the layer's config), or GeoJSON vector layers styled with the
+  official geoadmin style definitions; live GeoJSON layers (e.g. rain radar, flood gauges)
+  re-fetch themselves on the layer's update interval. Only genuinely non-displayable catalog
+  entries are greyed out
 - **SwissGeo-style shell** — a left icon rail; clicking an icon slides its flyout panel in as
-  an animated overlay over the map (one open at a time):
+  an animated overlay over the map (one open at a time, resizable by dragging its right edge):
   - **Chat** — natural-language conversation with streamed tool-progress, sanitized markdown
     answers, and data layers rendered on the map; a "+" button starts a new conversation
   - **Displayed maps** — three Swisstopo basemaps (color / grey / aerial) and the active
-    layer list with visibility, opacity, ordering, and zoom-to
-  - **Geocatalog** — the official Swisstopo catalog tree (CatalogServer): topic selector,
-    in-tree filter, add/remove layers; entries that can't be shown on the map are greyed out
+    layer list with visibility, opacity, drag-and-drop ordering, zoom-to-extent, per-layer
+    information, and a hint when many layers are active
+  - **Geocatalog** — the official Swisstopo catalog tree (CatalogServer): topic selector with
+    translated topic names, in-tree filter, add/remove layers, and a per-layer info button
   - **Feedback** — a feedback form posted to a configurable endpoint
   - **About** — project, partners, and data-source information
+- **Map controls** — a SwissGeo-style bottom-right cluster: a geolocation button (with
+  Swiss-bounds check and position marker) above the zoom in/out bar
+- **Layer information** — every layer (in the panel and the catalog) opens a dialog with the
+  official swisstopo description, legend, data owner, and geocat/download links
 - **Automatic legends** — while a layer with a legend is visible, its official Swisstopo legend
   appears in a panel at the map's top-right, and disappears when the layer is hidden or removed
-- **Identify on click** — feature attributes from the MapServer identify endpoint, with an
-  LV95 coordinate readout
-- **Multilingual** — German, French, Italian, English; the active language is passed to every
-  Swisstopo API call and chat message
+- **Identify on click** — feature attributes from the MapServer identify endpoint (queried in
+  LV95), with an LV95 coordinate readout
+- **Multilingual** — German, French, Italian, English, and Romansh; the active language is
+  passed to every Swisstopo API call and chat message
 - **Lean live connectors** — thin, typed wrappers over the public geo.admin.ch APIs with
   request timeouts, cancellation of superseded requests, and the API's paging/word limits
   respected (see [`docs/architecture.md`](docs/architecture.md))
@@ -54,9 +68,10 @@ A live POC instance (frontend + mock-agent) is deployed on AWS at
 ## Architecture overview
 
 ```text
-Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core)
+Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core, map in EPSG:2056)
   ├── direct calls ─────────────►  Swisstopo public APIs
-  │                                (api3.geo.admin.ch, wmts.geo.admin.ch)
+  │                                (api3.geo.admin.ch, wmts.geo.admin.ch,
+  │                                 wms.geo.admin.ch, data.geo.admin.ch)
   └── WebSocket /ws/v1 ─────────►  Agent backend (askEarth, separate)
                                    └─ mock-agent/ during development
 ```
