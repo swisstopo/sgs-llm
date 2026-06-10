@@ -22,16 +22,16 @@ export class SgsComposer extends LitElement {
       font: inherit;
       font-size: 0.875rem;
       padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.375rem;
       min-height: 2.5rem;
       max-height: 8rem;
       box-sizing: border-box;
-      background: var(--sgc-color-bg--white, #ffffff);
+      background: var(--sgc-color-bg--white);
     }
 
     textarea:focus {
-      outline: 2px solid var(--sgc-color-brand, #d8232a);
+      outline: 2px solid var(--sgc-color-brand);
       outline-offset: -1px;
     }
 
@@ -40,16 +40,16 @@ export class SgsComposer extends LitElement {
       font-size: 0.875rem;
       padding: 0.5rem 0.875rem;
       border-radius: 0.375rem;
-      border: 1px solid var(--sgc-color-brand, #d8232a);
-      background: var(--sgc-color-brand, #d8232a);
+      border: 1px solid var(--sgc-color-brand);
+      background: var(--sgc-color-brand);
       color: #fff;
       cursor: pointer;
       min-height: 2.5rem;
     }
 
     button.cancel {
-      background: var(--sgc-color-bg--white, #ffffff);
-      color: var(--sgc-color-brand, #d8232a);
+      background: var(--sgc-color-bg--white);
+      color: var(--sgc-color-brand);
     }
 
     button:disabled {

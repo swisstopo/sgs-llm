@@ -35,16 +35,16 @@ export class SgsGeocatalog extends LitElement {
     }
 
     .topic-row label {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     select {
       flex: 1;
       font: inherit;
       padding: 0.375rem 0.5rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.25rem;
-      background: var(--sgc-color-bg--white, #ffffff);
+      background: var(--sgc-color-bg--white);
     }
 
     input[type='search'] {
@@ -52,19 +52,19 @@ export class SgsGeocatalog extends LitElement {
       box-sizing: border-box;
       font: inherit;
       padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.25rem;
       margin-bottom: 0.625rem;
     }
 
     input[type='search']:focus,
     select:focus {
-      outline: 2px solid var(--sgc-color-brand, #d8232a);
+      outline: 2px solid var(--sgc-color-brand);
       outline-offset: -1px;
     }
 
     .status {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       margin: 0.5rem 0 0;
     }
 
@@ -93,13 +93,13 @@ export class SgsGeocatalog extends LitElement {
     }
 
     .folder > button:hover {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
+      background: var(--sgc-color-bg--grey);
     }
 
     .twisty {
       flex: none;
       width: 0.875rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       transition: transform 0.12s;
     }
 
@@ -122,7 +122,7 @@ export class SgsGeocatalog extends LitElement {
     }
 
     .leaf .label[data-added] {
-      color: var(--sgc-color-text--disabled, #98a6b3);
+      color: var(--sgc-color-text--disabled);
     }
 
     .add {
@@ -131,23 +131,23 @@ export class SgsGeocatalog extends LitElement {
       place-items: center;
       width: 1.5rem;
       height: 1.5rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.25rem;
-      background: var(--sgc-color-bg--white, #ffffff);
+      background: var(--sgc-color-bg--white);
       font-size: 1rem;
       line-height: 1;
       cursor: pointer;
-      color: var(--sgc-color-text, #1c2834);
+      color: var(--sgc-color-text);
     }
 
     .add:hover {
-      border-color: var(--sgc-color-brand, #d8232a);
-      color: var(--sgc-color-brand, #d8232a);
+      border-color: var(--sgc-color-brand);
+      color: var(--sgc-color-brand);
     }
 
     .add[data-added] {
-      border-color: var(--sgc-color-brand, #d8232a);
-      color: var(--sgc-color-brand, #d8232a);
+      border-color: var(--sgc-color-brand);
+      color: var(--sgc-color-brand);
     }
 
     /* Added: show ✓, swap to ✕ on hover to signal removal. */
@@ -165,7 +165,7 @@ export class SgsGeocatalog extends LitElement {
 
     .notice {
       font-size: 0.75rem;
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
       padding: 0 0.25rem 0.25rem 1.25rem;
     }
   `;

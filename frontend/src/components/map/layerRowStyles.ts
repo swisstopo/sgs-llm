@@ -7,9 +7,9 @@ import { css } from 'lit';
  */
 export const layerRowStyles = css`
   .card {
-    border: 1px solid var(--sgc-color-border, #d5dbe0);
+    border: 1px solid var(--sgc-color-border);
     border-radius: 0.5rem;
-    background: var(--sgc-color-bg--white, #ffffff);
+    background: var(--sgc-color-bg--white);
     overflow: hidden;
   }
 
@@ -24,8 +24,8 @@ export const layerRowStyles = css`
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--sgc-color-text--secondary, #4b5a68);
-    border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+    color: var(--sgc-color-text--secondary);
+    border-bottom: 1px solid var(--sgc-color-border);
   }
 
   .row {
@@ -37,11 +37,11 @@ export const layerRowStyles = css`
   }
 
   .row + .row {
-    border-top: 1px solid var(--sgc-color-bg--grey, #eef1f3);
+    border-top: 1px solid var(--sgc-color-border--subtle);
   }
 
   .row:hover {
-    background: var(--sgc-color-bg--grey, #f7f8f9);
+    background: var(--sgc-color-bg--grey);
   }
 
   .row .name {
@@ -53,7 +53,7 @@ export const layerRowStyles = css`
   }
 
   .row[data-hidden] .name {
-    color: var(--sgc-color-text--disabled, #98a6b3);
+    color: var(--sgc-color-text--disabled);
     text-decoration: line-through;
   }
 
@@ -66,25 +66,25 @@ export const layerRowStyles = css`
     cursor: pointer;
     padding: 0.25rem;
     border-radius: 0.25rem;
-    color: var(--sgc-color-text--secondary, #4b5a68);
+    color: var(--sgc-color-text--secondary);
     line-height: 0;
   }
 
   .icon-btn:hover:not(:disabled) {
     background: rgb(0 0 0 / 0.06);
-    color: var(--sgc-color-text, #1c2834);
+    color: var(--sgc-color-text);
   }
 
   .icon-btn:disabled {
-    color: var(--sgc-color-text--disabled, #cdd4da);
+    color: var(--sgc-color-text--disabled);
     cursor: default;
   }
 
   .icon-btn.eye {
-    color: var(--sgc-color-text, #1c2834);
+    color: var(--sgc-color-text);
   }
 
   .row[data-hidden] .icon-btn.eye {
-    color: var(--sgc-color-text--disabled, #98a6b3);
+    color: var(--sgc-color-text--disabled);
   }
 `;

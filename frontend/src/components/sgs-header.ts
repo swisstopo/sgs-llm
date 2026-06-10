@@ -10,8 +10,8 @@ export class SgsHeader extends LitElement {
       gap: 1rem;
       padding: 0 1rem;
       height: 3.5rem;
-      background: var(--sgc-color-bg--white, #ffffff);
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+      background: var(--sgc-color-bg--white);
+      border-bottom: 1px solid var(--sgc-color-border);
     }
 
     .title {
@@ -20,7 +20,7 @@ export class SgsHeader extends LitElement {
     }
 
     .title .accent {
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
     }
   `;
 

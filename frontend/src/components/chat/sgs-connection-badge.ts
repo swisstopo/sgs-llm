@@ -15,7 +15,7 @@ export class SgsConnectionBadge extends LitElement {
       align-items: center;
       gap: 0.375rem;
       font-size: 0.75rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .dot {
@@ -33,7 +33,7 @@ export class SgsConnectionBadge extends LitElement {
     }
 
     .dot[data-status='closed'] {
-      background: var(--sgc-color-brand, #d8232a);
+      background: var(--sgc-color-brand);
     }
   `;
 

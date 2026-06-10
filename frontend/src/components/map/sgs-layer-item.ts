@@ -32,7 +32,7 @@ export class SgsLayerItem extends LitElement {
 
       input[type='range'] {
         flex: 1;
-        accent-color: var(--sgc-color-brand, #d8232a);
+        accent-color: var(--sgc-color-brand);
       }
     `,
   ];

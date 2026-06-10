@@ -17,8 +17,8 @@ export class SgsIdentifyPopup extends LitElement {
       display: block;
       width: 20rem;
       max-width: 70vw;
-      background: var(--sgc-color-bg--white, #ffffff);
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      background: var(--sgc-color-bg--white);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.375rem;
       box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
       font-size: 0.8125rem;
@@ -31,11 +31,11 @@ export class SgsIdentifyPopup extends LitElement {
       justify-content: space-between;
       gap: 0.5rem;
       padding: 0.5rem 0.625rem;
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-bottom: 1px solid var(--sgc-color-border);
     }
 
     .coords {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       font-size: 0.6875rem;
     }
 
@@ -45,7 +45,7 @@ export class SgsIdentifyPopup extends LitElement {
       cursor: pointer;
       font: inherit;
       padding: 0.125rem 0.25rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .body {
@@ -56,7 +56,7 @@ export class SgsIdentifyPopup extends LitElement {
 
     .status {
       padding: 0.375rem 0.625rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .feature-button {
@@ -72,13 +72,13 @@ export class SgsIdentifyPopup extends LitElement {
     }
 
     .feature-button:hover {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
+      background: var(--sgc-color-bg--grey);
     }
 
     .feature-button .layer {
       display: block;
       font-size: 0.6875rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     iframe {
@@ -86,7 +86,7 @@ export class SgsIdentifyPopup extends LitElement {
       width: 100%;
       height: 14rem;
       border: none;
-      border-top: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-top: 1px solid var(--sgc-color-border);
     }
   `;
 

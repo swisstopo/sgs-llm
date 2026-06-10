@@ -17,7 +17,7 @@ export class SgsChatPanel extends LitElement {
       grid-template-rows: 1fr auto;
       height: 100%;
       min-height: 0;
-      background: var(--sgc-color-bg--grey, #f0f2f4);
+      background: var(--sgc-color-bg--grey);
     }
 
     .messages {
@@ -29,7 +29,7 @@ export class SgsChatPanel extends LitElement {
     }
 
     .welcome {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       font-size: 0.875rem;
       line-height: 1.5;
     }
@@ -41,8 +41,8 @@ export class SgsChatPanel extends LitElement {
 
     footer {
       padding: 0.75rem 1rem;
-      border-top: 1px solid var(--sgc-color-border, #d5dbe0);
-      background: var(--sgc-color-bg--white, #ffffff);
+      border-top: 1px solid var(--sgc-color-border);
+      background: var(--sgc-color-bg--white);
     }
   `;
 

@@ -1,8 +1,18 @@
 /*
- * SGS LLM brand overrides for the @swissgeol/ui-core design system.
- * The ui-core components are themed entirely through --sgc-* custom
- * properties; only the brand accents are overridden here.
+ * SGS LLM design tokens.
+ *
+ * @swissgeol/ui-core (imported first in main.ts) supplies the Inter font and
+ * its own variables. These :root values define the palette our own
+ * components reference through --sgc-* custom properties, so the colors live
+ * in one place instead of being repeated as per-rule hex fallbacks.
  */
 :root {
   --sgc-color-brand: #d8232a;
+  --sgc-color-text: #1c2834;
+  --sgc-color-text--secondary: #4b5a68;
+  --sgc-color-text--disabled: #98a6b3;
+  --sgc-color-border: #d5dbe0;
+  --sgc-color-border--subtle: #eef1f3;
+  --sgc-color-bg--white: #ffffff;
+  --sgc-color-bg--grey: #f0f2f4;
 }

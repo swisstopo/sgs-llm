@@ -32,7 +32,7 @@ export class SgsFeedbackPanel extends LitElement {
 
     .hint {
       font-weight: 400;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     select,
@@ -42,15 +42,15 @@ export class SgsFeedbackPanel extends LitElement {
       box-sizing: border-box;
       font: inherit;
       padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.25rem;
-      background: var(--sgc-color-bg--white, #ffffff);
+      background: var(--sgc-color-bg--white);
     }
 
     select:focus,
     textarea:focus,
     input:focus {
-      outline: 2px solid var(--sgc-color-brand, #d8232a);
+      outline: 2px solid var(--sgc-color-brand);
       outline-offset: -1px;
     }
 
@@ -67,8 +67,8 @@ export class SgsFeedbackPanel extends LitElement {
       font: inherit;
       padding: 0.5rem 1rem;
       border-radius: 0.375rem;
-      border: 1px solid var(--sgc-color-brand, #d8232a);
-      background: var(--sgc-color-brand, #d8232a);
+      border: 1px solid var(--sgc-color-brand);
+      background: var(--sgc-color-brand);
       color: #fff;
       cursor: pointer;
     }
@@ -79,7 +79,7 @@ export class SgsFeedbackPanel extends LitElement {
     }
 
     .error-note {
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
       margin: 0.5rem 0 0;
     }
 
@@ -88,7 +88,7 @@ export class SgsFeedbackPanel extends LitElement {
       gap: 0.5rem;
       padding: 1.5rem 0;
       text-align: center;
-      color: var(--sgc-color-text, #1c2834);
+      color: var(--sgc-color-text);
     }
 
     .success .check {

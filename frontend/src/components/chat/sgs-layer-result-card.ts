@@ -16,10 +16,10 @@ export class SgsLayerResultCard extends LitElement {
   static override styles = css`
     :host {
       display: block;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.375rem;
       padding: 0.625rem 0.75rem;
-      background: var(--sgc-color-bg--white, #ffffff);
+      background: var(--sgc-color-bg--white);
       font-size: 0.8125rem;
     }
 
@@ -29,7 +29,7 @@ export class SgsLayerResultCard extends LitElement {
     }
 
     .meta {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       margin: 0 0 0.5rem;
     }
 
@@ -43,8 +43,8 @@ export class SgsLayerResultCard extends LitElement {
       font-size: 0.8125rem;
       padding: 0.25rem 0.625rem;
       border-radius: 0.25rem;
-      border: 1px solid var(--sgc-color-brand, #d8232a);
-      background: var(--sgc-color-brand, #d8232a);
+      border: 1px solid var(--sgc-color-brand);
+      background: var(--sgc-color-brand);
       color: #fff;
       cursor: pointer;
     }
@@ -55,7 +55,7 @@ export class SgsLayerResultCard extends LitElement {
     }
 
     .unsupported {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       font-style: italic;
     }
   `;
