@@ -3,19 +3,12 @@
     "title": "SGS LLM",
     "subtitle": "Schweizer Geodaten im Dialog"
   },
-  "scaffold": {
-    "placeholder": "Anwendungsgerüst – Karte und Chat folgen.",
-    "action": "Los geht's"
-  },
   "map": {
     "basemapGrey": "Landeskarte (grau)",
     "basemapAerial": "Luftbild",
     "basemapColor": "Landeskarte (farbig)"
   },
   "panel": {
-    "search": "Suche",
-    "catalog": "Katalog",
-    "layers": "Ebenen",
     "close": "Panel einklappen"
   },
   "search": {
@@ -40,7 +33,6 @@
     "legend": "Legende"
   },
   "chat": {
-    "title": "Chat",
     "placeholder": "Frage zu Schweizer Geodaten stellen …",
     "send": "Senden",
     "cancel": "Abbrechen",
@@ -109,5 +101,22 @@
     "sending": "Wird gesendet …",
     "success": "Vielen Dank für Ihr Feedback!",
     "error": "Das Feedback konnte nicht gesendet werden. Bitte versuchen Sie es erneut."
+  },
+  "about": {
+    "description": "SGS LLM ist ein Open-Source-Prototyp, der Schweizer Geodaten des Bundes über natürliche Sprache zugänglich macht: eine Chat-Oberfläche, eine interaktive Karte und Konnektoren zu den offiziellen Swisstopo-Diensten. Das Projekt entsteht im Rahmen der Strategie Geoinformation Schweiz (SGS).",
+    "builtByTitle": "Entwickelt von",
+    "builtBy": {
+      "ageospatial": "Frontend, Webkarte und Swisstopo-API-Konnektoren",
+      "askearth": "LLM-Bereitstellung, Agent- und MCP-Integration, Testframework",
+      "for": "Im Auftrag von swisstopo, finanziert im Rahmen der Strategie Geoinformation Schweiz (SGS)."
+    },
+    "dataSourcesTitle": "Datenquellen",
+    "dataSources": {
+      "geoadmin": "Öffentliche REST-Dienste der Geoinformationsplattform des Bundes (geo.admin.ch)"
+    },
+    "projectTitle": "Projekt",
+    "github": "Quellcode auf GitHub",
+    "license": "Open Source, BSD-3-Clause-Lizenz",
+    "disclaimer": "Prototyp – nicht für den operativen Gebrauch. Inhalte und Funktionalität können sich während der Prototypphase jederzeit ändern."
   }
 }

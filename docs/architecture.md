@@ -39,7 +39,8 @@ Two tracks make the app dynamic before the agent backend exists:
 | OpenLayers | The 2D engine proven in swissgeol-assets-suite with Swisstopo services |
 | @swissgeol/ui-core | The SwissGeo design system (Stencil web components, `--sgc-*` CSS variables, Inter font); brand override in `frontend/src/style/theme.css` |
 | RxJS services + @lit/context | Service classes own state as `BehaviorSubject`s, provided via context; `ObservableController` bridges emissions into Lit re-renders |
-| JSON5 layer catalog (`layers/`) | Declarative curated layer tree, pattern adapted from swissgeol-viewer-suite; layer metadata always resolved at runtime from layersConfig |
+| SwissGeo-style shell | Left icon rail (search, displayed maps, geocatalog, chat, feedback, about) opening one flyout panel at a time; language selector at the rail bottom — mirrors viewer.swissgeo |
+| Official geocatalog | Topic list + per-topic catalog tree from the Swisstopo CatalogServer API (cached per topic and language); per-layer presentation overrides in `layers/layers_wmts.json5` |
 | i18next, German fallback | de/fr/it/en; the active language is passed to every Swisstopo API call and WS message |
 | marked + DOMPurify | Agent markdown is sanitized; API HTML (htmlPopup, legends) renders only in sandboxed iframes |
 
@@ -57,7 +58,8 @@ custom properties inherit through.
 | --- | --- |
 | `MapService` | Owns the single `ol/Map`: view, basemaps (WMTS from layersConfig), camera (flyTo/fitBBox), click stream, identify highlight layer |
 | `LayerService` | Active layers (official WMTS overlays + chat data layers): add/remove, visibility, opacity, order (z-index), zoom-to |
-| `CatalogService` | layersConfig cache per language, curated-tree hydration, layer/location search |
+| `CatalogService` | layersConfig cache per language, geocatalog topics/trees (CatalogServer), layer/location search |
+| `UiService` | Shell state: which rail flyout panel is open |
 | `ChatService` | Chat state machine over `AgentClient` events (progress steps, markdown, layers, errors, cancel) |
 | `AgentClient` | WebSocket lifecycle: exponential-backoff reconnect, frame parsing with forward-compatible guards |
 
@@ -101,13 +103,16 @@ real browser registry; the upgrade path is vitest browser mode +
 ## Demo script (manual verification)
 
 1. `cd mock-agent && npm start` and `cd frontend && npm run dev`
-2. Browse the catalog tab → add a layer → adjust opacity
-3. Search "wald" → add a layer; search "Bern" → fly-to
-4. Ask "Zeige mir Hochwasser im Wallis" → progress steps stream → markdown
-   answer + layer card → "Auf Karte anzeigen" → polygons render, map zooms
-5. Click a transit stop with the öV-Haltestellen layer active → identify
-   popup with LV95 readout → expand a feature
-6. Open a layer legend from the layers tab
-7. Switch the language to FR → repeat any step; layer labels re-localize
-8. Send a message containing `/error`, then one with `/slow` + cancel
-9. Kill and restart the mock agent → connection badge recovers
+2. Rail → Geocatalog: pick a topic, filter, add a layer ([+])
+3. Rail → Search: popular chip or "wald" → add a layer; "Bern" → fly-to
+4. Rail → Displayed maps: switch Color/Grey/Aerial via the eye toggles;
+   adjust layer opacity; open a legend
+5. Rail → Chat: ask "Zeige mir Hochwasser im Wallis" → progress steps
+   stream → markdown answer + layer card → "Auf Karte anzeigen" →
+   polygons render, map zooms
+6. Click a feature of an identify-capable layer → popup with LV95 readout
+7. Rail → Feedback: submit (entry lands in mock-agent/feedback.log)
+8. Rail → About: project info panel
+9. Switch the language via the rail's globe icon → labels re-localize
+10. Send a message containing `/error`, then one with `/slow` + cancel
+11. Kill and restart the mock agent → connection badge recovers

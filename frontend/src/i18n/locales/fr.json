@@ -3,19 +3,12 @@
     "title": "SGS LLM",
     "subtitle": "Les géodonnées suisses en dialogue"
   },
-  "scaffold": {
-    "placeholder": "Squelette de l'application – la carte et le chat suivront.",
-    "action": "C'est parti"
-  },
   "map": {
     "basemapGrey": "Carte nationale (gris)",
     "basemapAerial": "Photo aérienne",
     "basemapColor": "Carte nationale (couleur)"
   },
   "panel": {
-    "search": "Recherche",
-    "catalog": "Catalogue",
-    "layers": "Couches",
     "close": "Réduire le panneau"
   },
   "search": {
@@ -40,7 +33,6 @@
     "legend": "Légende"
   },
   "chat": {
-    "title": "Chat",
     "placeholder": "Posez une question sur les géodonnées suisses …",
     "send": "Envoyer",
     "cancel": "Annuler",
@@ -109,5 +101,22 @@
     "sending": "Envoi en cours …",
     "success": "Merci pour votre feedback !",
     "error": "Le feedback n'a pas pu être envoyé. Veuillez réessayer."
+  },
+  "about": {
+    "description": "SGS LLM est un prototype open source qui rend les géodonnées fédérales suisses accessibles en langage naturel : une interface de chat, une carte interactive et des connecteurs vers les services officiels de swisstopo. Le projet s'inscrit dans la Stratégie suisse pour la géoinformation (SGS).",
+    "builtByTitle": "Développé par",
+    "builtBy": {
+      "ageospatial": "Frontend, carte web et connecteurs aux API swisstopo",
+      "askearth": "Mise à disposition du LLM, intégration agent et MCP, framework de test",
+      "for": "Pour le compte de swisstopo, financé dans le cadre de la Stratégie suisse pour la géoinformation (SGS)."
+    },
+    "dataSourcesTitle": "Sources de données",
+    "dataSources": {
+      "geoadmin": "Services REST publics de la plateforme fédérale de géoinformation (geo.admin.ch)"
+    },
+    "projectTitle": "Projet",
+    "github": "Code source sur GitHub",
+    "license": "Open source, licence BSD-3-Clause",
+    "disclaimer": "Prototype – pas destiné à un usage opérationnel. Le contenu et les fonctionnalités peuvent changer à tout moment pendant la phase de prototype."
   }
 }
