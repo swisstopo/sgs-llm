@@ -30,10 +30,6 @@
     "popularSolar": "Solar energy",
     "popularForest": "Forest"
   },
-  "catalog": {
-    "loading": "Loading catalog …",
-    "error": "The catalog could not be loaded."
-  },
   "layers": {
     "empty": "No layers on the map yet.",
     "opacity": "Opacity",
@@ -84,5 +80,15 @@
   "maps": {
     "background": "Background Map",
     "activeLayers": "Layers on the map"
+  },
+  "geocatalog": {
+    "topic": "Topic:",
+    "filterPlaceholder": "Search in geocatalog …",
+    "loading": "Loading geocatalog …",
+    "error": "The geocatalog could not be loaded.",
+    "add": "Add to map",
+    "added": "On the map",
+    "unsupported": "Not available as a map layer.",
+    "noMatches": "No matches in the geocatalog."
   }
 }

@@ -3,21 +3,10 @@ import type { AppLanguage } from '../i18n/i18n';
 import { fetchLayersConfig } from '../swisstopo/layersConfigApi';
 import type { LayerConfig } from '../swisstopo/layersConfigApi';
 import { isWmtsDisplayable } from '../swisstopo/wmts';
-import { loadLayerTree } from '../layers/loadLayerTree';
+import { fetchCatalogTree, fetchTopics } from '../swisstopo/catalogApi';
+import type { CatalogFolderNode, CatalogTopic } from '../swisstopo/catalogApi';
 import { searchLayers, searchLocations } from '../swisstopo/searchApi';
 import type { LayerSearchResult, LocationSearchResult } from '../swisstopo/searchApi';
-
-export interface CatalogEntry {
-  id: string;
-  label: string;
-  displayable: boolean;
-}
-
-export interface CatalogGroup {
-  id: string;
-  label: string;
-  entries: CatalogEntry[];
-}
 
 /**
  * Caches Swisstopo layer catalog metadata (`layersConfig`) per language and
@@ -25,6 +14,8 @@ export interface CatalogGroup {
  */
 export class CatalogService {
   private readonly configCache = new Map<AppLanguage, Promise<Map<string, LayerConfig>>>();
+  private readonly catalogCache = new Map<string, Promise<CatalogFolderNode>>();
+  private topicsCache?: Promise<CatalogTopic[]>;
 
   /** The full layer metadata catalog for a language (fetched once, cached). */
   getConfig(lang: AppLanguage = currentLanguage()): Promise<Map<string, LayerConfig>> {
@@ -47,24 +38,27 @@ export class CatalogService {
     return (await this.getConfig(lang)).get(id);
   }
 
-  /**
-   * The curated layer tree (layers/layertree.json5) hydrated with labels and
-   * displayability from layersConfig. Unknown ids are dropped.
-   */
-  async getTree(lang: AppLanguage = currentLanguage()): Promise<CatalogGroup[]> {
-    const config = await this.getConfig(lang);
-    return loadLayerTree().map((group) => ({
-      id: group.id,
-      label: group.label[lang],
-      entries: group.children.flatMap((id) => {
-        const layer = config.get(id);
-        if (!layer) {
-          console.warn(`Curated layer ${id} not found in layersConfig`);
-          return [];
-        }
-        return [{ id, label: layer.label, displayable: isWmtsDisplayable(layer) }];
-      }),
-    }));
+  /** Available geocatalog topics (fetched once, cached). */
+  getTopics(): Promise<CatalogTopic[]> {
+    this.topicsCache ??= fetchTopics().catch((error: unknown) => {
+      this.topicsCache = undefined;
+      throw error;
+    });
+    return this.topicsCache;
+  }
+
+  /** Official geocatalog tree of a topic (cached per topic + language). */
+  getCatalogTree(topic: string, lang: AppLanguage = currentLanguage()): Promise<CatalogFolderNode> {
+    const key = `${topic}/${lang}`;
+    let cached = this.catalogCache.get(key);
+    if (!cached) {
+      cached = fetchCatalogTree(topic, lang).catch((error: unknown) => {
+        this.catalogCache.delete(key);
+        throw error;
+      });
+      this.catalogCache.set(key, cached);
+    }
+    return cached;
   }
 
   /** Full-catalog layer search, annotated with WMTS displayability. */
