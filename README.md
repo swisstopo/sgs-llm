@@ -120,11 +120,16 @@ The agent WebSocket URL and feedback endpoint are configured at runtime in
 ### Other frontend commands
 
 ```bash
-npm run build       # type-check and produce a production build in dist/
-npm test            # unit tests (vitest)
-npm run lint        # eslint
-npm run typecheck   # tsc --noEmit
+npm run build         # type-check and produce a production build in dist/
+npm test              # unit tests (vitest)
+npm run lint          # eslint
+npm run format:check  # prettier (CI enforces this; npm run format fixes)
+npm run typecheck     # tsc --noEmit
 ```
+
+CI (GitHub Actions) runs lint, the format check, the tests, and the build on
+every push and pull request; pushes to `main` additionally trigger the
+automatic deployment described below.
 
 ### Docker
 

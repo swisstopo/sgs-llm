@@ -32,6 +32,10 @@ Key design points:
 - **SPA fallback:** CloudFront custom error responses map `403`/`404` →
   `/index.html` (`200`), so client-side routes and the private-bucket OAC (which
   returns `403` for missing keys) both resolve to the app.
+- **CI/CD:** every push to `main` redeploys the frontend automatically — the
+  `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+  assumes a scoped IAM role via GitHub OIDC after the CI jobs pass (no AWS
+  keys stored in GitHub). See [Redeploy the frontend](#redeploy-the-frontend).
 
 ## Region note
 
@@ -53,10 +57,16 @@ for the production system.
 | CloudFront OAC | `E3NND1A7M7LYCH` |
 | EC2 instance (`t3.small`, AL2023) | `i-08d1b778054ff9fdf` |
 | Security group | `sg-028f6864ebde6e4b8` — TCP 8787 from the CloudFront managed prefix list only |
+| GitHub OIDC provider (IAM) | `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`) |
+| CI deploy role (IAM) | `github-actions-sgs-llm-deploy` — trusted for `repo:swisstopo/sgs-llm:ref:refs/heads/main` only; inline policy `sgs-llm-frontend-deploy` |
 
 Everything is tagged `project=sgs-llm-poc`.
 
 ## Prerequisites
+
+> Routine frontend deploys need **none of this** — they run automatically from
+> GitHub Actions on every push to `main`. The prerequisites below are for
+> manual deploys, EC2 operation, and infrastructure changes.
 
 - **AWS CLI v2**, **GitHub CLI** (`gh`), **Node.js 22**.
 - Access to the AWS account via IAM Identity Center (SSO) with an admin role.
@@ -260,6 +270,70 @@ Then open the URL in a browser and exercise the map, the catalog, a chat query
 (e.g. *"Show me flood zones in Valais"* → a layer appears on the map), and the
 feedback form.
 
+### 7. GitHub Actions OIDC deploy role (CI/CD)
+
+One-time IAM setup that lets the `deploy` job in `ci.yml` publish without any
+stored AWS keys. GitHub's OIDC token is exchanged for short-lived role
+credentials; the trust is pinned to this repo's `main` branch and the
+permissions to exactly the two deploy actions.
+
+```bash
+# OIDC identity provider (once per account)
+aws iam create-open-id-connect-provider --profile "$PROFILE" \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com \
+  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1 \
+  --tags Key=project,Value=sgs-llm-poc
+
+# Role: trusted only for pushes to swisstopo/sgs-llm main
+cat > trust.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Federated": "arn:aws:iam::$ACCOUNT:oidc-provider/token.actions.githubusercontent.com" },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        "token.actions.githubusercontent.com:sub": "repo:swisstopo/sgs-llm:ref:refs/heads/main"
+      }
+    }
+  }]
+}
+EOF
+aws iam create-role --profile "$PROFILE" \
+  --role-name github-actions-sgs-llm-deploy \
+  --assume-role-policy-document file://trust.json \
+  --tags Key=project,Value=sgs-llm-poc
+
+# Permissions: bucket sync + CloudFront invalidation, nothing else
+cat > deploy-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "ListFrontendBucket", "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::$BUCKET" },
+    { "Sid": "WriteFrontendObjects", "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::$BUCKET/*" },
+    { "Sid": "InvalidateDistribution", "Effect": "Allow",
+      "Action": "cloudfront:CreateInvalidation",
+      "Resource": "arn:aws:cloudfront::$ACCOUNT:distribution/<DIST_ID>" }
+  ]
+}
+EOF
+aws iam put-role-policy --profile "$PROFILE" \
+  --role-name github-actions-sgs-llm-deploy \
+  --policy-name sgs-llm-frontend-deploy \
+  --policy-document file://deploy-policy.json
+```
+
+The workflow's `deploy` job references the role ARN directly (role ARNs are
+not secrets) and needs `permissions: id-token: write` — see
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+
 ## Redeploy the frontend
 
 **Automatic (default):** every push to `main` deploys via the `deploy` job in
@@ -313,6 +387,11 @@ aws ec2 delete-security-group --group-id sg-028f6864ebde6e4b8 --profile swisstop
 aws s3 rm s3://sgs-llm-frontend-259789526488 --recursive --profile swisstopo
 aws s3api delete-bucket --bucket sgs-llm-frontend-259789526488 --profile swisstopo
 aws cloudfront delete-origin-access-control --id E3NND1A7M7LYCH --profile swisstopo
+aws iam delete-role-policy --role-name github-actions-sgs-llm-deploy \
+  --policy-name sgs-llm-frontend-deploy --profile swisstopo
+aws iam delete-role --role-name github-actions-sgs-llm-deploy --profile swisstopo
+aws iam delete-open-id-connect-provider --profile swisstopo \
+  --open-id-connect-provider-arn arn:aws:iam::259789526488:oidc-provider/token.actions.githubusercontent.com
 ```
 
 ## Follow-ups (post-POC)
@@ -321,8 +400,10 @@ aws cloudfront delete-origin-access-control --id E3NND1A7M7LYCH --profile swisst
 - Give the agent a stable endpoint (**Elastic IP**, or replace the EC2 with a
   managed/serverless backend — ECS Fargate, or API Gateway WebSocket + Lambda)
   and swap the mock-agent for the real agent.
-- **GitHub Actions** deploy on merge to `main` (OIDC role — no static keys).
 - **Custom domain** + ACM certificate.
+
+Done since the initial POC: ✔ GitHub Actions deploy on push to `main` (OIDC
+role, no static keys — see step 7 and "Redeploy the frontend").
 
 ## Appendix: CloudFront distribution config
 
