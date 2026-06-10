@@ -29,13 +29,12 @@ use; interfaces and layout may still change.
 ## Features
 
 - **SwissGeo-style shell** — a left icon rail opening one flyout panel at a time:
-  - **Search** — locations (geocoding, fly-to) and the full layer catalog (SearchServer)
+  - **Chat** — natural-language conversation with streamed tool-progress, sanitized markdown
+    answers, and data layers rendered on the map
   - **Displayed maps** — three Swisstopo basemaps (color / grey / aerial) and the active
     layer list with visibility, opacity, ordering, zoom-to, and legends
   - **Geocatalog** — the official Swisstopo catalog tree (CatalogServer): topic selector,
-    in-tree search, add/remove layers
-  - **Chat** — natural-language conversation with streamed tool-progress, sanitized markdown
-    answers, and data layers rendered on the map
+    in-tree filter, add/remove layers
   - **Feedback** — a feedback form posted to a configurable endpoint
   - **About** — project, partners, and data-source information
 - **Identify on click** — feature attributes from the MapServer identify endpoint, with an
