@@ -30,10 +30,6 @@
     "popularSolar": "Énergie solaire",
     "popularForest": "Forêt"
   },
-  "catalog": {
-    "loading": "Chargement du catalogue …",
-    "error": "Le catalogue n'a pas pu être chargé."
-  },
   "layers": {
     "empty": "Aucune couche sur la carte.",
     "opacity": "Opacité",
@@ -84,5 +80,15 @@
   "maps": {
     "background": "Carte de fond",
     "activeLayers": "Couches sur la carte"
+  },
+  "geocatalog": {
+    "topic": "Thème :",
+    "filterPlaceholder": "Rechercher dans le géocatalogue …",
+    "loading": "Chargement du géocatalogue …",
+    "error": "Le géocatalogue n'a pas pu être chargé.",
+    "add": "Ajouter à la carte",
+    "added": "Sur la carte",
+    "unsupported": "Non disponible comme couche cartographique.",
+    "noMatches": "Aucun résultat dans le géocatalogue."
   }
 }

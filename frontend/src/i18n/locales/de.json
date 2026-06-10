@@ -30,10 +30,6 @@
     "popularSolar": "Solarenergie",
     "popularForest": "Wald"
   },
-  "catalog": {
-    "loading": "Katalog wird geladen …",
-    "error": "Katalog konnte nicht geladen werden."
-  },
   "layers": {
     "empty": "Noch keine Ebenen auf der Karte.",
     "opacity": "Deckkraft",
@@ -84,5 +80,15 @@
   "maps": {
     "background": "Hintergrundkarte",
     "activeLayers": "Ebenen auf der Karte"
+  },
+  "geocatalog": {
+    "topic": "Thema:",
+    "filterPlaceholder": "Im Geokatalog suchen …",
+    "loading": "Geokatalog wird geladen …",
+    "error": "Geokatalog konnte nicht geladen werden.",
+    "add": "Zur Karte hinzufügen",
+    "added": "Auf der Karte",
+    "unsupported": "Nicht als Kartenebene verfügbar.",
+    "noMatches": "Keine Treffer im Geokatalog."
   }
 }

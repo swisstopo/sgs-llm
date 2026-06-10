@@ -30,10 +30,6 @@
     "popularSolar": "Energia solare",
     "popularForest": "Bosco"
   },
-  "catalog": {
-    "loading": "Caricamento del catalogo …",
-    "error": "Impossibile caricare il catalogo."
-  },
   "layers": {
     "empty": "Nessun livello sulla mappa.",
     "opacity": "Opacità",
@@ -84,5 +80,15 @@
   "maps": {
     "background": "Mappa di sfondo",
     "activeLayers": "Livelli sulla mappa"
+  },
+  "geocatalog": {
+    "topic": "Tema:",
+    "filterPlaceholder": "Cercare nel geocatalogo …",
+    "loading": "Caricamento del geocatalogo …",
+    "error": "Impossibile caricare il geocatalogo.",
+    "add": "Aggiungere alla mappa",
+    "added": "Sulla mappa",
+    "unsupported": "Non disponibile come livello cartografico.",
+    "noMatches": "Nessun risultato nel geocatalogo."
   }
 }

@@ -12,7 +12,7 @@ import type { LayerConfig } from '../swisstopo/layersConfigApi';
 import type { LayerSpec } from '../protocol/v1';
 import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
 import { buildDataLayerStyle } from '../map/dataLayerStyle';
-import { loadLayerOverrides } from '../layers/loadLayerTree';
+import { loadLayerOverrides } from '../layers/layerOverrides';
 import { languageChanged$ } from '../i18n/i18n';
 
 interface BaseLayerState {

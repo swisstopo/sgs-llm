@@ -28,6 +28,7 @@ import './shell/sgs-flyout';
 import './chat/sgs-chat-panel';
 import './chat/sgs-connection-badge';
 import './search/sgs-search-panel';
+import './catalog/sgs-geocatalog';
 import './map/sgs-displayed-maps';
 import './map/sgs-map';
 
@@ -116,6 +117,7 @@ export class SgsApp extends LitElement {
       case 'maps':
         return html`<sgs-displayed-maps></sgs-displayed-maps>`;
       case 'catalog':
+        return html`<sgs-geocatalog></sgs-geocatalog>`;
       case 'feedback':
       case 'about':
         return html`<div class="sgs-panel-pad"></div>`;
