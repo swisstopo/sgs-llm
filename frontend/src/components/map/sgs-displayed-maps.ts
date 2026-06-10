@@ -45,22 +45,22 @@ export class SgsDisplayedMaps extends LitElement {
 
       img.thumb {
         object-fit: cover;
-        border: 1px solid var(--sgc-color-border, #d5dbe0);
+        border: 1px solid var(--sgc-color-border);
       }
 
       .thumb-placeholder {
-        background: var(--sgc-color-bg--grey, #f0f2f4);
+        background: var(--sgc-color-bg--grey);
       }
 
       sgs-layer-item + sgs-layer-item {
-        border-top: 1px solid var(--sgc-color-bg--grey, #eef1f3);
+        border-top: 1px solid var(--sgc-color-border--subtle);
       }
 
       .empty {
         margin: 0;
         padding: 0.75rem 0.875rem;
         font-size: 0.875rem;
-        color: var(--sgc-color-text--secondary, #4b5a68);
+        color: var(--sgc-color-text--secondary);
       }
     `,
   ];

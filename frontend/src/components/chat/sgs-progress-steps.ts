@@ -9,7 +9,7 @@ export class SgsProgressSteps extends LitElement {
     :host {
       display: block;
       font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     ul {
@@ -41,7 +41,7 @@ export class SgsProgressSteps extends LitElement {
     }
 
     .icon[data-status='failed'] {
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
     }
 
     .detail {

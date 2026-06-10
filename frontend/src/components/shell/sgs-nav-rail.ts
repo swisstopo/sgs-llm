@@ -51,8 +51,8 @@ export class SgsNavRail extends LitElement {
       align-items: center;
       gap: 0.375rem;
       padding: 0.625rem 0;
-      background: var(--sgc-color-bg--white, #ffffff);
-      border-right: 1px solid var(--sgc-color-border, #d5dbe0);
+      background: var(--sgc-color-bg--white);
+      border-right: 1px solid var(--sgc-color-border);
     }
 
     button {
@@ -63,17 +63,17 @@ export class SgsNavRail extends LitElement {
       border: none;
       border-radius: 0.375rem;
       background: none;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       cursor: pointer;
     }
 
     button:hover {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
-      color: var(--sgc-color-text, #1c2834);
+      background: var(--sgc-color-bg--grey);
+      color: var(--sgc-color-text);
     }
 
     button[aria-pressed='true'] {
-      background: var(--sgc-color-brand, #d8232a);
+      background: var(--sgc-color-brand);
       color: #ffffff;
     }
 
@@ -99,12 +99,12 @@ export class SgsNavRail extends LitElement {
 
     .lang-list button[aria-current='true'] {
       background: none;
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
     }
 
     button.lang-toggle[aria-expanded='true'] {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
-      color: var(--sgc-color-text, #1c2834);
+      background: var(--sgc-color-bg--grey);
+      color: var(--sgc-color-text);
     }
   `;
 

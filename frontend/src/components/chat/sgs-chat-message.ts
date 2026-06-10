@@ -17,7 +17,7 @@ export class SgsChatMessage extends LitElement {
 
     .user {
       margin-left: 20%;
-      background: var(--sgc-color-brand, #d8232a);
+      background: var(--sgc-color-brand);
       color: #fff;
       border-radius: 0.75rem 0.75rem 0.25rem 0.75rem;
       padding: 0.625rem 0.875rem;
@@ -61,11 +61,11 @@ export class SgsChatMessage extends LitElement {
     }
 
     .markdown a {
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
     }
 
     .markdown code {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
+      background: var(--sgc-color-bg--grey);
       padding: 0.0625rem 0.25rem;
       border-radius: 0.25rem;
       font-size: 0.8125rem;
@@ -78,18 +78,18 @@ export class SgsChatMessage extends LitElement {
 
     .markdown th,
     .markdown td {
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       padding: 0.25rem 0.5rem;
       text-align: left;
     }
 
     .error {
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
       font-size: 0.875rem;
     }
 
     .cancelled {
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       font-size: 0.875rem;
       font-style: italic;
     }

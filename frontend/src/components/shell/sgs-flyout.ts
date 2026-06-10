@@ -20,8 +20,8 @@ export class SgsFlyout extends LitElement {
       grid-template-rows: auto 1fr;
       height: 100%;
       min-height: 0;
-      background: var(--sgc-color-bg--white, #ffffff);
-      border-right: 1px solid var(--sgc-color-border, #d5dbe0);
+      background: var(--sgc-color-bg--white);
+      border-right: 1px solid var(--sgc-color-border);
       box-shadow: 2px 0 6px rgb(0 0 0 / 0.06);
     }
 
@@ -30,8 +30,8 @@ export class SgsFlyout extends LitElement {
       align-items: center;
       gap: 0.5rem;
       padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
-      background: var(--sgc-color-bg--grey, #f8f9fa);
+      border-bottom: 1px solid var(--sgc-color-border);
+      background: var(--sgc-color-bg--grey);
     }
 
     h2 {
@@ -49,12 +49,12 @@ export class SgsFlyout extends LitElement {
       cursor: pointer;
       padding: 0.25rem;
       border-radius: 0.25rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .collapse:hover {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
-      color: var(--sgc-color-text, #1c2834);
+      background: var(--sgc-color-bg--grey);
+      color: var(--sgc-color-text);
     }
 
     .body {

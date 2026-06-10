@@ -28,7 +28,7 @@ export class SgsAboutPanel extends LitElement {
       flex-wrap: wrap;
       padding-bottom: 0.875rem;
       margin-bottom: 0.875rem;
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-bottom: 1px solid var(--sgc-color-border);
     }
 
     .identity img {
@@ -48,7 +48,7 @@ export class SgsAboutPanel extends LitElement {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     ul {
@@ -78,7 +78,7 @@ export class SgsAboutPanel extends LitElement {
     }
 
     a {
-      color: var(--sgc-color-brand, #d8232a);
+      color: var(--sgc-color-brand);
       text-decoration: none;
     }
 
@@ -89,15 +89,15 @@ export class SgsAboutPanel extends LitElement {
     .role {
       display: block;
       font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .disclaimer {
       margin-top: 1.25rem;
       padding-top: 0.875rem;
-      border-top: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-top: 1px solid var(--sgc-color-border);
       font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
   `;
 

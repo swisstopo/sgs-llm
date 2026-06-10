@@ -27,12 +27,12 @@ export class SgsSearchPanel extends LitElement {
       box-sizing: border-box;
       font: inherit;
       padding: 0.5rem 0.625rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.25rem;
     }
 
     input:focus {
-      outline: 2px solid var(--sgc-color-brand, #d8232a);
+      outline: 2px solid var(--sgc-color-brand);
       outline-offset: -1px;
     }
 
@@ -42,7 +42,7 @@ export class SgsSearchPanel extends LitElement {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     ul {
@@ -65,24 +65,24 @@ export class SgsSearchPanel extends LitElement {
     }
 
     li button:hover:not(:disabled) {
-      background: var(--sgc-color-bg--grey, #f0f2f4);
+      background: var(--sgc-color-bg--grey);
     }
 
     li button:disabled {
       cursor: default;
-      color: var(--sgc-color-text--disabled, #98a6b3);
+      color: var(--sgc-color-text--disabled);
     }
 
     .detail {
       display: block;
       font-size: 0.75rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .empty {
       margin: 0.75rem 0 0;
       font-size: 0.875rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .popular {
@@ -95,7 +95,7 @@ export class SgsSearchPanel extends LitElement {
 
     .popular-label {
       font-size: 0.8125rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
       margin-right: 0.125rem;
     }
 
@@ -103,15 +103,15 @@ export class SgsSearchPanel extends LitElement {
       font: inherit;
       font-size: 0.8125rem;
       padding: 0.25rem 0.625rem;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 999px;
-      background: var(--sgc-color-bg--white, #ffffff);
+      background: var(--sgc-color-bg--white);
       cursor: pointer;
     }
 
     .chip:hover {
-      border-color: var(--sgc-color-brand, #d8232a);
-      color: var(--sgc-color-brand, #d8232a);
+      border-color: var(--sgc-color-brand);
+      color: var(--sgc-color-brand);
     }
   `;
 

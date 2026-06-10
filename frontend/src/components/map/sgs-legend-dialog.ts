@@ -14,7 +14,7 @@ export class SgsLegendDialog extends LitElement {
     dialog {
       width: 26rem;
       max-width: 90vw;
-      border: 1px solid var(--sgc-color-border, #d5dbe0);
+      border: 1px solid var(--sgc-color-border);
       border-radius: 0.375rem;
       padding: 0;
       box-shadow: 0 4px 24px rgb(0 0 0 / 0.25);
@@ -29,7 +29,7 @@ export class SgsLegendDialog extends LitElement {
       align-items: center;
       justify-content: space-between;
       padding: 0.625rem 0.875rem;
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+      border-bottom: 1px solid var(--sgc-color-border);
       font-weight: 600;
       font-size: 0.875rem;
     }
@@ -39,13 +39,13 @@ export class SgsLegendDialog extends LitElement {
       background: none;
       cursor: pointer;
       font: inherit;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     .status {
       padding: 0.875rem;
       font-size: 0.875rem;
-      color: var(--sgc-color-text--secondary, #4b5a68);
+      color: var(--sgc-color-text--secondary);
     }
 
     iframe {

@@ -6,8 +6,8 @@ body {
 
 body {
   font-family: var(--sgc-font-family, 'Inter', sans-serif);
-  color: var(--sgc-color-text, #1c2834);
-  background: var(--sgc-color-bg, #ffffff);
+  color: var(--sgc-color-text);
+  background: var(--sgc-color-bg--white);
 }
 
 /*
