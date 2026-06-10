@@ -91,6 +91,27 @@ export const legendIcon = icon(
 
 export const removeIcon = icon(svg`<path d="M6 6l12 12M18 6 6 18" />`, 18);
 
+/** Crosshair/target for the geolocate button. */
+export const locateIcon = icon(
+  svg`<circle cx="12" cy="12" r="7" /><path d="M12 1.5V5M12 19v3.5M1.5 12H5M19 12h3.5" /><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />`,
+  24,
+);
+
+export const zoomInIcon = icon(svg`<path d="M12 5v14M5 12h14" />`, 24);
+
+export const zoomOutIcon = icon(svg`<path d="M5 12h14" />`, 24);
+
+export const infoIcon = icon(
+  svg`<circle cx="12" cy="12" r="9" /><path d="M12 11v5.5" /><circle cx="12" cy="7.5" r="0.6" fill="currentColor" stroke="none" />`,
+  18,
+);
+
+/** Six-dot grip for drag-reorder handles. */
+export const gripIcon = icon(
+  svg`<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.3" /><circle cx="15" cy="6" r="1.3" /><circle cx="9" cy="12" r="1.3" /><circle cx="15" cy="12" r="1.3" /><circle cx="9" cy="18" r="1.3" /><circle cx="15" cy="18" r="1.3" /></g>`,
+  16,
+);
+
 /** Close (reuses the cross). */
 export const closeIcon = removeIcon;
 

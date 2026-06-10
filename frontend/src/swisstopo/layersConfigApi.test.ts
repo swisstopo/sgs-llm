@@ -24,6 +24,30 @@ const SAMPLE = {
     tooltip: true,
     hasLegend: true,
   },
+  'ch.bav.sachplan-infrastruktur-schifffahrt_anhoerung': {
+    type: 'wms',
+    label: 'SIF consultation',
+    attribution: 'FOT',
+    background: false,
+    wmsUrl: 'https://wms.geo.admin.ch',
+    wmsLayers: 'ch.bav.sachplan-infrastruktur-schifffahrt_anhoerung',
+    singleTile: true,
+    format: 'png',
+    opacity: 0.75,
+    tooltip: false,
+    hasLegend: true,
+  },
+  'ch.swisstopo.meldungen-karten_geodaten': {
+    type: 'geojson',
+    label: 'Notifications for maps and geodata',
+    attribution: 'swisstopo',
+    background: false,
+    geojsonUrl: 'https://data.geo.admin.ch/ch.swisstopo.meldungen-karten_geodaten/x_en.json',
+    styleUrl: '//api3.geo.admin.ch/static/vectorStyles/ch.swisstopo.meldungen-karten_geodaten.json',
+    updateDelay: 450000,
+    tooltip: false,
+    hasLegend: true,
+  },
   broken: { label: 42 },
 };
 
@@ -40,6 +64,35 @@ describe('parseLayersConfig', () => {
     });
     const overlay = config.get('ch.bafu.wrz-wildruhezonen_portal');
     expect(overlay).toMatchObject({ tooltip: true, hasLegend: true, background: false });
+    expect(overlay?.wmsLayers).toBeUndefined();
+    expect(overlay?.geojsonUrl).toBeUndefined();
+    expect(overlay?.singleTile).toBe(false);
+  });
+
+  it('parses WMS service fields', () => {
+    const wms = parseLayersConfig(SAMPLE).get(
+      'ch.bav.sachplan-infrastruktur-schifffahrt_anhoerung',
+    );
+    expect(wms).toMatchObject({
+      type: 'wms',
+      wmsUrl: 'https://wms.geo.admin.ch',
+      wmsLayers: 'ch.bav.sachplan-infrastruktur-schifffahrt_anhoerung',
+      singleTile: true,
+      format: 'png',
+      opacity: 0.75,
+    });
+    expect(wms?.gutter).toBeUndefined();
+  });
+
+  it('parses GeoJSON service fields', () => {
+    const geojson = parseLayersConfig(SAMPLE).get('ch.swisstopo.meldungen-karten_geodaten');
+    expect(geojson).toMatchObject({
+      type: 'geojson',
+      geojsonUrl: 'https://data.geo.admin.ch/ch.swisstopo.meldungen-karten_geodaten/x_en.json',
+      styleUrl:
+        '//api3.geo.admin.ch/static/vectorStyles/ch.swisstopo.meldungen-karten_geodaten.json',
+      updateDelay: 450000,
+    });
   });
 
   it('skips entries without type/label', () => {

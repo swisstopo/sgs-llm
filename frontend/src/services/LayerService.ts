@@ -1,17 +1,26 @@
 import GeoJSON from 'ol/format/GeoJSON';
+import { isEmpty } from 'ol/extent';
+import ImageLayer from 'ol/layer/Image';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
+import ImageWMS from 'ol/source/ImageWMS';
+import TileWMS from 'ol/source/TileWMS';
 import VectorSource from 'ol/source/Vector';
 import XYZ from 'ol/source/XYZ';
 import type BaseLayer from 'ol/layer/Base';
 import { BehaviorSubject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
-import type { MapService, BBox } from './MapService';
+import type { MapService } from './MapService';
 import type { LayerConfig } from '../swisstopo/layersConfigApi';
 import type { LayerSpec } from '../protocol/v1';
-import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
+import { wmtsTileUrl } from '../swisstopo/wmts';
+import { wmsParams, wmsUrl } from '../swisstopo/wms';
+import { isDisplayable, layerAttribution } from '../swisstopo/layers';
+import { loadGeoAdminStyle } from '../swisstopo/geojsonStyle';
+import { fetchJson } from '../swisstopo/http';
 import { buildDataLayerStyle } from '../map/dataLayerStyle';
+import { lv95TileGrid } from '../map/swissGrid';
 import { loadLayerOverrides } from '../layers/layerOverrides';
 import { languageChanged$ } from '../i18n/i18n';
 
@@ -50,6 +59,8 @@ export class LayerService {
   private readonly layersSubject = new BehaviorSubject<MapLayerState[]>([]);
   private readonly olLayers = new Map<string, BaseLayer>();
   private readonly overrides = loadLayerOverrides();
+  /** Periodic re-fetch handles for live geojson layers (rain radar etc.). */
+  private readonly refreshTimers = new Map<string, ReturnType<typeof setInterval>>();
 
   constructor(
     private readonly mapService: MapService,
@@ -92,18 +103,24 @@ export class LayerService {
     if (!config) {
       return 'unknown';
     }
-    if (!isWmtsDisplayable(config)) {
+    if (!isDisplayable(config)) {
       return 'unsupported';
     }
     const opacity = this.overrides.get(id)?.defaultOpacity ?? config.opacity ?? 1;
-    const olLayer = new TileLayer({
-      source: new XYZ({
-        url: wmtsTileUrl(config),
-        attributions: layerAttribution(config),
-        crossOrigin: 'anonymous',
-      }),
-      opacity,
-    });
+    const olLayer =
+      config.type === 'wmts'
+        ? this.createWmtsLayer(config, opacity)
+        : config.type === 'wms'
+          ? this.createWmsLayer(config, opacity)
+          : await this.createGeoJsonLayer(config, opacity);
+    if (!olLayer) {
+      return 'failed';
+    }
+    if (this.olLayers.has(id)) {
+      // A concurrent add finished while we awaited config/data.
+      return 'exists';
+    }
+    this.startGeoJsonRefresh(config, olLayer);
     this.insert(olLayer, {
       kind: 'official',
       id,
@@ -113,6 +130,109 @@ export class LayerService {
       opacity,
     });
     return 'added';
+  }
+
+  private createWmtsLayer(config: LayerConfig, opacity: number): BaseLayer {
+    return new TileLayer({
+      source: new XYZ({
+        url: wmtsTileUrl(config),
+        projection: 'EPSG:2056',
+        tileGrid: lv95TileGrid(),
+        attributions: layerAttribution(config),
+        crossOrigin: 'anonymous',
+      }),
+      opacity,
+    });
+  }
+
+  private createWmsLayer(config: LayerConfig, opacity: number): BaseLayer {
+    if (config.singleTile) {
+      return new ImageLayer({
+        source: new ImageWMS({
+          url: wmsUrl(config),
+          params: wmsParams(config),
+          attributions: layerAttribution(config),
+          crossOrigin: 'anonymous',
+          ratio: 1,
+        }),
+        opacity,
+      });
+    }
+    return new TileLayer({
+      source: new TileWMS({
+        url: wmsUrl(config),
+        params: wmsParams(config),
+        attributions: layerAttribution(config),
+        crossOrigin: 'anonymous',
+        gutter: config.gutter ?? 0,
+      }),
+      opacity,
+    });
+  }
+
+  /**
+   * Official geojson layers are live data: features come from `geojsonUrl`,
+   * reprojected from the file's own CRS.
+   */
+  private async createGeoJsonLayer(
+    config: LayerConfig,
+    opacity: number,
+  ): Promise<BaseLayer | undefined> {
+    try {
+      const [data, style] = await Promise.all([
+        fetchJson(config.geojsonUrl!),
+        loadGeoAdminStyle(config.styleUrl),
+      ]);
+      const source = new VectorSource({
+        features: this.readGeoJsonFeatures(data),
+        attributions: layerAttribution(config),
+      });
+      return new VectorLayer({ source, style, opacity });
+    } catch (error) {
+      console.error(`Failed to load geojson layer ${config.id}`, error);
+      return undefined;
+    }
+  }
+
+  /** Live geojson layers re-fetch every `updateDelay` ms while on the map. */
+  private startGeoJsonRefresh(config: LayerConfig, layer: BaseLayer): void {
+    if (!(layer instanceof VectorLayer) || !config.updateDelay || config.updateDelay <= 0) {
+      return;
+    }
+    const source = layer.getSource() as VectorSource | null;
+    if (!source) {
+      return;
+    }
+    this.refreshTimers.set(
+      config.id,
+      setInterval(() => void this.refreshGeoJsonSource(config, source), config.updateDelay),
+    );
+  }
+
+  private readGeoJsonFeatures(data: unknown) {
+    // No dataProjection: the format honors the file's `crs` member (EPSG:2056
+    // in practice) and defaults to EPSG:4326 when absent.
+    return new GeoJSON().readFeatures(data, { featureProjection: 'EPSG:2056' });
+  }
+
+  private async refreshGeoJsonSource(config: LayerConfig, source: VectorSource): Promise<void> {
+    try {
+      const data = await fetchJson(config.geojsonUrl!);
+      const features = this.readGeoJsonFeatures(data);
+      source.clear(true);
+      source.addFeatures(features);
+    } catch (error) {
+      // Keep the stale features; the next interval retries.
+      console.warn(`Failed to refresh geojson layer ${config.id}`, error);
+    }
+  }
+
+  private clearRefresh(id: string): void {
+    const timer = this.refreshTimers.get(id);
+    if (timer !== undefined) {
+      clearInterval(timer);
+      this.refreshTimers.delete(id);
+    }
   }
 
   /** Fetches a chat data layer (GeoJSON) and puts it on the map. */
@@ -136,7 +256,7 @@ export class LayerService {
     }
     const features = new GeoJSON().readFeatures(data, {
       dataProjection: 'EPSG:4326',
-      featureProjection: 'EPSG:3857',
+      featureProjection: 'EPSG:2056',
     });
     const olLayer = new VectorLayer({
       source: new VectorSource({ features }),
@@ -162,6 +282,7 @@ export class LayerService {
     if (!olLayer) {
       return;
     }
+    this.clearRefresh(id);
     this.mapService.map.removeLayer(olLayer);
     this.olLayers.delete(id);
     this.update(this.layersSubject.value.filter((layer) => layer.id !== id));
@@ -181,17 +302,36 @@ export class LayerService {
     );
   }
 
-  /** Bbox a layer can be zoomed to (data layers only). */
-  getZoomBBox(id: string): BBox | undefined {
+  /** True when the layer has a finite extent the view can zoom to. */
+  canZoomTo(id: string): boolean {
     const layer = this.layers.find((entry) => entry.id === id);
-    return layer?.kind === 'data' ? layer.spec.bbox : undefined;
+    if (layer?.kind === 'data' && layer.spec.bbox) {
+      return true;
+    }
+    return this.getVectorExtent(id) !== undefined;
   }
 
   zoomToLayer(id: string): void {
-    const bbox = this.getZoomBBox(id);
-    if (bbox) {
-      this.mapService.fitBBox(bbox);
+    const layer = this.layers.find((entry) => entry.id === id);
+    if (layer?.kind === 'data' && layer.spec.bbox) {
+      this.mapService.fitBBox(layer.spec.bbox);
+      return;
     }
+    const extent = this.getVectorExtent(id);
+    if (extent) {
+      this.mapService.fitLV95Extent(extent);
+    }
+  }
+
+  /** EPSG:2056 extent of a vector layer's source, undefined when empty/non-vector. */
+  private getVectorExtent(id: string): [number, number, number, number] | undefined {
+    const olLayer = this.olLayers.get(id);
+    if (!(olLayer instanceof VectorLayer)) {
+      // WMTS/WMS overlays cover all of Switzerland: nothing useful to zoom to.
+      return undefined;
+    }
+    const extent = (olLayer.getSource() as VectorSource | null)?.getExtent();
+    return extent && !isEmpty(extent) ? (extent as [number, number, number, number]) : undefined;
   }
 
   /** Moves a layer one position up (towards the top) or down. */
@@ -204,6 +344,22 @@ export class LayerService {
     }
     const [moved] = layers.splice(index, 1);
     layers.splice(target, 0, moved!);
+    this.update(layers);
+  }
+
+  /** Moves a layer to a target position in the display order (0 = top). */
+  moveLayerToIndex(id: string, index: number): void {
+    const layers = [...this.layersSubject.value];
+    const from = layers.findIndex((layer) => layer.id === id);
+    if (from < 0) {
+      return;
+    }
+    const to = Math.max(0, Math.min(index, layers.length - 1));
+    if (to === from) {
+      return;
+    }
+    const [moved] = layers.splice(from, 1);
+    layers.splice(to, 0, moved!);
     this.update(layers);
   }
 

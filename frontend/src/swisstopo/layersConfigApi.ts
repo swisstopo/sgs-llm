@@ -3,9 +3,10 @@ import type { AppLanguage } from '../i18n/i18n';
 import { fetchJson } from './http';
 
 /**
- * Layer metadata from the Swisstopo `layersConfig` endpoint. WMTS tile
- * parameters (format, timestamp), labels, and attribution must always be
- * resolved from here — they vary per layer and are never hardcoded.
+ * Layer metadata from the Swisstopo `layersConfig` endpoint. Service
+ * parameters (tile format, timestamps, WMS/GeoJSON endpoints), labels, and
+ * attribution must always be resolved from here — they vary per layer and
+ * are never hardcoded.
  */
 export interface LayerConfig {
   /** Layer identifier (`layerBodId`), e.g. `ch.swisstopo.pixelkarte-grau`. */
@@ -17,7 +18,7 @@ export interface LayerConfig {
   attributionUrl?: string;
   /** True for layers intended as basemaps. */
   background: boolean;
-  /** Tile image format for WMTS layers (`png` or `jpeg`). */
+  /** Image format: WMTS tile extension or WMS FORMAT (`png` → `image/png`). */
   format?: string;
   /** Available WMTS time dimensions, newest first. */
   timestamps?: string[];
@@ -25,6 +26,22 @@ export interface LayerConfig {
   /** Whether the layer supports identify (feature tooltips). */
   tooltip: boolean;
   hasLegend: boolean;
+  /** WMS GetMap endpoint for `wms` layers, e.g. `https://wms.geo.admin.ch`. */
+  wmsUrl?: string;
+  /** WMS LAYERS parameter; may be a comma-separated list. */
+  wmsLayers?: string;
+  /** True when the WMS layer must be requested as one untiled image. */
+  singleTile?: boolean;
+  /** Tile gutter in px for tiled WMS requests (avoids symbol clipping at tile edges). */
+  gutter?: number;
+  /** GeoJSON data URL for `geojson` layers (already language-resolved). */
+  geojsonUrl?: string;
+  /** Geoadmin vector style JSON URL (may be protocol-relative, `//api3...`). */
+  styleUrl?: string;
+  /** Re-fetch interval in ms for live `geojson` layers (e.g. rain radar). */
+  updateDelay?: number;
+  /** True when the layer has a server-side time dimension (TIME is not sent; the server default applies). */
+  timeEnabled?: boolean;
 }
 
 export function parseLayersConfig(raw: unknown): globalThis.Map<string, LayerConfig> {
@@ -54,6 +71,14 @@ export function parseLayersConfig(raw: unknown): globalThis.Map<string, LayerCon
       opacity: typeof entry.opacity === 'number' ? entry.opacity : undefined,
       tooltip: entry.tooltip === true,
       hasLegend: entry.hasLegend === true,
+      wmsUrl: typeof entry.wmsUrl === 'string' ? entry.wmsUrl : undefined,
+      wmsLayers: typeof entry.wmsLayers === 'string' ? entry.wmsLayers : undefined,
+      singleTile: entry.singleTile === true,
+      gutter: typeof entry.gutter === 'number' ? entry.gutter : undefined,
+      geojsonUrl: typeof entry.geojsonUrl === 'string' ? entry.geojsonUrl : undefined,
+      styleUrl: typeof entry.styleUrl === 'string' ? entry.styleUrl : undefined,
+      updateDelay: typeof entry.updateDelay === 'number' ? entry.updateDelay : undefined,
+      timeEnabled: entry.timeEnabled === true,
     });
   }
   return result;

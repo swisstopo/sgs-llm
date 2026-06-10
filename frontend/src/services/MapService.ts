@@ -1,6 +1,7 @@
 import OlMap from 'ol/Map';
 import View from 'ol/View';
 import Feature from 'ol/Feature';
+import Point from 'ol/geom/Point';
 import GeoJSON from 'ol/format/GeoJSON';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
@@ -11,11 +12,13 @@ import Stroke from 'ol/style/Stroke';
 import CircleStyle from 'ol/style/Circle';
 import Style from 'ol/style/Style';
 import { defaults as defaultControls } from 'ol/control/defaults';
-import { fromLonLat, transformExtent } from 'ol/proj';
+import { transformExtent } from 'ol/proj';
 import { BehaviorSubject, Subject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
-import { isWmtsDisplayable, layerAttribution, wmtsTileUrl } from '../swisstopo/wmts';
+import { isWmtsDisplayable, wmtsTileUrl } from '../swisstopo/wmts';
+import { layerAttribution } from '../swisstopo/layers';
+import { LV95_EXTENT, LV95_VIEW_RESOLUTIONS, lv95TileGrid } from '../map/swissGrid';
 
 export const BASEMAPS = [
   'ch.swisstopo.pixelkarte-farbe',
@@ -24,14 +27,15 @@ export const BASEMAPS = [
 ] as const;
 export type BasemapId = (typeof BASEMAPS)[number];
 
-/** Fixed tile used for basemap thumbnails (Bern, verified for all basemaps). */
-const THUMBNAIL_TILE = { z: 13, x: 4265, y: 2883 } as const;
+/** Fixed LV95 tile used for basemap thumbnails (Bern, verified for all basemaps). */
+const THUMBNAIL_TILE = { z: 19, x: 35, y: 29 } as const;
 
 const DEFAULT_BASEMAP: BasemapId = 'ch.swisstopo.pixelkarte-grau';
 
-/** Default view: Switzerland. */
-const SWISS_CENTER_LONLAT: [number, number] = [8.2318, 46.8131];
-const DEFAULT_ZOOM = 8;
+/** Default view: all of Switzerland, centered (LV95). */
+const SWISS_CENTER_LV95: [number, number] = [2660000, 1190000];
+/** Initial zoom on the LV95 ladder: 500 m/px, the whole country in view. */
+const DEFAULT_ZOOM = 1;
 
 /** [minLon, minLat, maxLon, maxLat] in WGS84. */
 export type BBox = [number, number, number, number];
@@ -47,14 +51,24 @@ export class MapService {
   private readonly basemapLayers = new Map<BasemapId, TileLayer<XYZ>>();
   private readonly clickSubject = new Subject<[number, number]>();
   private readonly highlightSource = new VectorSource();
+  private readonly locationSource = new VectorSource();
 
   constructor(private readonly catalog: CatalogService) {
     this.map = new OlMap({
-      controls: defaultControls({ attributionOptions: { collapsible: false } }),
+      // The zoom buttons are our own (sgs-zoom-controls, bottom-right).
+      controls: defaultControls({ zoom: false, attributionOptions: { collapsible: false } }),
       view: new View({
-        center: fromLonLat(SWISS_CENTER_LONLAT),
+        projection: 'EPSG:2056',
+        center: SWISS_CENTER_LV95,
         zoom: DEFAULT_ZOOM,
-        maxZoom: 18,
+        // Snap to the official zoom ladder so tiles always render 1:1 (the
+        // zoomed-out levels carry the light generalized map style).
+        resolutions: LV95_VIEW_RESOLUTIONS,
+        constrainResolution: true,
+        // Keep the view center on the tile grid, but allow zooming out far
+        // enough to see the whole grid (Switzerland + surroundings).
+        extent: LV95_EXTENT,
+        constrainOnlyCenter: true,
       }),
     });
     this.map.addLayer(
@@ -72,18 +86,60 @@ export class MapService {
         }),
       }),
     );
+    this.map.addLayer(
+      new VectorLayer({
+        source: this.locationSource,
+        zIndex: 1001,
+        style: new Style({
+          image: new CircleStyle({
+            radius: 8,
+            fill: new Fill({ color: '#1c74e9' }),
+            stroke: new Stroke({ color: '#ffffff', width: 3 }),
+          }),
+        }),
+      }),
+    );
     this.map.on('singleclick', (event) => {
       this.clickSubject.next(event.coordinate as [number, number]);
     });
     void this.initBasemaps();
   }
 
-  /** Single clicks on the map, EPSG:3857. */
+  /** Places (or moves) the geolocation marker, EPSG:2056. */
+  setLocationMarker(coordinate: [number, number]): void {
+    this.locationSource.clear();
+    this.locationSource.addFeature(new Feature(new Point(coordinate)));
+  }
+
+  clearLocationMarker(): void {
+    this.locationSource.clear();
+  }
+
+  /** Animates the view to a center and resolution (m/px). */
+  animateTo(center: [number, number], resolution: number): void {
+    this.map.getView().animate({ center, resolution, duration: 600 });
+  }
+
+  /** Steps the snapped zoom by the given delta (the view clamps to its ladder). */
+  zoomBy(delta: number): void {
+    const view = this.map.getView();
+    const zoom = view.getZoom();
+    if (zoom === undefined) {
+      return;
+    }
+    // Rapid clicks: restart from a constrained target, as ol/control/Zoom does.
+    if (view.getAnimating()) {
+      view.cancelAnimations();
+    }
+    view.animate({ zoom: view.getConstrainedZoom(zoom + delta), duration: 250 });
+  }
+
+  /** Single clicks on the map, EPSG:2056. */
   get click$(): Observable<[number, number]> {
     return this.clickSubject.asObservable();
   }
 
-  /** Replaces the identify highlight with GeoJSON geometries (EPSG:3857). */
+  /** Replaces the identify highlight with GeoJSON geometries (EPSG:2056). */
   setHighlight(geometries: unknown[]): void {
     this.highlightSource.clear();
     const format = new GeoJSON();
@@ -160,11 +216,18 @@ export class MapService {
       return undefined;
     }
     const extent = this.map.getView().calculateExtent(size);
-    return transformExtent(extent, 'EPSG:3857', 'EPSG:4326') as BBox;
+    return transformExtent(extent, 'EPSG:2056', 'EPSG:4326') as BBox;
   }
 
   fitBBox(bbox: BBox): void {
-    this.map.getView().fit(transformExtent(bbox, 'EPSG:4326', 'EPSG:3857'), {
+    this.fitLV95Extent(
+      transformExtent(bbox, 'EPSG:4326', 'EPSG:2056') as [number, number, number, number],
+    );
+  }
+
+  /** Fits the view to an EPSG:2056 extent (shared by bbox and layer-extent zooms). */
+  fitLV95Extent(extent: [number, number, number, number]): void {
+    this.map.getView().fit(extent, {
       padding: [48, 48, 48, 48],
       maxZoom: 14,
       duration: 400,
@@ -183,6 +246,8 @@ export class MapService {
       const layer = new TileLayer({
         source: new XYZ({
           url: wmtsTileUrl(layerConfig),
+          projection: 'EPSG:2056',
+          tileGrid: lv95TileGrid(),
           attributions: layerAttribution(layerConfig),
           crossOrigin: 'anonymous',
         }),

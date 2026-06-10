@@ -18,9 +18,14 @@ import { ChatService } from '../services/ChatService';
 import { LayerService } from '../services/LayerService';
 import { MapService } from '../services/MapService';
 import { UiService } from '../services/UiService';
-import type { PanelId } from '../services/UiService';
+import type { LayerInfoRequest, PanelId } from '../services/UiService';
 import { getRuntimeConfig } from '../config';
-import { plusIcon } from './shell/icons';
+import { gripIcon, plusIcon } from './shell/icons';
+import {
+  PANEL_WIDTH_STORAGE_KEY,
+  clampPanelWidth,
+  panelWidthFromPointer,
+} from './shell/panelWidth';
 import type { AddLayerEventDetail } from './chat/sgs-layer-result-card';
 import type { SgsChatPanel } from './chat/sgs-chat-panel';
 import './sgs-header';
@@ -32,8 +37,11 @@ import './about/sgs-about-panel';
 import './catalog/sgs-geocatalog';
 import './feedback/sgs-feedback-panel';
 import './map/sgs-displayed-maps';
+import './map/sgs-layer-info-dialog';
+import './map/sgs-locate-button';
 import './map/sgs-map';
 import './map/sgs-map-legend';
+import './map/sgs-zoom-controls';
 
 const PANEL_TITLE_KEYS: Record<PanelId, string> = {
   chat: 'rail.chat',
@@ -76,6 +84,7 @@ export class SgsApp extends LitElement {
   });
 
   private activePanel?: ObservableController<PanelId | null>;
+  private layerInfo?: ObservableController<LayerInfoRequest | null>;
 
   // Last panel shown; kept while closing so its content stays visible during
   // the slide-out, and so switching cross-fades from the previous panel.
@@ -91,6 +100,8 @@ export class SgsApp extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.activePanel ??= new ObservableController(this, this.uiService.activePanel$);
+    this.layerInfo ??= new ObservableController(this, this.uiService.layerInfo$);
+    this.restorePanelWidth();
   }
 
   override render() {
@@ -105,6 +116,11 @@ export class SgsApp extends LitElement {
         <sgs-nav-rail></sgs-nav-rail>
         <sgs-map></sgs-map>
         <sgs-map-legend></sgs-map-legend>
+        <div class="map-controls">
+          <sgs-locate-button></sgs-locate-button>
+          <sgs-zoom-controls></sgs-zoom-controls>
+        </div>
+        ${this.renderLayerInfoDialog()}
         <div class="flyout-layer ${active ? 'open' : ''}">
           ${shown
             ? html`
@@ -130,9 +146,33 @@ export class SgsApp extends LitElement {
                 </sgs-flyout>
               `
             : nothing}
+          <div
+            class="flyout-resizer"
+            aria-hidden="true"
+            @pointerdown=${this.onResizeStart}
+            @dblclick=${this.onResizeReset}
+          >
+            ${gripIcon}
+          </div>
         </div>
       </div>
     `;
+  }
+
+  private renderLayerInfoDialog() {
+    const info = this.layerInfo?.value ?? this.uiService.layerInfo;
+    if (!info) {
+      return nothing;
+    }
+    // Keyed per layer so showModal() in firstUpdated re-runs on layer change.
+    return keyed(
+      info.id,
+      html`<sgs-layer-info-dialog
+        .layerId=${info.id}
+        .layerLabel=${info.label}
+        @sgs-close=${() => this.uiService.closeLayerInfo()}
+      ></sgs-layer-info-dialog>`,
+    );
   }
 
   private renderPanel(panel: PanelId) {
@@ -148,6 +188,48 @@ export class SgsApp extends LitElement {
       case 'about':
         return html`<sgs-about-panel></sgs-about-panel>`;
     }
+  }
+
+  /** Restores the persisted flyout width (clamped against the viewport). */
+  private restorePanelWidth(): void {
+    const stored = Number(localStorage.getItem(PANEL_WIDTH_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored > 0) {
+      this.style.setProperty(
+        '--sgs-flyout-width',
+        `${clampPanelWidth(stored, window.innerWidth)}px`,
+      );
+    }
+  }
+
+  /** Drag-to-resize: pointer capture keeps moves on the handle over the map. */
+  private onResizeStart(event: PointerEvent): void {
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    handle.toggleAttribute('data-dragging', true);
+    let width: number | undefined;
+    const onMove = (move: PointerEvent) => {
+      width = panelWidthFromPointer(move.clientX, window.innerWidth);
+      this.style.setProperty('--sgs-flyout-width', `${width}px`);
+    };
+    const onEnd = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      handle.toggleAttribute('data-dragging', false);
+      if (width !== undefined) {
+        localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(width));
+      }
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
+  }
+
+  /** Double-click on the handle restores the default width. */
+  private onResizeReset(): void {
+    this.style.removeProperty('--sgs-flyout-width');
+    localStorage.removeItem(PANEL_WIDTH_STORAGE_KEY);
   }
 
   private async onAddDataLayer(event: CustomEvent<AddLayerEventDetail>): Promise<void> {

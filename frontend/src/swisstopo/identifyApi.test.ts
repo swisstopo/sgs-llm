@@ -17,7 +17,7 @@ describe('identify', () => {
               layerName: 'öV-Haltestellen',
               featureId: 8519406,
               properties: { label: 'Bern, Zytglogge' },
-              geometry: { type: 'Point', coordinates: [829041, 5933590] },
+              geometry: { type: 'Point', coordinates: [2601031, 1199680] },
             },
             { broken: true },
           ],
@@ -27,9 +27,9 @@ describe('identify', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const results = await identify({
-      coordinate: [829041, 5933590],
+      coordinate: [2601031, 1199680],
       layerIds: ['ch.bav.haltestellen-oev', 'ch.bafu.waldreservate'],
-      mapExtent: [820000, 5920000, 840000, 5940000],
+      mapExtent: [2560000, 1170000, 2640000, 1230000],
       size: [1200, 600],
       lang: 'de',
     });
@@ -39,6 +39,7 @@ describe('identify', () => {
     expect(url.searchParams.get('layers')).toBe(
       'all:ch.bav.haltestellen-oev,ch.bafu.waldreservate',
     );
+    expect(url.searchParams.get('sr')).toBe('2056');
     expect(url.searchParams.get('tolerance')).toBe('10');
     expect(url.searchParams.get('geometryFormat')).toBe('geojson');
     expect(url.searchParams.get('limit')).toBe('200');
@@ -76,7 +77,7 @@ describe('identify', () => {
 describe('htmlPopupUrl', () => {
   it('builds the popup URL', () => {
     expect(htmlPopupUrl('ch.bav.haltestellen-oev', 8519406, 'de')).toBe(
-      'https://api3.geo.admin.ch/rest/services/ech/MapServer/ch.bav.haltestellen-oev/8519406/htmlPopup?lang=de&sr=3857',
+      'https://api3.geo.admin.ch/rest/services/ech/MapServer/ch.bav.haltestellen-oev/8519406/htmlPopup?lang=de&sr=2056',
     );
   });
 });

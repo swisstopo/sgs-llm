@@ -24,6 +24,9 @@ export const API3_BASE_URL = 'https://api3.geo.admin.ch/rest/services';
 /** Swisstopo WMTS tile service. */
 export const WMTS_BASE_URL = 'https://wmts.geo.admin.ch/1.0.0';
 
+/** Swisstopo WMS GetMap service (fallback when a layer config omits wmsUrl). */
+export const WMS_BASE_URL = 'https://wms.geo.admin.ch';
+
 let runtimeConfig: RuntimeConfig = DEFAULT_CONFIG;
 
 export function mergeConfig(raw: unknown): RuntimeConfig {

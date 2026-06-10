@@ -2,7 +2,9 @@
   "map": {
     "basemapGrey": "Carta nazionale (grigio)",
     "basemapAerial": "Foto aerea",
-    "basemapColor": "Carta nazionale (a colori)"
+    "basemapColor": "Carta nazionale (a colori)",
+    "zoomIn": "Ingrandire",
+    "zoomOut": "Rimpicciolire"
   },
   "panel": {
     "close": "Comprimere il pannello"
@@ -15,7 +17,11 @@
     "moveDown": "Sposta in basso",
     "zoomTo": "Zoom sul livello",
     "legend": "Legenda",
-    "toggle": "Mostra/nascondi il livello"
+    "toggle": "Mostra/nascondi il livello",
+    "info": "Informazioni sul livello",
+    "dragToReorder": "Trascinare per riordinare",
+    "performanceHint": "Molti livelli attivi possono rallentare la mappa.",
+    "dismissHint": "Nascondi l'avviso"
   },
   "chat": {
     "placeholder": "Fai una domanda sui geodati svizzeri …",
@@ -65,8 +71,25 @@
     "error": "Impossibile caricare il geocatalogo.",
     "add": "Aggiungere alla mappa",
     "unsupported": "Non disponibile come livello cartografico.",
+    "loadFailed": "Impossibile caricare il livello.",
     "noMatches": "Nessun risultato nel geocatalogo.",
-    "remove": "Rimuovere dalla mappa"
+    "remove": "Rimuovere dalla mappa",
+    "topics": {
+      "ech": "Tema principale",
+      "are": "Sviluppo territoriale (ARE)",
+      "astra": "Strade (USTRA)",
+      "bafu": "Ambiente (UFAM)",
+      "bav": "Trasporti pubblici (UFT)",
+      "bfs": "Statistica (UST)",
+      "blw": "Agricoltura (UFAG)",
+      "swisstopo": "swisstopo",
+      "meteoschweiz": "Meteorologia (MeteoSvizzera)",
+      "energie": "Energia (UFE)",
+      "verteidigung": "Difesa (DDPS)",
+      "geol": "Geologia",
+      "inspire": "INSPIRE",
+      "cadastre": "Catasto"
+    }
   },
   "feedback": {
     "category": "Categoria",
@@ -103,5 +126,15 @@
     "github": "Codice sorgente su GitHub",
     "license": "Open source, licenza BSD-3-Clause",
     "disclaimer": "Prototipo – non destinato all'uso operativo. Contenuti e funzionalità possono cambiare in qualsiasi momento durante la fase di prototipo."
+  },
+  "locate": {
+    "show": "Mostra la mia posizione",
+    "hide": "Nascondi la mia posizione",
+    "outside": "La sua posizione si trova fuori dalla Svizzera.",
+    "denied": "L'accesso alla posizione è stato negato.",
+    "unavailable": "Impossibile determinare la posizione."
+  },
+  "dialog": {
+    "close": "Chiudere"
   }
 }

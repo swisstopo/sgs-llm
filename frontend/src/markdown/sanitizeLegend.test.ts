@@ -17,4 +17,24 @@ describe('sanitizeLegendHtml', () => {
     expect(html).not.toContain('<script');
     expect(html).not.toContain('onerror');
   });
+
+  it('keeps metadata links and forces them to open safely in a new tab', () => {
+    // Real-world fragment shape: the API uses target="new".
+    const html = sanitizeLegendHtml(
+      '<a target="new" href="https://www.geocat.ch/datahub/dataset/x">geocat</a>',
+    );
+    expect(html).toContain('href="https://www.geocat.ch/datahub/dataset/x"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+});
+
+describe('renderMarkdown link handling (shared hook regression)', () => {
+  it('still opens markdown links in a new tab', async () => {
+    const { renderMarkdown } = await import('./renderMarkdown');
+    const html = renderMarkdown('[swisstopo](https://www.swisstopo.admin.ch)');
+    expect(html).toContain('href="https://www.swisstopo.admin.ch"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
 });

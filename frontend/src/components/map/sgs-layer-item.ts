@@ -1,8 +1,9 @@
 import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { consume } from '@lit/context';
-import { layerServiceContext } from '../../context';
+import { layerServiceContext, uiServiceContext } from '../../context';
 import type { LayerService, MapLayerState } from '../../services/LayerService';
+import type { UiService } from '../../services/UiService';
 import { t } from '../../i18n/i18n';
 import { layerRowStyles } from './layerRowStyles';
 import {
@@ -10,6 +11,8 @@ import {
   chevronUpIcon,
   eyeClosedIcon,
   eyeOpenIcon,
+  gripIcon,
+  infoIcon,
   removeIcon,
   zoomToIcon,
 } from '../shell/icons';
@@ -33,11 +36,26 @@ export class SgsLayerItem extends LitElement {
         flex: 1;
         accent-color: var(--sgc-color-brand);
       }
+
+      .drag-handle {
+        flex: none;
+        cursor: grab;
+        color: var(--sgc-color-text--disabled);
+        line-height: 0;
+        touch-action: none;
+      }
+
+      .drag-handle:active {
+        cursor: grabbing;
+      }
     `,
   ];
 
   @consume({ context: layerServiceContext })
   private layerService!: LayerService;
+
+  @consume({ context: uiServiceContext })
+  private uiService!: UiService;
 
   @property({ attribute: false }) layer!: MapLayerState;
   @property({ type: Boolean }) isFirst = false;
@@ -45,9 +63,17 @@ export class SgsLayerItem extends LitElement {
 
   override render() {
     const { layer } = this;
-    const canZoom = this.layerService.getZoomBBox(layer.id) !== undefined;
+    const canZoom = this.layerService.canZoomTo(layer.id);
     return html`
       <div class="row" ?data-hidden=${!layer.visible}>
+        <span
+          class="drag-handle"
+          draggable="true"
+          title=${t('layers.dragToReorder')}
+          aria-hidden="true"
+        >
+          ${gripIcon}
+        </span>
         <button
           class="icon-btn eye"
           aria-pressed=${layer.visible}
@@ -58,6 +84,18 @@ export class SgsLayerItem extends LitElement {
           ${layer.visible ? eyeOpenIcon : eyeClosedIcon}
         </button>
         <span class="name" title=${layer.label}>${layer.label}</span>
+        ${layer.kind === 'official'
+          ? html`
+              <button
+                class="icon-btn"
+                title=${t('layers.info')}
+                aria-label=${t('layers.info')}
+                @click=${() => this.uiService.openLayerInfo({ id: layer.id, label: layer.label })}
+              >
+                ${infoIcon}
+              </button>
+            `
+          : nothing}
         ${canZoom
           ? html`
               <button
