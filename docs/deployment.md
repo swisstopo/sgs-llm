@@ -262,13 +262,28 @@ feedback form.
 
 ## Redeploy the frontend
 
+**Automatic (default):** every push to `main` deploys via the `deploy` job in
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml), after the CI jobs
+pass. The job assumes the IAM role
+`arn:aws:iam::259789526488:role/github-actions-sgs-llm-deploy` through GitHub's
+OIDC provider — no long-lived AWS keys in GitHub. The trust policy only accepts
+tokens for `repo:swisstopo/sgs-llm:ref:refs/heads/main`, and the role's inline
+policy (`sgs-llm-frontend-deploy`) only allows listing/writing the
+`sgs-llm-frontend-259789526488` bucket and creating invalidations on the
+distribution `E2AEIO5QX64WCY`. One-time account setup (already done): the
+`token.actions.githubusercontent.com` OIDC identity provider plus that role,
+both tagged `project=sgs-llm-poc`.
+
+**Manual (fallback):**
+
 ```bash
 PROFILE=swisstopo ./scripts/deploy-frontend.sh
 ```
 
 Builds `frontend/`, syncs `dist/` to S3 (fingerprinted assets cached immutably,
 `index.html` no-cache), and invalidates CloudFront. It deliberately does **not**
-overwrite `config.json` (managed in step 5 above).
+overwrite `config.json` (managed in step 5 above). `PROFILE=` (empty) makes the
+script use ambient credentials — that's how the GitHub Actions job calls it.
 
 ## Operate the mock-agent (EC2)
 

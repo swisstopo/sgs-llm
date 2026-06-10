@@ -151,10 +151,15 @@ origin).
                  └──────────────────────────────────────────────────┘
 ```
 
+**Every push to `main` redeploys the frontend automatically**: the `deploy` job
+in the CI workflow assumes a scoped IAM role via GitHub OIDC (no stored AWS
+keys) and runs the deploy script after the checks pass.
+
 The full process — reproduce-from-scratch steps, the redeploy script
-([`scripts/deploy-frontend.sh`](scripts/deploy-frontend.sh)), how to operate the
-EC2 mock-agent, cost/teardown, and the CloudFront configuration — is in
-[`docs/deployment.md`](docs/deployment.md). Redeploy the frontend with:
+([`scripts/deploy-frontend.sh`](scripts/deploy-frontend.sh)), the OIDC role,
+how to operate the EC2 mock-agent, cost/teardown, and the CloudFront
+configuration — is in [`docs/deployment.md`](docs/deployment.md). Manual
+redeploy fallback:
 
 ```bash
 PROFILE=swisstopo ./scripts/deploy-frontend.sh
