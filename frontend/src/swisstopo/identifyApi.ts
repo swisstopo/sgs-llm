@@ -1,5 +1,16 @@
 import { API3_BASE_URL } from '../config';
 import type { AppLanguage } from '../i18n/i18n';
+import { fetchJson } from './http';
+
+/**
+ * The API caps identify at 200 features per request (default 50, applied
+ * per underlying table). Requesting the maximum keeps a click on several
+ * stacked layers from silently truncating. Offset paging is deliberately
+ * not implemented here: a point identify with pixel tolerance answers a
+ * popup, not a bulk extraction — paged/grid-split bulk fetching is the MCP
+ * server's `fetch_layer_data` concern.
+ */
+const IDENTIFY_LIMIT = 200;
 
 export interface IdentifyParams {
   /** Click coordinate in EPSG:3857. */
@@ -12,6 +23,7 @@ export interface IdentifyParams {
   size: [number, number];
   lang: AppLanguage;
   tolerance?: number;
+  signal?: AbortSignal;
 }
 
 export interface IdentifyFeature {
@@ -36,12 +48,11 @@ export async function identify(params: IdentifyParams): Promise<IdentifyFeature[
     lang: params.lang,
     returnGeometry: 'true',
     geometryFormat: 'geojson',
+    limit: String(IDENTIFY_LIMIT),
   });
-  const response = await fetch(`${API3_BASE_URL}/all/MapServer/identify?${query}`);
-  if (!response.ok) {
-    throw new Error(`identify request failed: ${response.status}`);
-  }
-  const data = (await response.json()) as { results?: Record<string, unknown>[] };
+  const data = (await fetchJson(`${API3_BASE_URL}/all/MapServer/identify?${query}`, {
+    signal: params.signal,
+  })) as { results?: Record<string, unknown>[] };
   return (data.results ?? [])
     .filter(
       (result) =>

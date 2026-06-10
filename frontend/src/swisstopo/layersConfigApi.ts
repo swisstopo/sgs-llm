@@ -1,5 +1,6 @@
 import { API3_BASE_URL } from '../config';
 import type { AppLanguage } from '../i18n/i18n';
+import { fetchJson } from './http';
 
 /**
  * Layer metadata from the Swisstopo `layersConfig` endpoint. WMTS tile
@@ -58,13 +59,11 @@ export function parseLayersConfig(raw: unknown): globalThis.Map<string, LayerCon
   return result;
 }
 
-/** Fetches the full layer catalog metadata in the given language. */
+/** Fetches the full layer catalog metadata in the given language (~1 MB, cached by the caller per language). */
 export async function fetchLayersConfig(
   lang: AppLanguage,
 ): Promise<globalThis.Map<string, LayerConfig>> {
-  const response = await fetch(`${API3_BASE_URL}/api/MapServer/layersConfig?lang=${lang}`);
-  if (!response.ok) {
-    throw new Error(`layersConfig request failed: ${response.status}`);
-  }
-  return parseLayersConfig(await response.json());
+  return parseLayersConfig(
+    await fetchJson(`${API3_BASE_URL}/api/MapServer/layersConfig?lang=${lang}`),
+  );
 }

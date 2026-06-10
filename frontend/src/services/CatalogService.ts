@@ -6,7 +6,12 @@ import { isWmtsDisplayable } from '../swisstopo/wmts';
 import { fetchCatalogTree, fetchTopics } from '../swisstopo/catalogApi';
 import type { CatalogFolderNode, CatalogTopic } from '../swisstopo/catalogApi';
 import { searchLayers, searchLocations } from '../swisstopo/searchApi';
-import type { LayerSearchResult, LocationSearchResult } from '../swisstopo/searchApi';
+import type {
+  LayerSearchOptions,
+  LayerSearchResult,
+  LocationSearchOptions,
+  LocationSearchResult,
+} from '../swisstopo/searchApi';
 
 /**
  * Caches Swisstopo layer catalog metadata (`layersConfig`) per language and
@@ -65,15 +70,22 @@ export class CatalogService {
   async searchLayers(
     query: string,
     lang: AppLanguage = currentLanguage(),
+    options: LayerSearchOptions = {},
   ): Promise<(LayerSearchResult & { displayable: boolean })[]> {
-    const [results, config] = await Promise.all([searchLayers(query, lang), this.getConfig(lang)]);
+    const [results, config] = await Promise.all([
+      searchLayers(query, lang, options),
+      this.getConfig(lang),
+    ]);
     return results.map((result) => {
       const layer = config.get(result.layerId);
       return { ...result, displayable: layer !== undefined && isWmtsDisplayable(layer) };
     });
   }
 
-  searchLocations(query: string): Promise<LocationSearchResult[]> {
-    return searchLocations(query);
+  searchLocations(
+    query: string,
+    options: LocationSearchOptions = {},
+  ): Promise<LocationSearchResult[]> {
+    return searchLocations(query, options);
   }
 }

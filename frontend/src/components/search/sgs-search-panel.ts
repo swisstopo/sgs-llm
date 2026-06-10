@@ -130,6 +130,7 @@ export class SgsSearchPanel extends LitElement {
 
   private debounceHandle?: ReturnType<typeof setTimeout>;
   private requestCounter = 0;
+  private abortController?: AbortController;
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
@@ -228,19 +229,32 @@ export class SgsSearchPanel extends LitElement {
 
   private async search(query: string): Promise<void> {
     const requestId = ++this.requestCounter;
+    // Abort the superseded in-flight search instead of just ignoring it.
+    this.abortController?.abort();
+    const controller = new AbortController();
+    this.abortController = controller;
     try {
+      // No viewBBox here: the SearchServer bbox FILTERS locations to the box
+      // (not just ranking), which would hide places outside the current view
+      // — wrong for a geocoder used to fly elsewhere.
       const [locations, layers] = await Promise.all([
-        this.catalogService.searchLocations(query),
-        this.catalogService.searchLayers(query, currentLanguage()),
+        this.catalogService.searchLocations(query, {
+          limit: MAX_LOCATIONS,
+          signal: controller.signal,
+        }),
+        this.catalogService.searchLayers(query, currentLanguage(), {
+          limit: MAX_LAYERS,
+          signal: controller.signal,
+        }),
       ]);
       if (requestId !== this.requestCounter) {
         return; // a newer search superseded this one
       }
-      this.locations = locations.slice(0, MAX_LOCATIONS);
-      this.layers = layers.slice(0, MAX_LAYERS);
+      this.locations = locations;
+      this.layers = layers;
       this.searched = true;
     } catch (error) {
-      if (requestId === this.requestCounter) {
+      if (requestId === this.requestCounter && !controller.signal.aborted) {
         console.error('Search failed', error);
         this.locations = [];
         this.layers = [];
