@@ -30,10 +30,10 @@ interface RailItem {
 }
 
 const RAIL_ITEMS: RailItem[] = [
+  { id: 'chat', icon: chatIcon, labelKey: 'rail.chat' },
   { id: 'search', icon: searchIcon, labelKey: 'rail.search' },
   { id: 'maps', icon: mapsIcon, labelKey: 'rail.maps' },
   { id: 'catalog', icon: catalogIcon, labelKey: 'rail.catalog' },
-  { id: 'chat', icon: chatIcon, labelKey: 'rail.chat' },
   { id: 'feedback', icon: feedbackIcon, labelKey: 'rail.feedback' },
   { id: 'about', icon: aboutIcon, labelKey: 'rail.about' },
 ];
