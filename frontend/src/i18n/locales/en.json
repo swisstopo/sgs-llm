@@ -2,7 +2,9 @@
   "map": {
     "basemapGrey": "National map (grey)",
     "basemapAerial": "Aerial imagery",
-    "basemapColor": "National map (color)"
+    "basemapColor": "National map (color)",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out"
   },
   "panel": {
     "close": "Collapse panel"
@@ -15,7 +17,11 @@
     "moveDown": "Move down",
     "zoomTo": "Zoom to layer",
     "legend": "Legend",
-    "toggle": "Toggle layer visibility"
+    "toggle": "Toggle layer visibility",
+    "info": "Layer information",
+    "dragToReorder": "Drag to reorder",
+    "performanceHint": "Many active layers can slow down the map.",
+    "dismissHint": "Dismiss hint"
   },
   "chat": {
     "placeholder": "Ask a question about Swiss geodata …",
@@ -65,8 +71,25 @@
     "error": "The geocatalog could not be loaded.",
     "add": "Add to map",
     "unsupported": "Not available as a map layer.",
+    "loadFailed": "The layer could not be loaded.",
     "noMatches": "No matches in the geocatalog.",
-    "remove": "Remove from map"
+    "remove": "Remove from map",
+    "topics": {
+      "ech": "Main topic",
+      "are": "Spatial development (ARE)",
+      "astra": "Roads (FEDRO)",
+      "bafu": "Environment (FOEN)",
+      "bav": "Public transport (FOT)",
+      "bfs": "Statistics (FSO)",
+      "blw": "Agriculture (FOAG)",
+      "swisstopo": "swisstopo",
+      "meteoschweiz": "Meteorology (MeteoSwiss)",
+      "energie": "Energy (SFOE)",
+      "verteidigung": "Defence (DDPS)",
+      "geol": "Geology",
+      "inspire": "INSPIRE",
+      "cadastre": "Cadastre"
+    }
   },
   "feedback": {
     "category": "Category",
@@ -103,5 +126,15 @@
     "github": "Source code on GitHub",
     "license": "Open source, BSD-3-Clause license",
     "disclaimer": "Prototype – not for operational use. Content and functionality may change at any time during the prototype phase."
+  },
+  "locate": {
+    "show": "Show my location",
+    "hide": "Hide my location",
+    "outside": "Your location is outside Switzerland.",
+    "denied": "Location access was denied.",
+    "unavailable": "Your location could not be determined."
+  },
+  "dialog": {
+    "close": "Close"
   }
 }

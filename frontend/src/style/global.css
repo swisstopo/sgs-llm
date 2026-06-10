@@ -18,6 +18,8 @@ sgs-app {
   display: grid;
   grid-template-rows: auto 1fr;
   height: 100%;
+  /* Flyout panel width; overridden inline by the drag-to-resize handle. */
+  --sgs-flyout-width: 26rem;
 }
 
 sgs-app .content {
@@ -49,7 +51,7 @@ sgs-app .flyout-layer {
   top: 0;
   bottom: 0;
   left: 3.5rem;
-  width: calc(26rem + 8px); /* +8px so the panel's right shadow shows */
+  width: calc(var(--sgs-flyout-width) + 8px); /* +8px so the panel's right shadow shows */
   max-width: calc(100vw - 3.5rem);
   overflow: hidden;
   pointer-events: none;
@@ -57,7 +59,7 @@ sgs-app .flyout-layer {
 }
 
 sgs-app .flyout-layer > sgs-flyout {
-  width: 26rem;
+  width: var(--sgs-flyout-width);
   height: 100%;
   min-height: 0;
   transform: translateX(-100%);
@@ -72,6 +74,32 @@ sgs-app .flyout-layer.open > sgs-flyout {
   transform: none;
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Drag-to-resize handle on the flyout's right edge (visible while open). */
+sgs-app .flyout-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 8px;
+  display: none;
+  place-items: center;
+  cursor: col-resize;
+  touch-action: none;
+  pointer-events: auto;
+  color: var(--sgc-color-text--secondary);
+  line-height: 0;
+}
+
+sgs-app .flyout-layer.open .flyout-resizer {
+  display: grid;
+}
+
+sgs-app .flyout-resizer:hover,
+sgs-app .flyout-resizer[data-dragging] {
+  background: linear-gradient(to right, transparent, rgb(0 0 0 / 0.06));
+  color: var(--sgc-color-brand);
 }
 
 /* Content fade/slide when switching directly between panels (keyed wrapper). */
@@ -137,6 +165,21 @@ sgs-app sgs-map-legend {
   z-index: 4;
   max-width: min(20rem, calc(100vw - 3.5rem - 1.5rem));
   pointer-events: auto;
+}
+
+/*
+ * Map controls cluster docked at the bottom-right (SwissGeo layout): the
+ * geolocate button stacked above the zoom bar, above the OL attribution bar.
+ */
+sgs-app .map-controls {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 2.5rem;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.625rem;
 }
 
 /* <sgs-map> renders in light DOM so ol/ol.css can style the map controls. */

@@ -1,5 +1,5 @@
-import { LitElement, css, html } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { LitElement, css, html, nothing } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { Task } from '@lit/task';
 import { layerServiceContext, mapServiceContext } from '../../context';
@@ -10,8 +10,11 @@ import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
 import { layerRowStyles } from './layerRowStyles';
 import { panelBaseStyles } from '../panelStyles';
-import { eyeClosedIcon, eyeOpenIcon } from '../shell/icons';
+import { closeIcon, eyeClosedIcon, eyeOpenIcon } from '../shell/icons';
 import './sgs-layer-item';
+
+/** Active overlays above this count trigger the performance hint. */
+const PERF_HINT_THRESHOLD = 5;
 
 const BASEMAP_LABEL_KEYS: Record<BasemapId, string> = {
   'ch.swisstopo.pixelkarte-farbe': 'map.basemapColor',
@@ -50,11 +53,52 @@ export class SgsDisplayedMaps extends LitElement {
         border-top: 1px solid var(--sgc-color-border--subtle);
       }
 
+      /* Insertion indicator while dragging a layer row. */
+      sgs-layer-item[data-drop-before] {
+        box-shadow: inset 0 2px 0 0 var(--sgc-color-brand);
+      }
+
+      sgs-layer-item[data-drop-after] {
+        box-shadow: inset 0 -2px 0 0 var(--sgc-color-brand);
+      }
+
       .empty {
         margin: 0;
         padding: 0.75rem 0.875rem;
         font-size: 0.875rem;
         color: var(--sgc-color-text--secondary);
+      }
+
+      .perf-hint {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0.5rem 0.875rem;
+        font-size: 0.75rem;
+        color: var(--sgc-color-text--secondary);
+        background: var(--sgc-color-bg--grey);
+        border-bottom: 1px solid var(--sgc-color-border--subtle);
+      }
+
+      .perf-hint span {
+        flex: 1;
+      }
+
+      .perf-hint button {
+        flex: none;
+        display: grid;
+        place-items: center;
+        border: none;
+        background: none;
+        padding: 0;
+        line-height: 0;
+        cursor: pointer;
+        color: var(--sgc-color-text--secondary);
+      }
+
+      .perf-hint button:hover {
+        color: var(--sgc-color-text);
       }
     `,
   ];
@@ -67,6 +111,10 @@ export class SgsDisplayedMaps extends LitElement {
 
   private basemap?: ObservableController<BasemapId>;
   private layers?: ObservableController<MapLayerState[]>;
+
+  @state() private dragId?: string;
+  @state() private dropIndex?: number;
+  @state() private perfHintDismissed = false;
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
@@ -118,6 +166,20 @@ export class SgsDisplayedMaps extends LitElement {
 
       <section class="card">
         <h3 class="card-header">${t('maps.activeLayers')}</h3>
+        ${layers.length > PERF_HINT_THRESHOLD && !this.perfHintDismissed
+          ? html`
+              <p class="perf-hint">
+                <span>${t('layers.performanceHint')}</span>
+                <button
+                  title=${t('layers.dismissHint')}
+                  aria-label=${t('layers.dismissHint')}
+                  @click=${() => (this.perfHintDismissed = true)}
+                >
+                  ${closeIcon}
+                </button>
+              </p>
+            `
+          : nothing}
         ${layers.length === 0
           ? html`<p class="empty">${t('layers.empty')}</p>`
           : layers.map(
@@ -126,12 +188,58 @@ export class SgsDisplayedMaps extends LitElement {
                   .layer=${layer}
                   ?isFirst=${index === 0}
                   ?isLast=${index === layers.length - 1}
+                  ?data-drop-before=${this.dragId !== undefined && this.dropIndex === index}
+                  ?data-drop-after=${this.dragId !== undefined &&
+                  index === layers.length - 1 &&
+                  this.dropIndex === layers.length}
+                  @dragstart=${(e: DragEvent) => this.onDragStart(e, layer.id)}
+                  @dragover=${(e: DragEvent) => this.onDragOver(e, index)}
+                  @drop=${this.onDrop}
+                  @dragend=${this.clearDrag}
                 ></sgs-layer-item>
               `,
             )}
       </section>
     `;
   }
+
+  private onDragStart(event: DragEvent, id: string): void {
+    // Firefox requires data for the drag to start.
+    event.dataTransfer?.setData('text/plain', id);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+    }
+    this.dragId = id;
+  }
+
+  private onDragOver(event: DragEvent, index: number): void {
+    if (this.dragId === undefined) {
+      return;
+    }
+    event.preventDefault(); // allow dropping
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.dropIndex = event.clientY < rect.top + rect.height / 2 ? index : index + 1;
+  }
+
+  private onDrop = (event: DragEvent): void => {
+    event.preventDefault();
+    const layers = this.layers?.value ?? [];
+    if (this.dragId !== undefined && this.dropIndex !== undefined) {
+      const from = layers.findIndex((layer) => layer.id === this.dragId);
+      // Removing the dragged row shifts insertion points below it up by one.
+      const to = from >= 0 && from < this.dropIndex ? this.dropIndex - 1 : this.dropIndex;
+      this.layerService.moveLayerToIndex(this.dragId, to);
+    }
+    this.clearDrag();
+  };
+
+  private clearDrag = (): void => {
+    this.dragId = undefined;
+    this.dropIndex = undefined;
+  };
 }
 
 declare global {

@@ -2,7 +2,9 @@
   "map": {
     "basemapGrey": "Landeskarte (grau)",
     "basemapAerial": "Luftbild",
-    "basemapColor": "Landeskarte (farbig)"
+    "basemapColor": "Landeskarte (farbig)",
+    "zoomIn": "Hineinzoomen",
+    "zoomOut": "Herauszoomen"
   },
   "panel": {
     "close": "Panel einklappen"
@@ -15,7 +17,11 @@
     "moveDown": "Nach unten",
     "zoomTo": "Hinzoomen",
     "legend": "Legende",
-    "toggle": "Ebene ein-/ausblenden"
+    "toggle": "Ebene ein-/ausblenden",
+    "info": "Informationen zur Ebene",
+    "dragToReorder": "Ziehen zum Sortieren",
+    "performanceHint": "Viele aktive Ebenen können die Karte verlangsamen.",
+    "dismissHint": "Hinweis ausblenden"
   },
   "chat": {
     "placeholder": "Frage zu Schweizer Geodaten stellen …",
@@ -65,8 +71,25 @@
     "error": "Geokatalog konnte nicht geladen werden.",
     "add": "Zur Karte hinzufügen",
     "unsupported": "Nicht als Kartenebene verfügbar.",
+    "loadFailed": "Die Ebene konnte nicht geladen werden.",
     "noMatches": "Keine Treffer im Geokatalog.",
-    "remove": "Von der Karte entfernen"
+    "remove": "Von der Karte entfernen",
+    "topics": {
+      "ech": "Hauptthema",
+      "are": "Raumentwicklung (ARE)",
+      "astra": "Strassen (ASTRA)",
+      "bafu": "Umwelt (BAFU)",
+      "bav": "Öffentlicher Verkehr (BAV)",
+      "bfs": "Statistik (BFS)",
+      "blw": "Landwirtschaft (BLW)",
+      "swisstopo": "swisstopo",
+      "meteoschweiz": "Meteorologie (MeteoSchweiz)",
+      "energie": "Energie (BFE)",
+      "verteidigung": "Verteidigung (VBS)",
+      "geol": "Geologie",
+      "inspire": "INSPIRE",
+      "cadastre": "Kataster"
+    }
   },
   "feedback": {
     "category": "Kategorie",
@@ -103,5 +126,15 @@
     "github": "Quellcode auf GitHub",
     "license": "Open Source, BSD-3-Clause-Lizenz",
     "disclaimer": "Prototyp – nicht für den operativen Gebrauch. Inhalte und Funktionalität können sich während der Prototypphase jederzeit ändern."
+  },
+  "locate": {
+    "show": "Meinen Standort anzeigen",
+    "hide": "Standortmarkierung entfernen",
+    "outside": "Ihr Standort liegt ausserhalb der Schweiz.",
+    "denied": "Standortzugriff wurde verweigert.",
+    "unavailable": "Standort konnte nicht ermittelt werden."
+  },
+  "dialog": {
+    "close": "Schliessen"
   }
 }

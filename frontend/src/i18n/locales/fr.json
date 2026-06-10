@@ -2,7 +2,9 @@
   "map": {
     "basemapGrey": "Carte nationale (gris)",
     "basemapAerial": "Photo aérienne",
-    "basemapColor": "Carte nationale (couleur)"
+    "basemapColor": "Carte nationale (couleur)",
+    "zoomIn": "Zoom avant",
+    "zoomOut": "Zoom arrière"
   },
   "panel": {
     "close": "Réduire le panneau"
@@ -15,7 +17,11 @@
     "moveDown": "Descendre",
     "zoomTo": "Zoomer sur la couche",
     "legend": "Légende",
-    "toggle": "Afficher/masquer la couche"
+    "toggle": "Afficher/masquer la couche",
+    "info": "Informations sur la couche",
+    "dragToReorder": "Glisser pour réorganiser",
+    "performanceHint": "Un grand nombre de couches actives peut ralentir la carte.",
+    "dismissHint": "Masquer l'indication"
   },
   "chat": {
     "placeholder": "Posez une question sur les géodonnées suisses …",
@@ -65,8 +71,25 @@
     "error": "Le géocatalogue n'a pas pu être chargé.",
     "add": "Ajouter à la carte",
     "unsupported": "Non disponible comme couche cartographique.",
+    "loadFailed": "La couche n'a pas pu être chargée.",
     "noMatches": "Aucun résultat dans le géocatalogue.",
-    "remove": "Retirer de la carte"
+    "remove": "Retirer de la carte",
+    "topics": {
+      "ech": "Thème principal",
+      "are": "Développement territorial (ARE)",
+      "astra": "Routes (OFROU)",
+      "bafu": "Environnement (OFEV)",
+      "bav": "Transports publics (OFT)",
+      "bfs": "Statistique (OFS)",
+      "blw": "Agriculture (OFAG)",
+      "swisstopo": "swisstopo",
+      "meteoschweiz": "Météorologie (MétéoSuisse)",
+      "energie": "Énergie (OFEN)",
+      "verteidigung": "Défense (DDPS)",
+      "geol": "Géologie",
+      "inspire": "INSPIRE",
+      "cadastre": "Cadastre"
+    }
   },
   "feedback": {
     "category": "Catégorie",
@@ -103,5 +126,15 @@
     "github": "Code source sur GitHub",
     "license": "Open source, licence BSD-3-Clause",
     "disclaimer": "Prototype – pas destiné à un usage opérationnel. Le contenu et les fonctionnalités peuvent changer à tout moment pendant la phase de prototype."
+  },
+  "locate": {
+    "show": "Afficher ma position",
+    "hide": "Masquer ma position",
+    "outside": "Votre position se trouve hors de Suisse.",
+    "denied": "L'accès à la position a été refusé.",
+    "unavailable": "La position n'a pas pu être déterminée."
+  },
+  "dialog": {
+    "close": "Fermer"
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isWmtsDisplayable } from './wmts';
+import { isWmtsDisplayable, wmtsTileUrl } from './wmts';
 import type { LayerConfig } from './layersConfigApi';
 
 function config(type: string): LayerConfig {
@@ -23,5 +23,14 @@ describe('isWmtsDisplayable', () => {
     for (const type of ['wms', 'aggregate', 'geojson', 'wmtsMercator', '']) {
       expect(isWmtsDisplayable(config(type))).toBe(false);
     }
+  });
+});
+
+describe('wmtsTileUrl', () => {
+  it('builds the LV95 tile template from the layer config', () => {
+    const layer = { ...config('wmts'), format: 'jpeg', timestamps: ['current'] };
+    expect(wmtsTileUrl(layer)).toBe(
+      'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.example/default/current/2056/{z}/{x}/{y}.jpeg',
+    );
   });
 });

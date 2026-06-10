@@ -2,16 +2,18 @@ import { LitElement, css, html, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { Task } from '@lit/task';
-import { catalogServiceContext, layerServiceContext } from '../../context';
+import { catalogServiceContext, layerServiceContext, uiServiceContext } from '../../context';
 import type { CatalogService } from '../../services/CatalogService';
 import type { AddLayerResult, LayerService } from '../../services/LayerService';
+import type { UiService } from '../../services/UiService';
 import { filterCatalogTree } from '../../swisstopo/catalogApi';
 import type { CatalogFolderNode, CatalogLayerNode, CatalogNode } from '../../swisstopo/catalogApi';
-import { isWmtsDisplayable } from '../../swisstopo/wmts';
+import { isDisplayable } from '../../swisstopo/layers';
 import { ObservableController } from '../../lib/ObservableController';
 import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
-import { checkIcon, chevronRightIcon, closeIcon, plusIcon } from '../shell/icons';
+import { checkIcon, chevronRightIcon, closeIcon, infoIcon, plusIcon } from '../shell/icons';
 import { panelBaseStyles } from '../panelStyles';
+import { orderTopics, topicLabel } from './topicLabels';
 
 const DEFAULT_TOPIC = 'ech';
 
@@ -155,6 +157,24 @@ export class SgsGeocatalog extends LitElement {
         cursor: default;
       }
 
+      .info {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        border: none;
+        border-radius: 0.25rem;
+        background: none;
+        line-height: 0;
+        cursor: pointer;
+        color: var(--sgc-color-text--secondary);
+      }
+
+      .info:hover {
+        color: var(--sgc-color-brand);
+      }
+
       .leaf[data-unavailable] .label {
         color: var(--sgc-color-text--disabled);
       }
@@ -190,6 +210,9 @@ export class SgsGeocatalog extends LitElement {
 
   @consume({ context: layerServiceContext })
   private layerService!: LayerService;
+
+  @consume({ context: uiServiceContext })
+  private uiService!: UiService;
 
   @state() private topic = DEFAULT_TOPIC;
   @state() private query = '';
@@ -227,9 +250,11 @@ export class SgsGeocatalog extends LitElement {
       <div class="topic-row">
         <label for="topic">${t('geocatalog.topic')}</label>
         <select id="topic" @change=${this.onTopicChange}>
-          ${(this.topicsTask.value ?? [{ id: DEFAULT_TOPIC }]).map(
+          ${orderTopics(this.topicsTask.value ?? [{ id: DEFAULT_TOPIC }]).map(
             (topic) => html`
-              <option value=${topic.id} ?selected=${topic.id === this.topic}>${topic.id}</option>
+              <option value=${topic.id} ?selected=${topic.id === this.topic}>
+                ${topicLabel(topic.id)}
+              </option>
             `,
           )}
         </select>
@@ -285,8 +310,7 @@ export class SgsGeocatalog extends LitElement {
     // Only mark unavailable once the config map is loaded (avoid false-disabling mid-load).
     const configMap = this.configTask.value;
     const config = configMap?.get(node.layerBodId);
-    const unavailable =
-      configMap !== undefined && !(config !== undefined && isWmtsDisplayable(config));
+    const unavailable = configMap !== undefined && !(config !== undefined && isDisplayable(config));
     const label = unavailable
       ? t('geocatalog.unsupported')
       : added
@@ -296,6 +320,14 @@ export class SgsGeocatalog extends LitElement {
       <li>
         <div class="leaf" ?data-unavailable=${unavailable}>
           <span class="label" title=${node.label} ?data-added=${added}>${node.label}</span>
+          <button
+            class="info"
+            title=${t('layers.info')}
+            aria-label=${t('layers.info')}
+            @click=${() => this.uiService.openLayerInfo({ id: node.layerBodId, label: node.label })}
+          >
+            ${infoIcon}
+          </button>
           <button
             class="add"
             ?data-added=${added}
@@ -312,7 +344,13 @@ export class SgsGeocatalog extends LitElement {
               : html`<span class="ic">${plusIcon}</span>`}
           </button>
         </div>
-        ${notice ? html`<p class="notice">${t('geocatalog.unsupported')}</p>` : nothing}
+        ${notice
+          ? html`<p class="notice">
+              ${notice.result === 'failed'
+                ? t('geocatalog.loadFailed')
+                : t('geocatalog.unsupported')}
+            </p>`
+          : nothing}
       </li>
     `;
   }
@@ -329,7 +367,7 @@ export class SgsGeocatalog extends LitElement {
 
   private async addLayer(layerBodId: string): Promise<void> {
     const result = await this.layerService.addOfficialLayer(layerBodId);
-    if (result === 'unsupported' || result === 'unknown') {
+    if (result === 'unsupported' || result === 'unknown' || result === 'failed') {
       clearTimeout(this.noticeHandle);
       this.notice = { layerBodId, result };
       this.noticeHandle = setTimeout(() => (this.notice = undefined), 4000);

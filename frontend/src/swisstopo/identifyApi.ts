@@ -13,11 +13,11 @@ import { fetchJson } from './http';
 const IDENTIFY_LIMIT = 200;
 
 export interface IdentifyParams {
-  /** Click coordinate in EPSG:3857. */
+  /** Click coordinate in EPSG:2056. */
   coordinate: [number, number];
   /** Layer ids to query (identify-capable, visible layers). */
   layerIds: string[];
-  /** Current map extent in EPSG:3857. */
+  /** Current map extent in EPSG:2056. */
   mapExtent: [number, number, number, number];
   /** Map viewport size in px. */
   size: [number, number];
@@ -31,7 +31,7 @@ export interface IdentifyFeature {
   layerName: string;
   featureId: string | number;
   label: string;
-  /** GeoJSON geometry in EPSG:3857 (when returned). */
+  /** GeoJSON geometry in EPSG:2056 (when returned). */
   geometry?: unknown;
 }
 
@@ -40,7 +40,7 @@ export async function identify(params: IdentifyParams): Promise<IdentifyFeature[
   const query = new URLSearchParams({
     geometry: params.coordinate.map((n) => n.toFixed(2)).join(','),
     geometryType: 'esriGeometryPoint',
-    sr: '3857',
+    sr: '2056',
     mapExtent: params.mapExtent.map((n) => n.toFixed(2)).join(','),
     imageDisplay: `${Math.round(params.size[0])},${Math.round(params.size[1])},96`,
     tolerance: String(params.tolerance ?? 10),
@@ -83,5 +83,5 @@ export function htmlPopupUrl(
 ): string {
   return `${API3_BASE_URL}/ech/MapServer/${encodeURIComponent(layerBodId)}/${encodeURIComponent(
     String(featureId),
-  )}/htmlPopup?lang=${lang}&sr=3857`;
+  )}/htmlPopup?lang=${lang}&sr=2056`;
 }
