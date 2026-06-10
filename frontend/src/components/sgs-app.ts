@@ -27,7 +27,6 @@ import './shell/sgs-nav-rail';
 import './shell/sgs-flyout';
 import './chat/sgs-chat-panel';
 import './chat/sgs-connection-badge';
-import './search/sgs-search-panel';
 import './about/sgs-about-panel';
 import './catalog/sgs-geocatalog';
 import './feedback/sgs-feedback-panel';
@@ -35,10 +34,9 @@ import './map/sgs-displayed-maps';
 import './map/sgs-map';
 
 const PANEL_TITLE_KEYS: Record<PanelId, string> = {
-  search: 'rail.search',
+  chat: 'rail.chat',
   maps: 'rail.maps',
   catalog: 'rail.catalog',
-  chat: 'rail.chat',
   feedback: 'rail.feedback',
   about: 'rail.about',
 };
@@ -97,7 +95,7 @@ export class SgsApp extends LitElement {
         <sgs-nav-rail></sgs-nav-rail>
         ${active
           ? html`
-              <sgs-flyout heading=${t(PANEL_TITLE_KEYS[active])} ?wide=${active === 'chat'}>
+              <sgs-flyout heading=${t(PANEL_TITLE_KEYS[active])}>
                 ${active === 'chat'
                   ? html`<sgs-connection-badge slot="header-extra"></sgs-connection-badge>`
                   : nothing}
@@ -112,8 +110,6 @@ export class SgsApp extends LitElement {
 
   private renderPanel(panel: PanelId) {
     switch (panel) {
-      case 'search':
-        return html`<sgs-search-panel></sgs-search-panel>`;
       case 'chat':
         return html`<sgs-chat-panel></sgs-chat-panel>`;
       case 'maps':

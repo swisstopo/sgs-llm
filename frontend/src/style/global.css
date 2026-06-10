@@ -47,10 +47,6 @@ sgs-app sgs-flyout {
   min-height: 0;
 }
 
-sgs-app sgs-flyout[wide] {
-  width: 30rem;
-}
-
 /* <sgs-map> renders in light DOM so ol/ol.css can style the map controls. */
 sgs-map {
   display: block;

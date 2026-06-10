@@ -7,18 +7,6 @@
   "panel": {
     "close": "Réduire le panneau"
   },
-  "search": {
-    "placeholder": "Rechercher un lieu ou un jeu de données …",
-    "locations": "Lieux",
-    "layers": "Jeux de données",
-    "noResults": "Aucun résultat.",
-    "notDisplayable": "Non disponible comme couche cartographique",
-    "added": "Ajouté",
-    "popular": "Recherches populaires :",
-    "popularFlood": "Crues",
-    "popularSolar": "Énergie solaire",
-    "popularForest": "Forêt"
-  },
   "layers": {
     "empty": "Aucune couche sur la carte.",
     "opacity": "Opacité",
@@ -58,7 +46,6 @@
     "error": "La légende n'a pas pu être chargée."
   },
   "rail": {
-    "search": "Recherche",
     "maps": "Cartes affichées",
     "catalog": "Géocatalogue",
     "chat": "Chat",
