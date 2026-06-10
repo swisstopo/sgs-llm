@@ -3,19 +3,12 @@
     "title": "SGS LLM",
     "subtitle": "Geodati svizzeri in dialogo"
   },
-  "scaffold": {
-    "placeholder": "Struttura dell'applicazione – mappa e chat seguiranno.",
-    "action": "Iniziamo"
-  },
   "map": {
     "basemapGrey": "Carta nazionale (grigio)",
     "basemapAerial": "Foto aerea",
     "basemapColor": "Carta nazionale (a colori)"
   },
   "panel": {
-    "search": "Ricerca",
-    "catalog": "Catalogo",
-    "layers": "Livelli",
     "close": "Comprimere il pannello"
   },
   "search": {
@@ -40,7 +33,6 @@
     "legend": "Legenda"
   },
   "chat": {
-    "title": "Chat",
     "placeholder": "Fai una domanda sui geodati svizzeri …",
     "send": "Invia",
     "cancel": "Annulla",
@@ -109,5 +101,22 @@
     "sending": "Invio in corso …",
     "success": "Grazie per il suo feedback!",
     "error": "Impossibile inviare il feedback. Riprovi più tardi."
+  },
+  "about": {
+    "description": "SGS LLM è un prototipo open source che rende accessibili i geodati federali svizzeri tramite il linguaggio naturale: un'interfaccia di chat, una mappa interattiva e connettori verso i servizi ufficiali di swisstopo. Il progetto nasce nell'ambito della Strategia per la geoinformazione in Svizzera (SGS).",
+    "builtByTitle": "Sviluppato da",
+    "builtBy": {
+      "ageospatial": "Frontend, mappa web e connettori alle API swisstopo",
+      "askearth": "Fornitura del LLM, integrazione agente e MCP, framework di test",
+      "for": "Per conto di swisstopo, finanziato nell'ambito della Strategia per la geoinformazione in Svizzera (SGS)."
+    },
+    "dataSourcesTitle": "Fonti di dati",
+    "dataSources": {
+      "geoadmin": "Servizi REST pubblici della piattaforma federale di geoinformazione (geo.admin.ch)"
+    },
+    "projectTitle": "Progetto",
+    "github": "Codice sorgente su GitHub",
+    "license": "Open source, licenza BSD-3-Clause",
+    "disclaimer": "Prototipo – non destinato all'uso operativo. Contenuti e funzionalità possono cambiare in qualsiasi momento durante la fase di prototipo."
   }
 }
