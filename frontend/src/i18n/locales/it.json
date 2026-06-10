@@ -1,7 +1,6 @@
 {
   "app": {
-    "title": "SGS LLM",
-    "subtitle": "Geodati svizzeri in dialogo"
+    "title": "SGS LLM"
   },
   "map": {
     "basemapGrey": "Carta nazionale (grigio)",
@@ -82,7 +81,8 @@
     "add": "Aggiungere alla mappa",
     "added": "Sulla mappa",
     "unsupported": "Non disponibile come livello cartografico.",
-    "noMatches": "Nessun risultato nel geocatalogo."
+    "noMatches": "Nessun risultato nel geocatalogo.",
+    "remove": "Rimuovere dalla mappa"
   },
   "feedback": {
     "category": "Categoria",

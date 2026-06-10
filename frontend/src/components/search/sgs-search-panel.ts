@@ -134,6 +134,12 @@ export class SgsSearchPanel extends LitElement {
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
+  override connectedCallback(): void {
+    super.connectedCallback();
+    // Keep result "added" states fresh when layers change elsewhere.
+    new ObservableController(this, this.layerService.layers$);
+  }
+
   override render() {
     const hasResults = this.locations.length > 0 || this.layers.length > 0;
     return html`
@@ -184,9 +190,13 @@ export class SgsSearchPanel extends LitElement {
                 (layer) => html`
                   <li>
                     <button
-                      ?disabled=${!layer.displayable || this.layerService.isActive(layer.layerId)}
-                      title=${layer.displayable ? '' : t('search.notDisplayable')}
-                      @click=${() => this.addLayer(layer.layerId)}
+                      ?disabled=${!layer.displayable}
+                      title=${!layer.displayable
+                        ? t('search.notDisplayable')
+                        : this.layerService.isActive(layer.layerId)
+                          ? t('geocatalog.remove')
+                          : ''}
+                      @click=${() => this.toggleLayer(layer.layerId)}
                     >
                       ${layer.label}
                       ${!layer.displayable
@@ -271,8 +281,13 @@ export class SgsSearchPanel extends LitElement {
     }
   }
 
-  private async addLayer(layerId: string): Promise<void> {
-    await this.layerService.addOfficialLayer(layerId);
+  /** Adds the layer to the map, or removes it if already shown. */
+  private async toggleLayer(layerId: string): Promise<void> {
+    if (this.layerService.isActive(layerId)) {
+      this.layerService.removeLayer(layerId);
+    } else {
+      await this.layerService.addOfficialLayer(layerId);
+    }
     this.requestUpdate();
   }
 }

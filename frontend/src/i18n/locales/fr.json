@@ -1,7 +1,6 @@
 {
   "app": {
-    "title": "SGS LLM",
-    "subtitle": "Les géodonnées suisses en dialogue"
+    "title": "SGS LLM"
   },
   "map": {
     "basemapGrey": "Carte nationale (gris)",
@@ -82,7 +81,8 @@
     "add": "Ajouter à la carte",
     "added": "Sur la carte",
     "unsupported": "Non disponible comme couche cartographique.",
-    "noMatches": "Aucun résultat dans le géocatalogue."
+    "noMatches": "Aucun résultat dans le géocatalogue.",
+    "remove": "Retirer de la carte"
   },
   "feedback": {
     "category": "Catégorie",

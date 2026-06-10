@@ -1,7 +1,5 @@
 import { LitElement, css, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { ObservableController } from '../lib/ObservableController';
-import { languageChanged$, t } from '../i18n/i18n';
 
 @customElement('sgs-header')
 export class SgsHeader extends LitElement {
@@ -9,34 +7,51 @@ export class SgsHeader extends LitElement {
     :host {
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 0.875rem;
       padding: 0 1rem;
       height: 3.5rem;
-      background: var(--sgc-color-bg--white, #ffffff);
-      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+      background: #1f2d3d;
     }
 
-    .title {
-      font-size: 1.125rem;
-      font-weight: 700;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
     }
 
-    .title .accent {
-      color: var(--sgc-color-brand, #d8232a);
+    .logo-sgs {
+      height: 2.25rem;
+      width: auto;
     }
 
-    .subtitle {
-      color: var(--sgc-color-text--secondary, #4b5a68);
-      font-size: 0.875rem;
+    .divider {
+      width: 1px;
+      height: 1.5rem;
+      background: rgb(255 255 255 / 0.25);
+    }
+
+    .wordmark {
+      color: #ffffff;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    .logo-swisstopo {
+      height: 2rem;
+      width: auto;
+      margin-left: auto;
     }
   `;
 
-  private readonly _language = new ObservableController(this, languageChanged$);
-
   override render() {
     return html`
-      <span class="title"><span class="accent">SGS</span> LLM</span>
-      <span class="subtitle">${t('app.subtitle')}</span>
+      <div class="brand">
+        <img class="logo-sgs" src="/logos/sgs-white.png" alt="Strategie Geoinformation Schweiz" />
+        <span class="divider"></span>
+        <span class="wordmark">LLM</span>
+      </div>
+      <img class="logo-swisstopo" src="/logos/swisstopo-white.png" alt="swisstopo" />
     `;
   }
 }

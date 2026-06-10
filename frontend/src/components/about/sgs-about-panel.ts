@@ -42,6 +42,24 @@ export class SgsAboutPanel extends LitElement {
       gap: 0.375rem;
     }
 
+    .builder {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .builder img {
+      flex: none;
+      height: 1.75rem;
+      width: auto;
+      max-width: 6rem;
+      object-fit: contain;
+    }
+
+    .builder .text {
+      min-width: 0;
+    }
+
     a {
       color: var(--sgc-color-brand, #d8232a);
       text-decoration: none;
@@ -74,13 +92,21 @@ export class SgsAboutPanel extends LitElement {
 
       <h3>${t('about.builtByTitle')}</h3>
       <ul>
-        <li>
-          <a href=${AGEOSPATIAL_URL} target="_blank" rel="noopener noreferrer">Ageospatial Sàrl</a>
-          <span class="role">${t('about.builtBy.ageospatial')}</span>
+        <li class="builder">
+          <img src="/logos/ageospatial-black.png" alt="Ageospatial" />
+          <span class="text">
+            <a href=${AGEOSPATIAL_URL} target="_blank" rel="noopener noreferrer">
+              Ageospatial Sàrl
+            </a>
+            <span class="role">${t('about.builtBy.ageospatial')}</span>
+          </span>
         </li>
-        <li>
-          <a href=${ASKEARTH_URL} target="_blank" rel="noopener noreferrer">askEarth AG</a>
-          <span class="role">${t('about.builtBy.askearth')}</span>
+        <li class="builder">
+          <img src="/logos/askearth.png" alt="askEarth" />
+          <span class="text">
+            <a href=${ASKEARTH_URL} target="_blank" rel="noopener noreferrer">askEarth AG</a>
+            <span class="role">${t('about.builtBy.askearth')}</span>
+          </span>
         </li>
       </ul>
       <p class="role" style="margin-top: 0.5rem;">${t('about.builtBy.for')}</p>

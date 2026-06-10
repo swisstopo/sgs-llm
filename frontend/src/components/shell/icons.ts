@@ -46,9 +46,19 @@ export const aboutIcon = icon(
   svg`<circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 014.9.7c0 1.7-2.5 2-2.5 3.8" /><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none" />`,
 );
 
-export const languageIcon = icon(
-  svg`<circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.4 2.3 3.7 5.4 3.7 9S14.4 18.7 12 21c-2.4-2.3-3.7-5.4-3.7-9S9.6 5.3 12 3z" />`,
-);
+// "Translate" glyph (文A). Filled, so it is built directly rather than via
+// the stroked icon() helper. Path from Material Symbols (Apache-2.0).
+export const languageIcon = html`<svg
+  viewBox="0 0 24 24"
+  width="22"
+  height="22"
+  fill="currentColor"
+  aria-hidden="true"
+>
+  <path
+    d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"
+  />
+</svg>`;
 
 export const collapseIcon = icon(
   svg`<rect x="4" y="4" width="16" height="16" rx="2" /><path d="M10 4v16" /><path d="M16 10l-2.5 2 2.5 2" />`,
