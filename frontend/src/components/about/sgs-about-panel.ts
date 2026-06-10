@@ -21,6 +21,23 @@ export class SgsAboutPanel extends LitElement {
       line-height: 1.55;
     }
 
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      padding-bottom: 0.875rem;
+      margin-bottom: 0.875rem;
+      border-bottom: 1px solid var(--sgc-color-border, #d5dbe0);
+    }
+
+    .identity img {
+      height: 2.5rem;
+      width: auto;
+      max-width: 45%;
+      object-fit: contain;
+    }
+
     p {
       margin: 0 0 0.75rem;
     }
@@ -88,6 +105,10 @@ export class SgsAboutPanel extends LitElement {
 
   override render() {
     return html`
+      <div class="identity">
+        <img src="/logos/sgs-dark.png" alt="Strategie Geoinformation Schweiz" />
+        <img src="/logos/swisstopo-dark.png" alt="swisstopo" />
+      </div>
       <p>${t('about.description')}</p>
 
       <h3>${t('about.builtByTitle')}</h3>
