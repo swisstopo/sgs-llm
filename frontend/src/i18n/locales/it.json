@@ -7,18 +7,6 @@
   "panel": {
     "close": "Comprimere il pannello"
   },
-  "search": {
-    "placeholder": "Cercare un luogo o un set di dati …",
-    "locations": "Luoghi",
-    "layers": "Set di dati",
-    "noResults": "Nessun risultato.",
-    "notDisplayable": "Non disponibile come livello cartografico",
-    "added": "Aggiunto",
-    "popular": "Ricerche popolari:",
-    "popularFlood": "Piene",
-    "popularSolar": "Energia solare",
-    "popularForest": "Bosco"
-  },
   "layers": {
     "empty": "Nessun livello sulla mappa.",
     "opacity": "Opacità",
@@ -58,7 +46,6 @@
     "error": "Impossibile caricare la legenda."
   },
   "rail": {
-    "search": "Ricerca",
     "maps": "Mappe visualizzate",
     "catalog": "Geocatalogo",
     "chat": "Chat",

@@ -13,15 +13,7 @@ import {
   t,
 } from '../../i18n/i18n';
 import type { AppLanguage } from '../../i18n/i18n';
-import {
-  aboutIcon,
-  catalogIcon,
-  chatIcon,
-  feedbackIcon,
-  languageIcon,
-  mapsIcon,
-  searchIcon,
-} from './icons';
+import { aboutIcon, catalogIcon, chatIcon, feedbackIcon, languageIcon, mapsIcon } from './icons';
 
 interface RailItem {
   id: PanelId;
@@ -31,7 +23,6 @@ interface RailItem {
 
 const RAIL_ITEMS: RailItem[] = [
   { id: 'chat', icon: chatIcon, labelKey: 'rail.chat' },
-  { id: 'search', icon: searchIcon, labelKey: 'rail.search' },
   { id: 'maps', icon: mapsIcon, labelKey: 'rail.maps' },
   { id: 'catalog', icon: catalogIcon, labelKey: 'rail.catalog' },
   { id: 'feedback', icon: feedbackIcon, labelKey: 'rail.feedback' },

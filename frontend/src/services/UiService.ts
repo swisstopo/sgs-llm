@@ -2,7 +2,7 @@ import { BehaviorSubject } from 'rxjs';
 import type { Observable } from 'rxjs';
 
 /** Flyout panels reachable from the navigation rail. */
-export type PanelId = 'search' | 'maps' | 'catalog' | 'chat' | 'feedback' | 'about';
+export type PanelId = 'chat' | 'maps' | 'catalog' | 'feedback' | 'about';
 
 /** Shell UI state: which flyout panel is open (one at a time). */
 export class UiService {

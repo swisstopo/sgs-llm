@@ -7,18 +7,6 @@
   "panel": {
     "close": "Collapse panel"
   },
-  "search": {
-    "placeholder": "Search for a place or dataset …",
-    "locations": "Places",
-    "layers": "Datasets",
-    "noResults": "No results.",
-    "notDisplayable": "Not available as a map layer",
-    "added": "Added",
-    "popular": "Popular searches:",
-    "popularFlood": "Flood",
-    "popularSolar": "Solar energy",
-    "popularForest": "Forest"
-  },
   "layers": {
     "empty": "No layers on the map yet.",
     "opacity": "Opacity",
@@ -58,7 +46,6 @@
     "error": "The legend could not be loaded."
   },
   "rail": {
-    "search": "Search",
     "maps": "Displayed maps",
     "catalog": "Geocatalog",
     "chat": "Chat",

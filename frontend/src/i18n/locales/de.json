@@ -7,18 +7,6 @@
   "panel": {
     "close": "Panel einklappen"
   },
-  "search": {
-    "placeholder": "Ort oder Datensatz suchen …",
-    "locations": "Orte",
-    "layers": "Datensätze",
-    "noResults": "Keine Treffer.",
-    "notDisplayable": "Nicht als Kartenebene verfügbar",
-    "added": "Hinzugefügt",
-    "popular": "Beliebte Suchen:",
-    "popularFlood": "Hochwasser",
-    "popularSolar": "Solarenergie",
-    "popularForest": "Wald"
-  },
   "layers": {
     "empty": "Noch keine Ebenen auf der Karte.",
     "opacity": "Deckkraft",
@@ -58,7 +46,6 @@
     "error": "Legende konnte nicht geladen werden."
   },
   "rail": {
-    "search": "Suche",
     "maps": "Dargestellte Karten",
     "catalog": "Geokatalog",
     "chat": "Chat",

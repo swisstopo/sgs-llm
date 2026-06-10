@@ -141,10 +141,6 @@ export class MapService {
     this.basemapSubject.next(id);
   }
 
-  flyTo(lonLat: [number, number], zoom = 12): void {
-    this.map.getView().animate({ center: fromLonLat(lonLat), zoom, duration: 400 });
-  }
-
   /** Thumbnail image URL for a basemap (tile params from layersConfig). */
   async getBasemapThumbnailUrl(id: BasemapId): Promise<string | undefined> {
     const config = (await this.catalog.getConfig()).get(id);
