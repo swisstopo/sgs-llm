@@ -14,7 +14,8 @@
   "panel": {
     "search": "Recherche",
     "catalog": "Catalogue",
-    "layers": "Couches"
+    "layers": "Couches",
+    "close": "Réduire le panneau"
   },
   "search": {
     "placeholder": "Rechercher un lieu ou un jeu de données …",
@@ -65,5 +66,14 @@
   "legend": {
     "loading": "Chargement de la légende …",
     "error": "La légende n'a pas pu être chargée."
+  },
+  "rail": {
+    "search": "Recherche",
+    "maps": "Cartes affichées",
+    "catalog": "Géocatalogue",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "À propos du projet",
+    "language": "Choisir la langue"
   }
 }

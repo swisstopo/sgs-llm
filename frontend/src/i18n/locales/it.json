@@ -14,7 +14,8 @@
   "panel": {
     "search": "Ricerca",
     "catalog": "Catalogo",
-    "layers": "Livelli"
+    "layers": "Livelli",
+    "close": "Comprimere il pannello"
   },
   "search": {
     "placeholder": "Cercare un luogo o un set di dati …",
@@ -65,5 +66,14 @@
   "legend": {
     "loading": "Caricamento della legenda …",
     "error": "Impossibile caricare la legenda."
+  },
+  "rail": {
+    "search": "Ricerca",
+    "maps": "Mappe visualizzate",
+    "catalog": "Geocatalogo",
+    "chat": "Chat",
+    "feedback": "Feedback",
+    "about": "Informazioni sul progetto",
+    "language": "Scegliere la lingua"
   }
 }
