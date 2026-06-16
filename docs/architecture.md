@@ -1,5 +1,64 @@
 # Architecture
 
+## System diagram
+
+The whole system in one picture. The browser runs the frontend, served via
+**CloudFront** from **S3**, and works two ways at once: **[Track A](#overview)**
+calls the Swisstopo public APIs directly for the catalog, tiles, and identify;
+**[Track B](#overview)** speaks WebSocket protocol v1 through CloudFront and an
+**ALB** to the agent backend on **ECS Fargate**. The backend runs the LLM loop
+on **Amazon Bedrock** and calls the geodata **MCP server** (still TBD), which
+produces the result **data layers** in S3; the backend relays their presigned
+URLs to the browser, which fetches them. The backend host is the target (ECS
+Fargate behind an ALB); the pilot initially runs the bundled mock-agent on EC2
+(see [`deployment.md`](./deployment.md#backend-deployment)).
+
+```mermaid
+flowchart TB
+    browser["`**Browser** · frontend/
+————
+Lit · OpenLayers (EPSG:2056) · chat + map`"]
+
+    topo["`**Swisstopo public APIs** · geo.admin.ch
+————
+WMTS · WMS · catalog / identify / GeoJSON`"]
+
+    cf["`**CloudFront**
+————
+HTTPS / wss · single origin`"]
+    s3f[("`**S3** · static frontend
+————
+built assets + config.json`")]
+    alb["`**ALB**
+————
+WebSocket upgrade`"]
+    orch["`**Agent backend** · ECS Fargate
+————
+sgs-llm-module · WS protocol v1 · LLM loop · MCP client`"]
+    bedrock["`**Amazon Bedrock**
+————
+Claude Opus 4.8 · EU profile`"]
+    mcp["`**MCP server(s) · TBD**
+————
+geodata tools · separate work package`"]
+    s3d[("`**S3** · data-layer artifacts
+————
+GeoJSON / GeoParquet`")]
+
+    browser -- "https / wss" --> cf
+    cf -- "default →" --> s3f
+    cf -- "/ws/v1 · /feedback →" --> alb
+    alb -- "WebSocket" --> orch
+    browser -- "Track A · direct calls" --> topo
+    orch -- "LLM · InvokeModel" --> bedrock
+    orch -- "MCP client" --> mcp
+    mcp -- "produces data layers" --> s3d
+    mcp -. "tool JSON (+ layer URLs)" .-> orch
+    orch -. "answer + layer URLs" .-> browser
+    s3d -. "presigned URLs · fetched by browser" .-> browser
+    mcp -. "bulk geodata (fetch_layer_data)" .-> topo
+```
+
 ## Overview
 
 The SGS LLM prototype is a chat + web map application for Swiss federal
@@ -96,6 +155,56 @@ stable in the protocol but renders as a "format not yet supported" notice.
 Follow-up path: `parquet-wasm` → Arrow → GeoJSON features into the same
 `VectorSource` behind `LayerService.addDataLayer`'s format switch — no
 protocol change required.
+
+## Backend architecture
+
+The chat side is served by the agent backend, developed separately in
+[`swisstopo/sgs-llm-module`](https://github.com/swisstopo/sgs-llm-module) and
+connected over the WebSocket protocol; the notes below record the **design
+decisions** for that backend. How the service is deployed is in
+[`deployment.md`](./deployment.md#backend-deployment); the client side of the
+geodata tool interface is in [MCP client interface](#mcp-client-interface).
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│ Agent backend (sgs-llm-module)                                     │
+│   Dockerized Python service · WebSocket protocol v1 (stateless)    │
+│                                                                    │
+│   /ws/v1 ◄──► agent orchestrator (LLM loop)                        │
+│                 ├─ LLM ──► Amazon Bedrock — Claude                 │
+│                 │          (eu.anthropic.* EU inference profile)   │
+│                 └─ MCP client ──► MCP server(s): geodata tools,    │
+│                                   fetch_layer_data  (separate)     │
+│                                                                    │
+│   data layers ──► GeoJSON / GeoParquet on S3 (presigned URLs)      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- **Stateless protocol v1** — the backend receives the full conversation history and map context on every turn (see [protocol.md](./protocol.md)), so it can restart or scale freely; versioning at the URL (`/ws/v1`) lets it release independently of the frontend.
+- **MCP client + LLM orchestrator** — the backend runs the LLM loop and the MCP client that calls the geodata tools; the MCP **server** is a separate component (see [Swisstopo connector](#swisstopo-connector)).
+- **Amazon Bedrock, Claude via the EU inference profile** (`eu.anthropic.claude-*`) — managed, IAM-authenticated model access that stays within EU regions, with no API key to store; model choice in [`llm.md`](./llm.md).
+- **Agent loop → protocol events** — tool and LLM progress stream as `intermediate`, the answer and data layers as `final`, turn completion as `done`, and a client `cancel` aborts the in-flight turn.
+- **Data layers on S3** — results are written by the MCP Server as GeoJSON / GeoParquet and returned as presigned URLs in `LayerSpec` (see [Data layers from chat](#data-layers-from-chat)).
+
+## MCP client interface
+
+The backend is the **MCP client**; the geodata tools live on a separate MCP
+**server** (the connector). This section fixes the **client side**
+so backend work can proceed.
+
+Client side:
+
+- **Transport** — connect to the server over **Streamable HTTP** (remote MCP), not stdio: `initialize`, cache `tools/list`, invoke with `tools/call`.
+- **In the agent loop** — the server's tools are offered to Claude as its tool set; each model `tool_use` becomes a `tools/call`, and the result is fed back until the model produces the final answer.
+- **Mapping to protocol v1** — the client converts tool output into the frontend's events: a fetchable GeoJSON/GeoParquet URL with a WGS84 `bbox` (and optional style hint) becomes a `LayerSpec`; tool progress streams as `intermediate`; a client `cancel` aborts the in-flight `tools/call`; failures surface as `error`.
+- **Auth & secrets** — the client presents the server's credential (bearer token / OAuth) from Secrets Manager; the server endpoint must be reachable from the Fargate task's egress.
+
+Needed from the server:
+
+- The **endpoint URL**, and confirmation of **Streamable HTTP** transport and the **auth scheme**.
+- The **tool catalog** — each tool's name and JSON-Schema input/output.
+- For any tool that produces a map layer, a result that yields a **fetchable GeoJSON or GeoParquet URL plus a WGS84 bounding box** (and any style hint), so the client can build a `LayerSpec` without re-hosting the data.
+- **Limits** — payload sizes, rate limits, and timeout / long-running behavior.
 
 ## Swisstopo connector
 
