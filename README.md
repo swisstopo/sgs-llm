@@ -80,6 +80,10 @@ The full design — stack decisions, services, the Swisstopo connector and the A
 honors, security notes, and the manual demo script — is in
 [`docs/architecture.md`](docs/architecture.md). The chat/agent contract is in
 [`docs/protocol.md`](docs/protocol.md) with JSON Schemas under [`docs/protocol/`](docs/protocol/).
+The target architecture for the separately-developed agent backend — its MCP-client /
+LLM-orchestration design (Amazon Bedrock for Claude) and its AWS deployment (ECS Fargate +
+ALB) — is recorded in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/deployment.md`](docs/deployment.md).
 
 ## Repository layout
 
@@ -169,6 +173,11 @@ redeploy fallback:
 ```bash
 PROFILE=swisstopo ./scripts/deploy-frontend.sh
 ```
+
+The **production agent backend** replaces the development EC2 mock-agent with a managed
+container service — **ECS Fargate behind an ALB**, image from **ECR**, fronted by the same
+CloudFront distribution and shipped by the same GitHub-OIDC pattern. The target design and
+rationale are in [`docs/deployment.md`](docs/deployment.md).
 
 ## Support
 

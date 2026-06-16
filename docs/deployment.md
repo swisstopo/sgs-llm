@@ -1,4 +1,4 @@
-# Deployment (POC, AWS)
+# Deployment (AWS)
 
 This document describes how the SGS LLM prototype is deployed to AWS, and how to
 reproduce, redeploy, operate, and tear it down. It contains **no credentials** —
@@ -46,6 +46,20 @@ the region is enabled (`aws account enable-region --region-name eu-central-2`)
 and activation completes. For the POC the only data in play is public
 geo.admin.ch tiles and mock demo data, so Frankfurt is acceptable. Enable Zurich
 for the production system.
+
+**LLM (Bedrock).** Amazon Bedrock is available in both Frankfurt (`eu-central-1`)
+and Zurich (`eu-central-2`), and across most EU regions. Claude is not hosted
+*in-region* in Frankfurt or Zurich; it is reached through Bedrock
+[cross-region inference profiles](https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html) —
+the **EU profile** (`eu.anthropic.claude-*`) keeps every request within EU
+regions (data stays in the EU, and Bedrock retains no prompts or outputs by
+default), while the global profile may route worldwide. There is no
+Switzerland-only Claude inference today — Stockholm is the only EU region hosting
+recent Claude in-region — so the EU profile is the practical residency choice.
+Trend: AWS keeps expanding sovereign options (the EU Sovereign Cloud reached GA
+in Germany in early 2026) and in-region frontier-model coverage is growing, but
+cross-region inference remains the way to pair frontier models with EU data
+residency.
 
 ## Resource inventory (current deployment)
 
@@ -394,12 +408,80 @@ aws iam delete-open-id-connect-provider --profile swisstopo \
   --open-id-connect-provider-arn arn:aws:iam::259789526488:oidc-provider/token.actions.githubusercontent.com
 ```
 
+## Backend deployment
+
+The frontend POC runs the mock-agent on a single EC2 instance (above); the
+production agent backend
+([`swisstopo/sgs-llm-module`](https://github.com/swisstopo/sgs-llm-module))
+replaces that EC2 origin with a managed container service. The backend's internal
+design (MCP client, the LLM loop, data-layer artifacts) is in
+[`architecture.md`](./architecture.md#backend-architecture).
+
+```text
+                 ┌──────────────── CloudFront (HTTPS / wss) ────────────────────┐
+ browser ──────▶ │  default              → S3 (private, OAC) → dist/ + config    │
+ (https + wss)   │  /ws/v1, /feedback     → ALB origin (WebSocket upgrade)        │
+                 └───────────────────────────────────┬───────────────────────────┘
+                                                      ▼
+                                   Application Load Balancer  (raised idle timeout)
+                                                      ▼
+                                   ECS Fargate service · Python agent · ≥1 task
+                                          image pulled from ECR
+                                          ├─► Amazon Bedrock (Claude, EU profile) — task IAM role
+                                          ├─► MCP server(s) — geodata tools; produce the data layers
+                                          └─► S3 — MCP-produced GeoJSON/GeoParquet; backend relays presigned URLs
+```
+
+- **ECS on Fargate behind an Application Load Balancer** — managed containers with native WebSocket and zero-downtime rolling deploys (the Azure Container Apps analogue).
+- **Amazon ECR** (private) — the registry the service pulls its image from, IAM-scoped.
+- **Reuse the existing CloudFront distribution** — repoint the `/ws/v1` and `/feedback` behaviors to the ALB; one TLS origin keeps `wss://` working and the S3 / `config.json` path unchanged.
+- **ALB locked to the CloudFront managed prefix list** (`com.amazonaws.global.cloudfront.origin-facing`) — the origin stays unreachable except through CloudFront, mirroring the EC2 security group.
+- **Raised ALB idle timeout** — long-lived chat connections survive quiet periods mid-conversation.
+- **Fargate task IAM role for Bedrock** (`bedrock:InvokeModel*` on the EU inference profile) — model access with no API key to store; Secrets Manager holds only non-AWS credentials such as an MCP server token. Model choice: [`llm.md`](./llm.md).
+- **ALB + tasks in private subnets, egress via NAT** — the service stays off the public internet except through CloudFront.
+
+### Pilot phase
+
+For the pilot the service runs as a **single Fargate task** (ECS desired count 1,
+autoscaling off) at a modest size — **1 vCPU / 2 GB**, raising memory toward 4 GB
+(or 2 vCPU / 4 GB) if the agent needs it. Moving to production means raising the ECS desired
+count and enabling autoscaling on the service. The
+ALB stays the same.
+
+### CI/CD (backend)
+
+The same keyless GitHub OIDC pattern as the frontend
+([step 7](#7-github-actions-oidc-deploy-role-cicd)), with a **second scoped role**:
+
+```text
+push to main → GitHub Actions (OIDC, no stored keys)
+   → docker build  → push to ECR  (repo: sgs-llm-backend)
+   → aws ecs update-service --force-new-deployment   (rolling restart onto the new image)
+```
+
+The role (e.g. `github-actions-sgs-llm-backend-deploy`) is trusted only for the
+backend repository's `main` branch, and its policy is scoped to **ECR push** on
+that one repository plus the **`ecs:UpdateService` / `ecs:RegisterTaskDefinition`**
+calls for that one service — nothing else.
+
+### Region
+
+Frankfurt (`eu-central-1`) as today. Claude is reached through the Bedrock **EU
+inference profile** regardless of the task's region (it is not hosted in-region
+in Frankfurt or Zurich), so the model is available without enabling Zurich.
+Enable **eu-central-2 (Zurich)** for the compute/data path if in-country Swiss
+residency is later required — Bedrock is available there too.
+
 ## Follow-ups (post-POC)
 
 - Move to **eu-central-2 (Zurich)** once the region is enabled.
-- Give the agent a stable endpoint (**Elastic IP**, or replace the EC2 with a
-  managed/serverless backend — ECS Fargate, or API Gateway WebSocket + Lambda)
-  and swap the mock-agent for the real agent.
+- Replace the EC2 mock-agent with the production agent backend on **ECS Fargate +
+  ALB** — see [Backend deployment](#backend-deployment).
+- **Scale the backend out** — raise the ECS desired count and enable autoscaling
+  (on CPU or ALB connection count) once past the single pilot task.
+- **Load-test the backend** — drive concurrent WebSocket chat sessions to size
+  the task (CPU/memory), the autoscaling thresholds, and the ALB idle timeout
+  before production traffic.
 - **Custom domain** + ACM certificate.
 
 Done since the initial POC: ✔ GitHub Actions deploy on push to `main` (OIDC
