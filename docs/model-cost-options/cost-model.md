@@ -17,7 +17,7 @@ bound — real Bedrock cost is lower with committed-use discounts and credits.
 
 | Horizon | Scale | What it decides |
 | --- | --- | --- |
-| **Pilot** | ~100 conversations/day (~300 turns/day) | Feasibility and quality. Cost is negligible here (tens of $/month even on the frontier model). |
+| **Pilot** | ~100 conversations/day (~300 turns/day) | Feasibility and quality. Cost is negligible — ~$12/month on an open model, ~$150 even on the frontier. |
 | **Production** | portal-scale, thousands–tens of thousands of conversations/day | The go/no-go economics. This is where model and hosting choice matter. |
 
 The pilot tells us nothing about cost; **this document is mostly about production.**
@@ -192,17 +192,10 @@ on**, `c`=0.7), across the §1 scenario ladder (column header = turns/day):
 At the **rich** tier (`raw_in`=15k) multiply by ~2–3×; at the **light/FAQ** tier
 (`raw_in`=1.5k) roughly halve — the §2 table has the exact rich figures.
 
-**What the ladder shows:**
-
-- **Below the High rung** (≤60k turns/day ≈ 10k conversations/day × 6 turns), a
-  **managed-open model runs the whole service for ~$2.5k/month or less** — a small
-  fraction of the portal budget, zero infrastructure, EU residency. Even mid Claude
-  (Sonnet) is only low-five-figures here.
-- **At the Stress rung** (200k turns/day), per-token pricing separates hard: managed-open
-  ~$8k, but every Claude tier is **$20–100k/month**. This is where **on-prem** (§6–§7)
-  takes over: a flat **~$5–12k/month** rack undercuts everything.
-- **The frontier model (Opus) is never the production default** — it is a pilot/quality
-  and hard-tail tool. At Stress it alone is ~$100k/month (~$1.2M/year).
+**Reading it:** a **managed-open model stays ≤~$8k/month across the whole ladder**, while
+the Claude tiers climb into five–six figures at the top (Opus ~$100k/month at Stress).
+Where each tier becomes untenable and when the on-prem rack takes over is the decision in
+§7.
 
 ### Worked example: 20,000 people/day
 
@@ -217,10 +210,8 @@ conversation**. So for 20,000 people/day it comes down to how long each chat is:
 
 *Per month; lean tier (`raw_in`=5k) with caching. Sonnet = Sonnet 5.*
 
-So on the intended production model (a managed open-weight model on Bedrock),
-**20,000 people/day ≈ $2.5–8k/month**. An **on-prem rack is flat ~$5–12k/month** whatever
-the volume — it caps the worst case and gives full sovereignty. Frontier Claude (Opus) at
-$30–100k/month stays a quality/pilot tool, not the production default.
+So on the production model (managed open-weight), **20,000 people/day is ~$2.5–8k/month**
+depending on chat length — and an on-prem rack (§6) caps it at ~$5–12k flat.
 
 ---
 
@@ -272,7 +263,7 @@ opex stays comfortably under $100k/year for the small rig.
 
 **Serving stack:** vLLM (continuous batching, quantization, OpenAI-compatible API). A
 **request queue** in front of the rack is what makes fixed hardware absorb bursty load
-(see §7) — you serve a queue, not 50,000 concurrent requests.
+(see §7) — you serve a queue, not tens of thousands of concurrent requests.
 
 **When on-prem is the right call:**
 - **Very high sustained volume** — above the crossover in §7, the flat cost beats
@@ -401,7 +392,7 @@ last step, so nothing locks us in:
 
 1. **Pilot — Claude Opus 4.8, single tier** (`eu.anthropic.claude-opus-4-8`). Establishes
    quality and builds the eval set of real Swiss-geodata questions (all five languages).
-   ~$50/month at pilot scale — cost is not the constraint here.
+   ~$150/month at pilot scale (§4) — cost is not the constraint here.
 2. **Model tiering.** Route simple turns to Haiku (or a small open model); keep the
    complex tail on Sonnet/Opus. Biggest single saving, no infra change.
 3. **Managed open model** (strong open-weight on Bedrock EU — GLM / DeepSeek / Mistral
@@ -419,14 +410,6 @@ limits — at every step; they compound.
 to a figure once we log the real **input tokens per turn** on Swiss-geodata queries (§2).
 It is the fastest, cheapest thing we can do to sharpen the budget, and it happens
 naturally as soon as the pilot agent runs.
-
-**Volume-dependent conclusion:**
-
-- **Up to the High rung (~60k turns/day):** a **managed-open model on Bedrock** runs the
-  whole service for **~$2.5k/month or less** — zero-ops, EU residency. The clear default.
-- **At the Stress rung (~200k turns/day):** per-token Claude is $20–100k/month — out. The
-  answer is **managed-open (~$8k) or an on-prem rack (~$5–12k flat)**; on-prem also caps
-  the worst case and delivers full Swiss sovereignty.
 
 **Bottom line for the go/no-go:** frontier-API-at-full-scale is off the table
 (six-figures/month), but that was never the plan. A **managed open model** serves portal
