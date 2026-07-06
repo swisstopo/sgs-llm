@@ -20,3 +20,9 @@ at the agentic tool-use and multilingual reasoning this backend depends on, and
 the managed Bedrock EU endpoint removes the operational burden of self-hosting —
 while leaving the door open to switch to another provider or a self-hosted
 open-weights model once requirements firm up.
+
+## Cost & alternatives
+
+Cost estimates for Claude vs open vs self-hosted models, whether the task needs a
+large model, and a staged test plan for the alternatives are in
+[`model-cost-options/cost-model.md`](./model-cost-options/cost-model.md).
