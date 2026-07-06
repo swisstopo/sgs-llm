@@ -204,6 +204,24 @@ At the **rich** tier (`raw_in`=15k) multiply by ~2–3×; at the **light/FAQ** t
 - **The frontier model (Opus) is never the production default** — it is a pilot/quality
   and hard-tail tool. At Stress it alone is ~$100k/month (~$1.2M/year).
 
+### Worked example: 20,000 people/day
+
+The cost isn't set by the headcount — it's set by **turns/day = people/day × turns per
+conversation**. So for 20,000 people/day it comes down to how long each chat is:
+
+| Each person's chat | turns/day | Managed open (prod) | Sonnet | Opus |
+| --- | --- | --- | --- | --- |
+| light (3 turns) | 60,000 | **~$2.5k** | ~$12k | ~$30k |
+| typical (5 turns) | 100,000 | **~$4k** | ~$20k | ~$50k |
+| heavy (10 turns) | 200,000 | **~$8k** | ~$40k | ~$100k |
+
+*Per month; lean tier (`raw_in`=5k) with caching. Sonnet = Sonnet 5.*
+
+So on the intended production model (a managed open-weight model on Bedrock),
+**20,000 people/day ≈ $2.5–8k/month**. An **on-prem rack is flat ~$5–12k/month** whatever
+the volume — it caps the worst case and gives full sovereignty. Frontier Claude (Opus) at
+$30–100k/month stays a quality/pilot tool, not the production default.
+
 ---
 
 ## 5. Hosting options — the real spectrum
