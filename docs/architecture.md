@@ -37,7 +37,7 @@ WebSocket upgrade`"]
 sgs-llm-module · WS protocol v1 · LLM loop · MCP client`"]
     bedrock["`**Amazon Bedrock**
 ————
-Claude Opus 4.8 · EU profile`"]
+Claude Sonnet 4.6 · EU profile`"]
     mcp["`**MCP server(s) · TBD**
 ————
 geodata tools · separate work package`"]
