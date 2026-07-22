@@ -9,3 +9,6 @@ mock-agent/feedback.log
 *.pem
 *.key
 .DS_Store
+
+# Internal cost analysis — kept local only, not published
+docs/model-cost-options/

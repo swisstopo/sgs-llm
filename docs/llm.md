@@ -32,11 +32,11 @@ the $2/$10 is introductory pricing that lapses 2026-08-31. And Sonnet 5 uses a
 **newer tokenizer that emits ~30% more tokens** for the same text, which largely
 cancels the lower per-token rate — so expect rough cost parity with 4.6 by the
 time we deploy, not a saving. An upgrade within the Claude family is low-effort; a
-cross-family swap is not (see
-[`model-cost-options/cost-model.md`](./model-cost-options/cost-model.md) §7).
+cross-family swap is not.
 
 ## Cost & alternatives
 
 Cost estimates for Claude vs open vs self-hosted models, whether the task needs a
-large model, and a staged test plan for the alternatives are in
-[`model-cost-options/cost-model.md`](./model-cost-options/cost-model.md).
+large model, and the staged rollout plan are in
+[`WP3_Report.md`](./WP3_Report.md) (§4 Cost, §5 Model options, §7 Recommendation
+and plan).
