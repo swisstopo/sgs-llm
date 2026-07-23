@@ -5,38 +5,36 @@ during project execution.
 
 ## Access
 
-Claude is reached through **Amazon Bedrock** using an **EU cross-region
-inference profile** (`eu.anthropic.claude-*`), so inference stays within EU
-regions; the backend authenticates with its task IAM role (no API key). See
+Claude and Mistral models are reached through **Amazon Bedrock** using **EU
+inference profiles** (`eu.*`), so inference stays within EU regions; the backend
+authenticates with its task IAM role (no API key). See
 [`deployment.md`](./deployment.md#backend-deployment) and
 [`architecture.md`](./architecture.md#backend-architecture).
 
-## Initial model
+## Initial models
 
-We use **Claude Sonnet 4.6** — Bedrock model ID
-`eu.anthropic.claude-sonnet-4-6`. This is the recommendation of
-[`WP3_Report.md`](./WP3_Report.md) (§1, §7.1), confirmed with swisstopo on
-2026-07-20.
+The pilot starts with two models, plus a third pending release:
 
-Sonnet 4.6 is the mid tier that clears the agentic bar without frontier pricing:
-it is strong at the tool-use and multilingual reasoning this backend depends on,
-**GOV.UK Chat runs this exact stack — Claude on Bedrock — at national scale**,
-and the managed Bedrock EU endpoint removes the operational burden of
-self-hosting. **Opus 4.8** remains available on the same EU profile if evaluation
-shows Sonnet missing a hard tail, and **Haiku 4.5** is the routing tier for
-simple turns.
+- **Claude Sonnet 4.6** — Bedrock model ID `eu.anthropic.claude-sonnet-4-6`,
+  confirmed with swisstopo on 2026-07-20. The primary agent model: strong at
+  the tool use and multilingual reasoning this backend depends on, and
+  **GOV.UK Chat runs this exact stack — Claude on Bedrock — at national
+  scale**.
+- **Mistral** — the second provider, also served from Bedrock EU regions. Gives
+  us a European model to evaluate side by side on the same harness; the exact
+  variant is fixed during evaluation.
+- **Apertus** *(possibly)* — the Swiss open-weights model from the Swiss AI
+  Initiative (ETH Zürich / EPFL). Joins the lineup if the new version is
+  released in time for the pilot; attractive for Swiss data sovereignty and
+  for the national languages, including Romansh, which the UI already ships.
 
-**On Sonnet 5:** benchmarks better and its list price looks lower ($2/$10 vs
-$3/$15), but two things blunt that. It has **no `eu.` inference profile yet**, and
-the $2/$10 is introductory pricing that lapses 2026-08-31. And Sonnet 5 uses a
-**newer tokenizer that emits ~30% more tokens** for the same text, which largely
-cancels the lower per-token rate — so expect rough cost parity with 4.6 by the
-time we deploy, not a saving. An upgrade within the Claude family is low-effort; a
-cross-family swap is not.
+Other Claude tiers (**Opus 4.8** for escalation, **Haiku 4.5** for routing
+simple turns) remain available on the same EU profile if evaluation shows the
+need. **Sonnet 5** has no `eu.` inference profile yet; an upgrade within the
+Claude family is low-effort once one ships.
 
 ## Cost & alternatives
 
-Cost estimates for Claude vs open vs self-hosted models, whether the task needs a
-large model, and the staged rollout plan are in
-[`WP3_Report.md`](./WP3_Report.md) (§4 Cost, §5 Model options, §7 Recommendation
-and plan).
+The cost analysis and the full model comparison (managed vs open vs
+self-hosted, and the staged rollout plan) are part of the WP3 report, which is
+handed in separately and not tracked in this repository.
