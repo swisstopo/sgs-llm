@@ -17,6 +17,7 @@ Metadata:
         Parameters:
           - PrimaryModelId
           - SecondaryModelId
+          - SecondaryModelRegion
           - BedrockRegion
           - PublicBaseUrl
           - McpServerUrl
@@ -79,12 +80,20 @@ Parameters:
     Type: String
     Default: ''
     Description: >-
-      Second model for side-by-side evaluation (the Mistral profile id).
-      Resolved from the account at deploy time; empty until then.
+      Second model for side-by-side evaluation. Resolved from the account at
+      deploy time; empty disables it.
+  SecondaryModelRegion:
+    Type: String
+    Default: ''
+    Description: >-
+      Region for the secondary model, when it differs from BedrockRegion. The
+      pilot's Mistral is only offered in-region in eu-west-1, and in-region
+      on-demand is the one path an organization SCP does not block (see
+      docs/llm.md). Empty means "same region as the primary".
   BedrockRegion:
     Type: String
     Default: eu-central-1
-    Description: Region the Bedrock client targets (the EU profile routes on from there).
+    Description: Region the Bedrock client targets for the primary model.
   PublicBaseUrl:
     Type: String
     Default: https://denpw8uo5zpkl.cloudfront.net
@@ -106,6 +115,7 @@ Parameters:
 
 Conditions:
   HasSecondaryModel: !Not [!Equals [!Ref SecondaryModelId, '']]
+  HasSecondaryRegion: !Not [!Equals [!Ref SecondaryModelRegion, '']]
   HasMcpServer: !Not [!Equals [!Ref McpServerUrl, '']]
 
 Resources:
@@ -166,6 +176,10 @@ Resources:
             - { Name: BEDROCK_PRIMARY_MODEL_ID, Value: !Ref PrimaryModelId }
             - Name: BEDROCK_SECONDARY_MODEL_ID
               Value: !If [HasSecondaryModel, !Ref SecondaryModelId, '']
+            # Two models, two regions: the primary is reached through an EU
+            # inference profile, the secondary in-region where it is hosted.
+            - Name: BEDROCK_SECONDARY_REGION
+              Value: !If [HasSecondaryRegion, !Ref SecondaryModelRegion, !Ref BedrockRegion]
             - Name: FEEDBACK_TABLE
               Value: !ImportValue
                 Fn::Sub: '${FoundationStackName}-FeedbackTableName'

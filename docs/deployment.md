@@ -592,8 +592,10 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
   --capabilities CAPABILITY_NAMED_IAM \
   --tags project=sgs-llm-poc \
   --parameter-overrides \
+    ImageTag=<tag pushed above> \
     PrimaryModelId=eu.anthropic.claude-sonnet-4-6 \
-    SecondaryModelId="<mistral profile id from the account>"
+    SecondaryModelId=mistral.ministral-3-14b-instruct \
+    SecondaryModelRegion=eu-west-1
 ```
 
 Then repoint CloudFront at the ALB (see
@@ -628,6 +630,7 @@ ECS from Secrets Manager at task start.
 | `AWS_REGION` / `BEDROCK_REGION` | stack region / parameter | Region the SDK and the Bedrock client target |
 | `BEDROCK_PRIMARY_MODEL_ID` | parameter | Primary agent model — an EU inference profile id |
 | `BEDROCK_SECONDARY_MODEL_ID` | parameter | Second model for side-by-side evaluation |
+| `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | foundation stack | Retention the backend must stamp into `expires_at` |
 | `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON/GeoParquet artifacts |

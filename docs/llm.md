@@ -88,6 +88,40 @@ actions in those regions. Consequences:
   Claude is not hosted in-region in Frankfurt, and neither is Pixtral Large), so
   they are unreachable until this is resolved.
 
+#### Workaround found for Mistral: in-region on-demand in eu-west-1
+
+The SCP is **region-scoped, and eu-west-1 (Ireland) is permitted**. Probing every
+EU region for models callable *in-region* (no cross-region profile, therefore no
+SCP problem) found a usable Mistral there:
+
+| Region | anthropic / mistral available ON_DEMAND in-region | SCP |
+| --- | --- | --- |
+| `eu-central-1` | `mistral.devstral-2-123b`, `anthropic.claude-3-haiku` | allowed |
+| `eu-west-1` | Ministral 3 (3B/8B/14B), `mistral.mistral-large-2402`, `magistral-small-2509`, Voxtral, Devstral 2, Mixtral | allowed |
+| `eu-west-2`, `eu-west-3`, `eu-north-1` | — | **API call denied** |
+| `eu-south-1`, `eu-south-2`, `eu-central-2` | — | region not enabled |
+
+**`mistral.ministral-3-14b-instruct` in `eu-west-1` is the pilot's secondary
+model.** It was chosen on evidence rather than the datasheet: given the project's
+own demo query and a geodata tool definition, it returned
+`stopReason: tool_use`, calling `find_geodata_layer` with
+`{"canton": "Wallis", "query": "Hochwassergefahren"}` — correct tool selection and
+correct German-to-arguments extraction, which is exactly what the agent loop
+needs. `magistral-small-2509` answered the same prompt with `end_turn` and no tool
+call, so it was rejected; `mistral.mistral-large-2402` is older and returned no
+usable content.
+
+Because the two models live in different regions, the task definition carries
+`BEDROCK_SECONDARY_REGION` (`eu-west-1`) alongside `BEDROCK_REGION`
+(`eu-central-1`). Ireland is inside the EU, and an in-region on-demand call does
+not leave it, so this is a *better* residency story than cross-region inference,
+not a worse one.
+
+**Claude has no such workaround.** Recent Claude is not hosted in-region in any
+SCP-permitted EU region — eu-central-1 offers only Claude 3 Haiku, eu-west-1 only
+Claude 3 Sonnet/Haiku (and that one returns `ResourceNotFoundException`). Anything
+from Sonnet 4.6 upward is EU-profile-only and therefore still blocked.
+
 **Action:** an administrator of the management account (`705927066274`) has to
 amend SCP `p-ddxnpgbm` so `bedrock:InvokeModel` /
 `bedrock:InvokeModelWithResponseStream` are permitted in the regions the EU
@@ -98,8 +132,10 @@ inside the EU; it is the same set of regions the EU profile is designed around.
 Confirm the exact list with `aws bedrock get-inference-profile
 --inference-profile-identifier eu.anthropic.claude-sonnet-4-6`.
 
-Until then the deployed backend is configured with the intended model ids and will
-start working the moment the SCP is amended; nothing needs to be redeployed.
+Until then the deployed backend runs with the primary set to
+`eu.anthropic.claude-sonnet-4-6` (blocked) and the secondary to
+`mistral.ministral-3-14b-instruct` in `eu-west-1` (**working**). Claude starts
+working the moment the SCP is amended; nothing needs to be redeployed.
 
 ## Apertus 1.5
 
