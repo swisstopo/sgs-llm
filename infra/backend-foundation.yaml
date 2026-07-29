@@ -656,6 +656,14 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              # Bearer-token authentication gates on this action in addition to
+              # the invoke permission itself; without it every API-key call is
+              # denied regardless of network.
+              - Effect: Allow
+                Action: bedrock:CallWithBearerToken
+                Resource: '*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
