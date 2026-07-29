@@ -772,6 +772,26 @@ aws bedrock-runtime converse --profile sgs-llm-dev --region eu-central-1 \
 > browser address, so use this role from the CLI/SDK and browse the console with
 > your normal IAM Identity Center role instead.
 
+**Model access without any AWS profile — Bedrock API key.** For developers who
+only need to call the models, the IAM user `sgs-llm-bedrock-key` carries a
+long-term Bedrock API key (a bearer token). It permits `bedrock:InvokeModel*`
+only, and only from the fixed developer network; simulated from any other
+address every action is denied, and even on-network it cannot touch DynamoDB,
+S3 or anything else. Usage is one environment variable:
+
+```bash
+export AWS_BEARER_TOKEN_BEDROCK=<key>          # from the project admin
+python scripts/ask-llm.py "Nenne drei Schweizer Kantone."
+```
+
+Rotate or revoke it with
+`aws iam list-service-specific-credentials --user-name sgs-llm-bedrock-key` and
+`aws iam delete-service-specific-credential --user-name sgs-llm-bedrock-key
+--service-specific-credential-id <id>`; a new one is
+`aws iam create-service-specific-credential --user-name sgs-llm-bedrock-key
+--service-name bedrock.amazonaws.com`. The key value itself is never stored in
+this repository.
+
 ### Bedrock model access
 
 Model access is an account-level, per-region setting; the roles above grant the

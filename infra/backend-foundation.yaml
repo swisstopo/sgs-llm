@@ -639,6 +639,42 @@ Resources:
       Tags:
         - { Key: project, Value: !Ref ProjectTag }
 
+  # Carrier for a long-term Bedrock API key (a bearer token tied to an IAM
+  # user), so a developer can call the models with one environment variable and
+  # no AWS profile. The key inherits exactly this user's permissions: inference
+  # only, and only from the fixed developer network. Key creation itself is a
+  # CLI step — CloudFormation cannot mint service-specific credentials:
+  #   aws iam create-service-specific-credential \
+  #     --user-name sgs-llm-bedrock-key --service-name bedrock.amazonaws.com
+  BedrockApiKeyUser:
+    Type: AWS::IAM::User
+    Condition: EnableDevAccess
+    Properties:
+      UserName: sgs-llm-bedrock-key
+      Policies:
+        - PolicyName: inference-only-from-dev-network
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*::foundation-model/*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:ListInferenceProfiles
+                Resource: '*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
 Outputs:
   VpcId:
     Value: !Ref VpcId
