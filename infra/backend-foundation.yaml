@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  SGS LLM agent backend — durable foundation: VPC, ALB, ECR, DynamoDB (feedback +
-  conversation log), data-layer bucket, log group, secret, and IAM roles.
+  SGS LLM agent backend — durable foundation: ALB, ECR, DynamoDB (feedback +
+  conversation log), data-layer bucket, log group, secret, and IAM roles. Consumes
+  an existing VPC and subnets; it never creates network topology (see VpcId).
   Deployed once and then left alone; the ECS service lives in backend-service.yaml
   because it cannot be created before a container image exists in ECR.
   See docs/deployment.md#backend-deployment.
@@ -12,7 +13,7 @@ Metadata:
       - Label: { default: Naming and tagging }
         Parameters: [ProjectTag, BackendName]
       - Label: { default: Networking }
-        Parameters: [VpcCidr, ContainerPort, AlbIdleTimeoutSeconds, CloudFrontPrefixListId]
+        Parameters: [VpcId, SubnetIds, ContainerPort, AlbIdleTimeoutSeconds, CloudFrontPrefixListId]
       - Label: { default: Frontend integration }
         Parameters: [FrontendOrigin]
       - Label: { default: Data retention }
@@ -29,11 +30,19 @@ Parameters:
     Type: String
     Default: sgs-llm-backend
     Description: Base name for the ECR repository, log group, ALB and IAM roles.
-  VpcCidr:
-    Type: String
-    Default: 10.42.0.0/16
-    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$
-    Description: CIDR for the backend VPC. Must not overlap the default VPC.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: >-
+      Existing VPC to deploy into. This account's AccountAdmin policy explicitly
+      denies ec2:CreateVpc / CreateSubnet / CreateRouteTable / CreateNatGateway
+      and friends, so network topology is consumed, never created, here.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      At least two subnets in different AZs, for both the ALB and the Fargate
+      tasks. In the POC account these are the default VPC's public subnets (the
+      same place the EC2 mock-agent runs); the tasks are reachable only through
+      the ALB security group regardless.
   ContainerPort:
     Type: Number
     Default: 8787
@@ -115,155 +124,20 @@ Conditions:
   HasDevPrincipal: !Not [!Equals [!Ref DevAccessPrincipalArn, '']]
 
 Resources:
-  # ---------------------------------------------------------------- networking
-  Vpc:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: !Ref VpcCidr
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-vpc' }
-
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-igw' }
-
-  VpcGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref Vpc
-      InternetGatewayId: !Ref InternetGateway
-
-  # Public subnets hold only the ALB and the NAT gateway.
-  PublicSubnetA:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref Vpc
-      AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 4, 8]]
-      MapPublicIpOnLaunch: false
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-public-a' }
-
-  PublicSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref Vpc
-      AvailabilityZone: !Select [1, !GetAZs '']
-      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 4, 8]]
-      MapPublicIpOnLaunch: false
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-public-b' }
-
-  # Fargate tasks run here — no public IP, egress through the NAT gateway.
-  PrivateSubnetA:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref Vpc
-      AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 4, 8]]
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-private-a' }
-
-  PrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref Vpc
-      AvailabilityZone: !Select [1, !GetAZs '']
-      CidrBlock: !Select [3, !Cidr [!Ref VpcCidr, 4, 8]]
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-private-b' }
-
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref Vpc
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-public-rt' }
-
-  PublicDefaultRoute:
-    Type: AWS::EC2::Route
-    DependsOn: VpcGatewayAttachment
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  PublicSubnetARouteAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnetA
-      RouteTableId: !Ref PublicRouteTable
-
-  PublicSubnetBRouteAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnetB
-      RouteTableId: !Ref PublicRouteTable
-
-  NatEip:
-    Type: AWS::EC2::EIP
-    DependsOn: VpcGatewayAttachment
-    Properties:
-      Domain: vpc
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-nat-eip' }
-
-  # One NAT gateway, not one per AZ: halves the cost and is acceptable for the
-  # pilot (an AZ outage takes egress with it). Add a second for production.
-  NatGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NatEip.AllocationId
-      SubnetId: !Ref PublicSubnetA
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-nat' }
-
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref Vpc
-      Tags:
-        - { Key: project, Value: !Ref ProjectTag }
-        - { Key: Name, Value: !Sub '${BackendName}-private-rt' }
-
-  PrivateDefaultRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
-
-  PrivateSubnetARouteAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnetA
-      RouteTableId: !Ref PrivateRouteTable
-
-  PrivateSubnetBRouteAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnetB
-      RouteTableId: !Ref PrivateRouteTable
+  # No VPC, subnet, route table, internet gateway or NAT gateway resources: the
+  # AccountAdmin policy denies creating them. The stack consumes the VpcId and
+  # SubnetIds parameters instead. Egress for the tasks therefore goes out through
+  # the subnets' existing internet gateway rather than a NAT gateway, so the
+  # service is placed with AssignPublicIp ENABLED (required to reach ECR, Bedrock
+  # and DynamoDB at all). Inbound remains impossible except from the ALB security
+  # group, which itself only accepts the CloudFront prefix list.
 
   # ----------------------------------------------------------- security groups
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub '${BackendName} ALB - CloudFront origin-facing ranges only'
-      VpcId: !Ref Vpc
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -278,11 +152,11 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: !Sub '${BackendName} Fargate tasks - inbound from the ALB only'
-      VpcId: !Ref Vpc
+      VpcId: !Ref VpcId
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-          Description: Bedrock, ECR, Secrets Manager, DynamoDB and the MCP server via NAT
+          Description: Egress to Bedrock, ECR, Secrets Manager, DynamoDB and the MCP server
       Tags:
         - { Key: project, Value: !Ref ProjectTag }
         - { Key: Name, Value: !Sub '${BackendName}-task-sg' }
@@ -316,7 +190,7 @@ Resources:
       Type: application
       Scheme: internet-facing
       IpAddressType: ipv4
-      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      Subnets: !Ref SubnetIds
       SecurityGroups: [!Ref AlbSecurityGroup]
       LoadBalancerAttributes:
         - { Key: idle_timeout.timeout_seconds, Value: !Ref AlbIdleTimeoutSeconds }
@@ -329,7 +203,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: !Sub '${BackendName}-tg'
-      VpcId: !Ref Vpc
+      VpcId: !Ref VpcId
       Protocol: HTTP
       Port: !Ref ContainerPort
       TargetType: ip
@@ -762,12 +636,12 @@ Resources:
 
 Outputs:
   VpcId:
-    Value: !Ref Vpc
+    Value: !Ref VpcId
     Export: { Name: !Sub '${AWS::StackName}-VpcId' }
-  PrivateSubnetIds:
-    Description: Comma-separated private subnets for the Fargate service.
-    Value: !Join [',', [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
-    Export: { Name: !Sub '${AWS::StackName}-PrivateSubnetIds' }
+  ServiceSubnetIds:
+    Description: Comma-separated subnets for the Fargate service.
+    Value: !Join [',', !Ref SubnetIds]
+    Export: { Name: !Sub '${AWS::StackName}-ServiceSubnetIds' }
   TaskSecurityGroupId:
     Value: !Ref TaskSecurityGroup
     Export: { Name: !Sub '${AWS::StackName}-TaskSecurityGroupId' }

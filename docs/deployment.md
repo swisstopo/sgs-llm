@@ -6,17 +6,23 @@ where credentials are needed, only the file *structure* is shown.
 
 **Live URL:** https://denpw8uo5zpkl.cloudfront.net/
 
-The frontend is a static single-page app on **S3 + CloudFront**; the development
-**mock-agent** runs on a single **EC2** instance behind the *same* CloudFront
+The frontend is a static single-page app on **S3 + CloudFront**; the agent path is
+served by the **ECS Fargate backend behind an ALB** through the *same* CloudFront
 distribution. One HTTPS domain serves everything, so the browser only ever talks
 to a single TLS origin — no mixed-content, no CORS, and `wss://` works.
 
 ```
                  ┌──────────────── CloudFront (HTTPS / wss, *.cloudfront.net) ──────────────┐
  browser ──────▶ │  default behavior            ── S3 origin (private, OAC) → dist/ + config.json │
- (https + wss)   │  /ws/v1, /feedback, /data/*  ── EC2 origin (http :8787)  → mock-agent          │
+ (https + wss)   │  /ws/v1, /feedback, /data/*  ── ALB origin (http :80) → ECS Fargate task      │
                  └────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The **EC2 mock-agent origin is retained but no longer in the path** — the agent
+behaviors point at `alb-agent`, so rolling back is flipping three
+`TargetOriginId` values. Until the agent code lands under `backend/`, the Fargate
+task runs the same mock-agent as its container image, so behaviour is unchanged.
+See [Backend deployment](#backend-deployment).
 
 Key design points:
 
@@ -80,9 +86,12 @@ templates; generated values come from the stack outputs:
 | Resource | ID / value |
 | --- | --- |
 | CloudFormation stacks | `sgs-llm-backend-foundation`, `sgs-llm-backend-service` |
-| ECS cluster / service | `sgs-llm` / `sgs-llm-backend` (Fargate, 4 vCPU / 8 GB, desired 1) |
-| ECR repository | `sgs-llm-backend` |
-| ALB | `sgs-llm-backend-alb` → see `AlbDnsName` output; inbound from the CloudFront prefix list only |
+| ECS cluster / service | `sgs-llm` / `sgs-llm-backend` (Fargate, 4 vCPU / 8 GB, desired 1, no autoscaling) |
+| ECR repository | `259789526488.dkr.ecr.eu-central-1.amazonaws.com/sgs-llm-backend` |
+| ALB | `sgs-llm-backend-alb-1628441444.eu-central-1.elb.amazonaws.com` — inbound from prefix list `pl-a3a144ca` (CloudFront) only |
+| Target group | `sgs-llm-backend-tg` (`/health`, HTTP 8787) |
+| Network (consumed, not created) | `vpc-0abf5add40b8be118` (default VPC) · subnets `subnet-0948e33e0f3c89a56`, `subnet-04daf3587f8597662`, `subnet-0c7a22581e6edd850` |
+| Security groups | `sgs-llm-backend-alb-sg` (CloudFront → 80), `sg-0890c6a0bb344e749` task SG (ALB → 8787) |
 | DynamoDB tables | `sgs-llm-feedback`, `sgs-llm-conversations` (on-demand, TTL, PITR) |
 | S3 bucket (data layers) | `sgs-llm-data-259789526488` (private, presigned reads) |
 | CloudWatch log group | `/ecs/sgs-llm-backend` (30 days) |
@@ -465,7 +474,7 @@ infrastructure, IAM or CloudFront change is needed at that point.
 - **Reuse the existing CloudFront distribution** — the agent path behaviors point at the ALB; one TLS origin keeps `wss://` working and leaves the S3 / `config.json` path untouched.
 - **ALB locked to the CloudFront managed prefix list** (`com.amazonaws.global.cloudfront.origin-facing`) — the origin is unreachable except through CloudFront, mirroring the EC2 security group.
 - **ALB idle timeout 3600 s** — long-lived chat connections survive quiet periods mid-conversation.
-- **Tasks in private subnets, egress via a single NAT gateway** — no public IP on the task; one NAT rather than one per AZ halves the cost and is accepted for the pilot (an AZ outage takes egress with it).
+- **Existing VPC, no network topology created** — see [Network constraint](#network-constraint-no-vpc-creation-in-this-account). The stack consumes a VPC id and subnet ids; the tasks run in the default VPC's public subnets with `AssignPublicIp: ENABLED`, and are reachable only through the ALB security group.
 - **Task IAM role for Bedrock** (`bedrock:InvokeModel` / `InvokeModelWithResponseStream` on the EU inference profiles) — model access with no API key to store. Secrets Manager holds only non-AWS credentials such as the MCP server token.
 - **Deployment circuit breaker with rollback** — a task that never becomes healthy rolls the service back to the previous task definition automatically, so an unattended bad deploy cannot leave the service down.
 
@@ -478,11 +487,57 @@ to production means raising the desired count and enabling autoscaling on the
 service; the ALB is unchanged by that. Set the desired count to **0** to park the
 service without deleting anything.
 
+### Network constraint: no VPC creation in this account
+
+The POC account's `AccountAdmin` policy (attached to the IAM Identity Center admin
+role) carries an **explicit deny** on essentially all network-topology creation:
+
+```text
+ec2:CreateVpc, CreateSubnet, CreateRouteTable, CreateRoute, CreateNatGateway,
+CreateInternetGateway, AttachInternetGateway, AssociateRouteTable,
+ModifySubnetAttribute, CreateVpnGateway, CreateEgressOnlyInternetGateway, …
+```
+
+An explicit deny cannot be overridden by any identity-based Allow, so **not even an
+account administrator can create a VPC, a subnet or a NAT gateway here**. (The same
+policy also denies writes to `swisstopo-poc-sgs-llm-terraform-state`, which
+suggests network topology is provisioned centrally for this account.) The
+consequences for this deployment:
+
+- The stack takes `VpcId` and `SubnetIds` as **parameters** and creates no network
+  resources. In the POC account these are the **default VPC** (`vpc-0abf5add40b8be118`,
+  `172.31.0.0/16`) and its three default subnets — the same network the EC2
+  mock-agent already runs in.
+- Those subnets are public, and a NAT gateway cannot be created, so the service
+  runs with **`AssignPublicIp: ENABLED`**. That is not optional: without it a
+  Fargate task in these subnets cannot reach ECR to pull its image, let alone
+  Bedrock or DynamoDB.
+- **Security is unchanged by this.** The task's security group admits traffic from
+  the ALB security group only, and the ALB's admits only the CloudFront
+  origin-facing prefix list. Verified after deployment: a direct request to the ALB
+  from the public internet times out. The task has a public IP but no inbound path,
+  exactly like the EC2 mock-agent.
+
+If a private-subnet topology is wanted later (the original intent), it has to come
+from whoever owns the account guardrail: either the network is pre-provisioned for
+this project and passed in via `SubnetIds`, or the deny is relaxed. Nothing in
+these templates needs to change for that — only the parameter values.
+
+### Prerequisite: the ECS service-linked role
+
+ECS had never been used in this account. Creating the service occasionally fails
+with `Unable to assume the service linked role` on a fresh account; if that
+happens, create it once and redeploy:
+
+```bash
+aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com --profile swisstopo
+```
+
 ### Infrastructure: two CloudFormation stacks
 
 | Stack | Template | Contents |
 | --- | --- | --- |
-| `sgs-llm-backend-foundation` | [`infra/backend-foundation.yaml`](../infra/backend-foundation.yaml) | VPC (2 public + 2 private subnets, IGW, NAT), ALB + target group + listener, security groups, ECR repository, both DynamoDB tables, data-layer S3 bucket, CloudWatch log group, Secrets Manager placeholder, all four IAM roles |
+| `sgs-llm-backend-foundation` | [`infra/backend-foundation.yaml`](../infra/backend-foundation.yaml) | ALB + target group + listener, security groups, ECR repository, both DynamoDB tables, data-layer S3 bucket, CloudWatch log group, Secrets Manager placeholder, all four IAM roles. Consumes an existing VPC/subnets — see [Network constraint](#network-constraint-no-vpc-creation-in-this-account) |
 | `sgs-llm-backend-service` | [`infra/backend-service.yaml`](../infra/backend-service.yaml) | ECS cluster, task definition (sizing + the environment contract), Fargate service |
 
 Two stacks rather than one because **an ECS service cannot be created before an
@@ -507,6 +562,12 @@ PL=$(aws ec2 describe-managed-prefix-lists --profile "$PROFILE" --region "$REGIO
   --filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing \
   --query 'PrefixLists[0].PrefixListId' --output text)
 
+# Network is consumed, not created (see Network constraint above).
+VPC=$(aws ec2 describe-vpcs --profile "$PROFILE" --region "$REGION" \
+  --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+SUBNETS=$(aws ec2 describe-subnets --profile "$PROFILE" --region "$REGION" \
+  --filters Name=vpc-id,Values="$VPC" --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+
 # The developer-access IP is deliberately not stored in this repository.
 # See infra/dev-access.env.example.
 source infra/dev-access.local.env      # sets DEV_ACCESS_CIDR
@@ -517,6 +578,8 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
   --capabilities CAPABILITY_NAMED_IAM \
   --tags project=sgs-llm-poc \
   --parameter-overrides \
+    VpcId="$VPC" \
+    SubnetIds="$SUBNETS" \
     CloudFrontPrefixListId="$PL" \
     DevAccessCidr="$DEV_ACCESS_CIDR"
 
@@ -745,17 +808,26 @@ ALB=$(aws cloudformation describe-stacks --profile swisstopo --region eu-central
   --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text)
 
 aws cloudfront get-distribution-config --id E2AEIO5QX64WCY --profile swisstopo \
-  > /tmp/dist.json                       # note the ETag
-# Replace the ec2-agent origin DomainName with $ALB, keep everything else, then:
+  > /tmp/dist.json                       # contains the config and its ETag
+# Add the ALB as a SECOND origin (`alb-agent`, HTTPPort 80) and repoint the three
+# agent behaviors' TargetOriginId to it. Keep the `ec2-agent` origin in place.
 aws cloudfront update-distribution --id E2AEIO5QX64WCY --profile swisstopo \
   --distribution-config file:///tmp/dist-config.json --if-match <ETag>
 aws cloudfront wait distribution-deployed --id E2AEIO5QX64WCY --profile swisstopo
 ```
 
+Keeping the old origin is deliberate: **rollback is flipping three
+`TargetOriginId` values back to `ec2-agent`**, with no origin to recreate. The
+distribution now carries both (`ec2-agent` → EC2, `alb-agent` → ALB, port 80).
+
 Re-run the [verification block](#6-verify) afterwards — including the WebSocket
 `101` check — then the browser demo script. Because the mock-agent is also the
 bootstrap container image, the demo behaves identically before and after the
 cutover; the EC2 instance can then be **stopped but kept** as a rollback origin.
+
+Done on 2026-07-29: all three behaviors serve from Fargate (`site 200`,
+`deeplink 200`, `data 200`, `feedback 204`, WebSocket `101 Switching Protocols`),
+and a direct request to the ALB from the public internet times out.
 
 ### Operate the backend
 
@@ -801,9 +873,9 @@ Approximate, at pilot scale in eu-central-1, excluding Bedrock usage:
 | --- | --- |
 | Fargate 4 vCPU / 8 GB, 1 task, 24/7 | ~$165 |
 | Application Load Balancer | ~$20 + LCU |
-| NAT gateway (1) | ~$35 + data |
+| NAT gateway | **$0** — cannot be created in this account, so egress uses the subnets' internet gateway |
 | ECR, DynamoDB on-demand, CloudWatch, Secrets Manager | a few dollars |
-| **Total** | **~$225** |
+| **Total** | **~$190** |
 
 Fargate is the dominant cost and scales with the task size, so
 `--desired-count 0` between demos is the effective lever; dropping to 1 vCPU / 2 GB

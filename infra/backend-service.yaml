@@ -221,11 +221,14 @@ Resources:
           Rollback: true
       NetworkConfiguration:
         AwsvpcConfiguration:
-          AssignPublicIp: DISABLED
+          # ENABLED because the account forbids creating a NAT gateway, so this is
+          # the only route to ECR / Bedrock / DynamoDB. Nothing can reach the task
+          # inbound: its security group admits the ALB security group alone.
+          AssignPublicIp: ENABLED
           Subnets: !Split
             - ','
             - !ImportValue
-                Fn::Sub: '${FoundationStackName}-PrivateSubnetIds'
+                Fn::Sub: '${FoundationStackName}-ServiceSubnetIds'
           SecurityGroups:
             - !ImportValue
                 Fn::Sub: '${FoundationStackName}-TaskSecurityGroupId'
