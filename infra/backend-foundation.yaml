@@ -528,6 +528,11 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              # deploy-backend.sh resolves the ECR repository URI from this
+              # stack's outputs rather than hardcoding it.
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*'
               - Effect: Allow
                 Action: ecr:GetAuthorizationToken
                 Resource: '*'
