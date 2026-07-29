@@ -74,15 +74,33 @@ residency.
 | GitHub OIDC provider (IAM) | `token.actions.githubusercontent.com` (audience `sts.amazonaws.com`) |
 | CI deploy role (IAM) | `github-actions-sgs-llm-deploy` — trusted for `repo:swisstopo/sgs-llm:ref:refs/heads/main` only; inline policy `sgs-llm-frontend-deploy` |
 
+Agent backend ([Backend deployment](#backend-deployment)) — names are fixed by the
+templates; generated values come from the stack outputs:
+
+| Resource | ID / value |
+| --- | --- |
+| CloudFormation stacks | `sgs-llm-backend-foundation`, `sgs-llm-backend-service` |
+| ECS cluster / service | `sgs-llm` / `sgs-llm-backend` (Fargate, 4 vCPU / 8 GB, desired 1) |
+| ECR repository | `sgs-llm-backend` |
+| ALB | `sgs-llm-backend-alb` → see `AlbDnsName` output; inbound from the CloudFront prefix list only |
+| DynamoDB tables | `sgs-llm-feedback`, `sgs-llm-conversations` (on-demand, TTL, PITR) |
+| S3 bucket (data layers) | `sgs-llm-data-259789526488` (private, presigned reads) |
+| CloudWatch log group | `/ecs/sgs-llm-backend` (30 days) |
+| Secret | `sgs-llm/backend` (MCP token; placeholder until MCP lands) |
+| Task roles (IAM) | `sgs-llm-backend-task`, `sgs-llm-backend-task-execution` |
+| CI deploy role (IAM) | `github-actions-sgs-llm-backend-deploy` — same repo/branch trust, scoped to ECR push + rolling the one service |
+| Developer role (IAM) | `sgs-llm-dev` — Bedrock inference + read-only tables, restricted to one source IP |
+
 Everything is tagged `project=sgs-llm-poc`.
 
 ## Prerequisites
 
-> Routine frontend deploys need **none of this** — they run automatically from
-> GitHub Actions on every push to `main`. The prerequisites below are for
-> manual deploys, EC2 operation, and infrastructure changes.
+> Routine frontend **and backend** deploys need **none of this** — they run
+> automatically from GitHub Actions on push to `main`. The prerequisites below are
+> for manual deploys, EC2 operation, and infrastructure changes.
 
-- **AWS CLI v2**, **GitHub CLI** (`gh`), **Node.js 22**.
+- **AWS CLI v2**, **GitHub CLI** (`gh`), **Node.js 22**; **Docker** for manual
+  backend image builds.
 - Access to the AWS account via IAM Identity Center (SSO) with an admin role.
 - A named AWS CLI profile (the examples use `swisstopo`). From the AWS access
   portal → **Access keys**, copy the short-lived credentials into a profile in
@@ -410,59 +428,406 @@ aws iam delete-open-id-connect-provider --profile swisstopo \
 
 ## Backend deployment
 
-The frontend POC runs the mock-agent on a single EC2 instance (above); the
-production agent backend
-([`swisstopo/sgs-llm-module`](https://github.com/swisstopo/sgs-llm-module))
-replaces that EC2 origin with a managed container service. The backend's internal
-design (MCP client, the LLM loop, data-layer artifacts) is in
-[`architecture.md`](./architecture.md#backend-architecture).
+The agent backend runs as a container on **ECS Fargate behind an Application Load
+Balancer**, replacing the EC2 mock-agent as the CloudFront origin for `/ws/v1`,
+`/feedback` and `/data/*`. Its internal design (MCP client, the LLM loop,
+data-layer artifacts) is in
+[`architecture.md`](./architecture.md#backend-architecture); the model choice is in
+[`llm.md`](./llm.md).
+
+The backend **code lives in this repository** under `backend/`. Until that lands,
+the service runs the bundled **mock-agent as its container image** — it is the
+reference implementation of protocol v1, so the deployed path is exercised
+end-to-end (including the WebSocket upgrade) before the real agent exists. When
+`backend/Dockerfile` appears, the deploy workflow builds it instead; no
+infrastructure, IAM or CloudFront change is needed at that point.
 
 ```text
                  ┌──────────────── CloudFront (HTTPS / wss) ────────────────────┐
- browser ──────▶ │  default              → S3 (private, OAC) → dist/ + config    │
- (https + wss)   │  /ws/v1, /feedback     → ALB origin (WebSocket upgrade)        │
+ browser ──────▶ │  default               → S3 (private, OAC) → dist/ + config   │
+ (https + wss)   │  /ws/v1 · /feedback · /data/*  → ALB origin (WebSocket upgrade)│
                  └───────────────────────────────────┬───────────────────────────┘
-                                                      ▼
-                                   Application Load Balancer  (raised idle timeout)
-                                                      ▼
-                                   ECS Fargate service · Python agent · ≥1 task
-                                          image pulled from ECR
-                                          ├─► Amazon Bedrock (Claude, EU profile) — task IAM role
-                                          ├─► MCP server(s) — geodata tools; produce the data layers
-                                          └─► S3 — MCP-produced GeoJSON/GeoParquet; backend relays presigned URLs
+                                                     ▼
+                              Application Load Balancer (public subnets, idle timeout 3600s,
+                              inbound only from the CloudFront prefix list)
+                                                     ▼
+                              ECS Fargate service · 4 vCPU / 8 GB · desired count 1
+                              private subnets, no public IP, egress via NAT
+                                     image pulled from ECR (sgs-llm-backend)
+                                     ├─► Amazon Bedrock — Claude + Mistral, EU profiles (task IAM role)
+                                     ├─► DynamoDB — user feedback + conversation turns
+                                     ├─► S3 — data-layer artifacts; backend relays presigned URLs
+                                     └─► MCP server(s) — geodata tools (separate work package)
 ```
 
-- **ECS on Fargate behind an Application Load Balancer** — managed containers with native WebSocket and zero-downtime rolling deploys (the Azure Container Apps analogue).
-- **Amazon ECR** (private) — the registry the service pulls its image from, IAM-scoped.
-- **Reuse the existing CloudFront distribution** — repoint the `/ws/v1` and `/feedback` behaviors to the ALB; one TLS origin keeps `wss://` working and the S3 / `config.json` path unchanged.
-- **ALB locked to the CloudFront managed prefix list** (`com.amazonaws.global.cloudfront.origin-facing`) — the origin stays unreachable except through CloudFront, mirroring the EC2 security group.
-- **Raised ALB idle timeout** — long-lived chat connections survive quiet periods mid-conversation.
-- **Fargate task IAM role for Bedrock** (`bedrock:InvokeModel*` on the EU inference profile) — model access with no API key to store; Secrets Manager holds only non-AWS credentials such as an MCP server token. Model choice: [`llm.md`](./llm.md).
-- **ALB + tasks in private subnets, egress via NAT** — the service stays off the public internet except through CloudFront.
+- **ECS on Fargate behind an ALB** — managed containers with native WebSocket and zero-downtime rolling deploys (the Azure Container Apps analogue).
+- **Amazon ECR** (private) — the registry the service pulls from, scan-on-push, last 20 images kept.
+- **Reuse the existing CloudFront distribution** — the agent path behaviors point at the ALB; one TLS origin keeps `wss://` working and leaves the S3 / `config.json` path untouched.
+- **ALB locked to the CloudFront managed prefix list** (`com.amazonaws.global.cloudfront.origin-facing`) — the origin is unreachable except through CloudFront, mirroring the EC2 security group.
+- **ALB idle timeout 3600 s** — long-lived chat connections survive quiet periods mid-conversation.
+- **Tasks in private subnets, egress via a single NAT gateway** — no public IP on the task; one NAT rather than one per AZ halves the cost and is accepted for the pilot (an AZ outage takes egress with it).
+- **Task IAM role for Bedrock** (`bedrock:InvokeModel` / `InvokeModelWithResponseStream` on the EU inference profiles) — model access with no API key to store. Secrets Manager holds only non-AWS credentials such as the MCP server token.
+- **Deployment circuit breaker with rollback** — a task that never becomes healthy rolls the service back to the previous task definition automatically, so an unattended bad deploy cannot leave the service down.
 
 ### Pilot phase
 
-For the pilot the service runs as a **single Fargate task** (ECS desired count 1,
-autoscaling off) at a modest size — **1 vCPU / 2 GB**, raising memory toward 4 GB
-(or 2 vCPU / 4 GB) if the agent needs it. Moving to production means raising the ECS desired
-count and enabling autoscaling on the service. The
-ALB stays the same.
+A **single Fargate task** (desired count 1, autoscaling deliberately off) at
+**4 vCPU / 8 GB** — sized with headroom so the agent loop, MCP calls and
+concurrent WebSocket sessions are not the thing that needs debugging first. Going
+to production means raising the desired count and enabling autoscaling on the
+service; the ALB is unchanged by that. Set the desired count to **0** to park the
+service without deleting anything.
 
-### CI/CD (backend)
+### Infrastructure: two CloudFormation stacks
 
-The same keyless GitHub OIDC pattern as the frontend
-([step 7](#7-github-actions-oidc-deploy-role-cicd)), with a **second scoped role**:
+| Stack | Template | Contents |
+| --- | --- | --- |
+| `sgs-llm-backend-foundation` | [`infra/backend-foundation.yaml`](../infra/backend-foundation.yaml) | VPC (2 public + 2 private subnets, IGW, NAT), ALB + target group + listener, security groups, ECR repository, both DynamoDB tables, data-layer S3 bucket, CloudWatch log group, Secrets Manager placeholder, all four IAM roles |
+| `sgs-llm-backend-service` | [`infra/backend-service.yaml`](../infra/backend-service.yaml) | ECS cluster, task definition (sizing + the environment contract), Fargate service |
 
-```text
-push to main → GitHub Actions (OIDC, no stored keys)
-   → docker build  → push to ECR  (repo: sgs-llm-backend)
-   → aws ecs update-service --force-new-deployment   (rolling restart onto the new image)
+Two stacks rather than one because **an ECS service cannot be created before an
+image exists in ECR**, and ECR is itself part of the infrastructure. The
+foundation stack is deployed once and then left alone; the service stack is
+created once and thereafter bypassed by routine deploys (CI registers task
+definition revisions directly — see [Deploy the backend code](#deploy-the-backend-code)).
+
+The DynamoDB tables and the data-layer bucket carry `DeletionPolicy: Retain`:
+they hold user-submitted content, not disposable infrastructure, so deleting a
+stack never deletes them (teardown does it explicitly).
+
+#### Deploy the infrastructure
+
+```bash
+PROFILE=swisstopo
+REGION=eu-central-1
+
+# The ALB accepts traffic from CloudFront and nowhere else; the prefix list id
+# is region-specific.
+PL=$(aws ec2 describe-managed-prefix-lists --profile "$PROFILE" --region "$REGION" \
+  --filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing \
+  --query 'PrefixLists[0].PrefixListId' --output text)
+
+# The developer-access IP is deliberately not stored in this repository.
+# See infra/dev-access.env.example.
+source infra/dev-access.local.env      # sets DEV_ACCESS_CIDR
+
+aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
+  --stack-name sgs-llm-backend-foundation \
+  --template-file infra/backend-foundation.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --tags project=sgs-llm-poc \
+  --parameter-overrides \
+    CloudFrontPrefixListId="$PL" \
+    DevAccessCidr="$DEV_ACCESS_CIDR"
+
+# Publish the first image (the mock-agent bootstrap) so the service can start.
+BUILD_ONLY=1 PROFILE="$PROFILE" ./scripts/deploy-backend.sh
+
+aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
+  --stack-name sgs-llm-backend-service \
+  --template-file infra/backend-service.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --tags project=sgs-llm-poc \
+  --parameter-overrides \
+    PrimaryModelId=eu.anthropic.claude-sonnet-4-6 \
+    SecondaryModelId="<mistral profile id from the account>"
 ```
 
-The role (e.g. `github-actions-sgs-llm-backend-deploy`) is trusted only for the
-backend repository's `main` branch, and its policy is scoped to **ECR push** on
-that one repository plus the **`ecs:UpdateService` / `ecs:RegisterTaskDefinition`**
-calls for that one service — nothing else.
+Then repoint CloudFront at the ALB (see
+[Cut CloudFront over to the backend](#cut-cloudfront-over-to-the-backend)).
+
+### What the container image must provide
+
+The image is the only contract between the backend code and this infrastructure:
+
+| Requirement | Why |
+| --- | --- |
+| Listens on `$PORT` (8787) | Target group port and security group rule |
+| `GET /health` → `200` | ALB health check; an unhealthy task is replaced and a bad deploy rolls back |
+| `WebSocket /ws/v1` | Protocol v1 ([`protocol.md`](./protocol.md)) |
+| `POST /feedback` | Feedback form endpoint |
+| Handles `SIGTERM` | ECS stops tasks with SIGTERM (30 s stop timeout); draining beats being killed mid-conversation |
+| `linux/amd64` | The task definition pins X86_64; CI builds on x86 runners |
+
+`mock-agent/Dockerfile` satisfies all of these and is the working example.
+
+### Environment contract
+
+Configuration reaches the container as environment variables set by the task
+definition — nothing is baked into the image, and nothing sensitive is in git.
+Non-secret values come from `infra/backend-service.yaml`; secrets are injected by
+ECS from Secrets Manager at task start.
+
+| Variable | Source | Meaning |
+| --- | --- | --- |
+| `PORT` | parameter (8787) | Port to listen on |
+| `LOG_LEVEL` | parameter (`info`) | Application log level |
+| `AWS_REGION` / `BEDROCK_REGION` | stack region / parameter | Region the SDK and the Bedrock client target |
+| `BEDROCK_PRIMARY_MODEL_ID` | parameter | Primary agent model — an EU inference profile id |
+| `BEDROCK_SECONDARY_MODEL_ID` | parameter | Second model for side-by-side evaluation |
+| `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
+| `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | foundation stack | Retention the backend must stamp into `expires_at` |
+| `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON/GeoParquet artifacts |
+| `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
+| `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
+| `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin |
+| `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, once that work package lands |
+| `MCP_SERVER_TOKEN` | **Secrets Manager** `sgs-llm/backend` | MCP credential; never in git, never in CI logs |
+
+Fill in a secret value out-of-band, then restart the service to pick it up:
+
+```bash
+aws secretsmanager put-secret-value --profile swisstopo --region eu-central-1 \
+  --secret-id sgs-llm/backend \
+  --secret-string '{"MCP_SERVER_TOKEN":"<value>"}'
+aws ecs update-service --profile swisstopo --region eu-central-1 \
+  --cluster sgs-llm --service sgs-llm-backend --force-new-deployment
+```
+
+### What gets stored
+
+Two DynamoDB tables (on-demand billing, point-in-time recovery on, TTL enabled).
+The GSI partition key is named `log_date` rather than `day` because **`DAY` is a
+DynamoDB reserved word** and would otherwise need an expression-attribute alias in
+every query.
+
+**`sgs-llm-feedback`** — one item per submitted feedback form:
+
+| Attribute | Role |
+| --- | --- |
+| `id` | partition key (uuid) |
+| `log_date` + `ts` | `ByDay` GSI: `YYYY-MM-DD` + ISO-8601 timestamp, newest-first reads |
+| `category` | `bug` \| `feature` \| `improvement` \| `question` \| `other` |
+| `message`, `email?`, `lang` | as submitted by the form ([`submitFeedback.ts`](../frontend/src/feedback/submitFeedback.ts)) |
+| `expires_at` | epoch seconds; DynamoDB TTL deletes the item (default 365 days) |
+
+**`sgs-llm-conversations`** — one item per conversation turn:
+
+| Attribute | Role |
+| --- | --- |
+| `conversation_id` | partition key |
+| `turn` | sort key, `"<iso-timestamp>#<message_id>"` — one Query returns a conversation in order |
+| `log_date` + `ts` | `ByDay` GSI |
+| `expires_at` | epoch seconds; TTL default 90 days |
+
+Everything else (per-request operational logging) goes to the CloudWatch log
+group `/ecs/sgs-llm-backend`, retention 30 days.
+
+> ⚠️ **Data protection.** Storing conversation turns and feedback (which may
+> include an email address the user typed) is **personal data**, and it changes
+> what [`architecture.md`](./architecture.md#security-notes) used to promise. The
+> retention periods above are defaults chosen here, not an approved policy —
+> **they need sign-off from swisstopo before this carries real user traffic**, and
+> the privacy notice shown to users should match. Bedrock **model invocation
+> logging is deliberately left off**: it would capture full prompts and responses,
+> it is an account-wide per-region setting, and the application-level tables above
+> already cover the requirement.
+
+### Deploy the backend code
+
+**Automatic (default).** Pushing to `main` runs
+[`.github/workflows/backend.yml`](../.github/workflows/backend.yml) when
+`backend/**`, `mock-agent/**` or the deploy script changed — frontend-only commits
+do not restart the service. The workflow builds the image, **smoke-tests it
+locally** (health check plus a real `101 Switching Protocols` upgrade) before any
+AWS call, then assumes
+`arn:aws:iam::259789526488:role/github-actions-sgs-llm-backend-deploy` through
+GitHub's OIDC provider — no stored AWS keys — and publishes:
+
+```text
+push to main → build image → smoke-test container → OIDC role
+   → push to ECR (tagged with the commit sha)
+   → register a new task definition revision pinned to that sha
+   → ecs update-service → wait services-stable
+```
+
+Deploys are immutable: each one is its own task definition revision, so rolling
+back is pointing the service at the previous one. The role is trusted only for
+`repo:swisstopo/sgs-llm:ref:refs/heads/main` and can do nothing beyond ECR push on
+the one repository and rolling the one service.
+
+**Manual (fallback).**
+
+```bash
+PROFILE=swisstopo ./scripts/deploy-backend.sh          # build, push, roll, wait
+BUILD_ONLY=1 PROFILE=swisstopo ./scripts/deploy-backend.sh   # publish the image only
+```
+
+The script prints the exact rollback command for the revision it replaced. If the
+new task never becomes healthy, the circuit breaker rolls back and the script
+exits non-zero.
+
+### Inspect what the backend stored
+
+[`scripts/read-db.sh`](../scripts/read-db.sh) reads both tables and prints JSONL
+with DynamoDB's type wrappers removed, so it pipes into `jq`, `grep` or a file. It
+only ever calls `Query` / `Scan` / `DescribeTable`.
+
+```bash
+PROFILE=sgs-llm-dev ./scripts/read-db.sh counts
+PROFILE=sgs-llm-dev ./scripts/read-db.sh feedback                      # last 7 days
+PROFILE=sgs-llm-dev ./scripts/read-db.sh feedback --day 2026-07-29
+PROFILE=sgs-llm-dev ./scripts/read-db.sh conversations --conversation <id>
+PROFILE=sgs-llm-dev ./scripts/read-db.sh feedback | jq -r '.category' | sort | uniq -c
+```
+
+### Use the models from a workstation
+
+The `sgs-llm-dev` role grants **Bedrock inference on the pilot's EU profiles** and
+**read-only access to the two tables** — enough to try prompts, compare models and
+read what the backend stored, with no long-lived access key anywhere. Every
+statement in it is conditioned on `aws:SourceIp`, so it works from the fixed office
+address only (kept out of this repository — see
+[`infra/dev-access.env.example`](../infra/dev-access.env.example)).
+
+Add a profile that assumes it (`~/.aws/config`, structure only — no secrets):
+
+```ini
+[profile sgs-llm-dev]
+role_arn = arn:aws:iam::259789526488:role/sgs-llm-dev
+source_profile = swisstopo
+region = eu-central-1
+```
+
+```bash
+# What can this account actually call?
+aws bedrock list-inference-profiles --profile sgs-llm-dev --region eu-central-1 \
+  --type SYSTEM_DEFINED --query 'inferenceProfileSummaries[].inferenceProfileId'
+
+# One turn against the primary model.
+aws bedrock-runtime converse --profile sgs-llm-dev --region eu-central-1 \
+  --model-id eu.anthropic.claude-sonnet-4-6 \
+  --messages '[{"role":"user","content":[{"text":"Nenne drei Schweizer Kantone."}]}]' \
+  --query 'output.message.content[0].text' --output text
+```
+
+> The IP condition applies to direct API calls, which is what the CLI and SDKs
+> make. Requests the **AWS console** issues on your behalf may not present your
+> browser address, so use this role from the CLI/SDK and browse the console with
+> your normal IAM Identity Center role instead.
+
+### Bedrock model access
+
+Model access is an account-level, per-region setting; the roles above grant the
+API permission but not the entitlement.
+
+```bash
+# What exists in this region, and under which id?
+aws bedrock list-inference-profiles --profile swisstopo --region eu-central-1 \
+  --type SYSTEM_DEFINED --query 'inferenceProfileSummaries[].[inferenceProfileId,status]' --output table
+aws bedrock list-foundation-models --profile swisstopo --region eu-central-1 \
+  --query 'modelSummaries[?contains(modelId,`anthropic`)||contains(modelId,`mistral`)].modelId'
+
+# Which regions does an EU profile actually route to?
+aws bedrock get-inference-profile --profile swisstopo --region eu-central-1 \
+  --inference-profile-identifier eu.anthropic.claude-sonnet-4-6
+```
+
+Enable access for the pilot models in the Bedrock console ("Model access") and
+then **prove it with a real call** (the `converse` example above): an EU profile
+can return `AccessDeniedException` until the models are enabled for the regions the
+profile routes to. Check the on-demand tokens-per-minute quotas in Service Quotas
+for the models in use and request increases early — they are not instant.
+
+### Cut CloudFront over to the backend
+
+The distribution's `/ws/v1`, `/feedback` and `/data/*` behaviors already carry the
+right cache/origin-request policies and allowed methods
+([appendix](#appendix-cloudfront-distribution-config)); only the origin's
+`DomainName` changes, from the EC2 public DNS to the ALB DNS name. Keep
+`OriginProtocolPolicy: http-only` and the `X-Forwarded-Proto: https` custom header
+— the backend derives its public URLs from those, exactly as the mock-agent does
+on EC2.
+
+```bash
+ALB=$(aws cloudformation describe-stacks --profile swisstopo --region eu-central-1 \
+  --stack-name sgs-llm-backend-foundation \
+  --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text)
+
+aws cloudfront get-distribution-config --id E2AEIO5QX64WCY --profile swisstopo \
+  > /tmp/dist.json                       # note the ETag
+# Replace the ec2-agent origin DomainName with $ALB, keep everything else, then:
+aws cloudfront update-distribution --id E2AEIO5QX64WCY --profile swisstopo \
+  --distribution-config file:///tmp/dist-config.json --if-match <ETag>
+aws cloudfront wait distribution-deployed --id E2AEIO5QX64WCY --profile swisstopo
+```
+
+Re-run the [verification block](#6-verify) afterwards — including the WebSocket
+`101` check — then the browser demo script. Because the mock-agent is also the
+bootstrap container image, the demo behaves identically before and after the
+cutover; the EC2 instance can then be **stopped but kept** as a rollback origin.
+
+### Operate the backend
+
+```bash
+P=(--profile swisstopo --region eu-central-1)
+
+# Is it healthy?
+aws ecs describe-services "${P[@]}" --cluster sgs-llm --services sgs-llm-backend \
+  --query 'services[0].{desired:desiredCount,running:runningCount,taskDef:taskDefinition}'
+aws elbv2 describe-target-health "${P[@]}" --target-group-arn <TargetGroupArn> \
+  --query 'TargetHealthDescriptions[].TargetHealth.State'
+
+# Logs (application + startup failures)
+aws logs tail /ecs/sgs-llm-backend "${P[@]}" --since 30m --follow
+
+# Why did a deploy fail?
+aws ecs describe-services "${P[@]}" --cluster sgs-llm --services sgs-llm-backend \
+  --query 'services[0].events[:5].message'
+
+# Shell into the running task (ECS Exec is enabled)
+TASK=$(aws ecs list-tasks "${P[@]}" --cluster sgs-llm --service-name sgs-llm-backend \
+  --query 'taskArns[0]' --output text)
+aws ecs execute-command "${P[@]}" --cluster sgs-llm --task "$TASK" \
+  --container sgs-llm-backend --interactive --command "/bin/sh"
+
+# Park it (stops Fargate charges; the ALB and CloudFront stay up and 503 the chat)
+aws ecs update-service "${P[@]}" --cluster sgs-llm --service sgs-llm-backend --desired-count 0
+aws ecs update-service "${P[@]}" --cluster sgs-llm --service sgs-llm-backend --desired-count 1
+
+# Restart on the same image (e.g. after changing a secret)
+aws ecs update-service "${P[@]}" --cluster sgs-llm --service sgs-llm-backend --force-new-deployment
+
+# Roll back to a specific revision
+aws ecs update-service "${P[@]}" --cluster sgs-llm --service sgs-llm-backend \
+  --task-definition sgs-llm-backend:<revision>
+```
+
+### Backend cost
+
+Approximate, at pilot scale in eu-central-1, excluding Bedrock usage:
+
+| Item | ~ per month |
+| --- | --- |
+| Fargate 4 vCPU / 8 GB, 1 task, 24/7 | ~$165 |
+| Application Load Balancer | ~$20 + LCU |
+| NAT gateway (1) | ~$35 + data |
+| ECR, DynamoDB on-demand, CloudWatch, Secrets Manager | a few dollars |
+| **Total** | **~$225** |
+
+Fargate is the dominant cost and scales with the task size, so
+`--desired-count 0` between demos is the effective lever; dropping to 1 vCPU / 2 GB
+saves ~$125/month if the headroom proves unnecessary. Bedrock is billed per token
+on top.
+
+### Backend teardown
+
+```bash
+P=(--profile swisstopo --region eu-central-1)
+aws cloudformation delete-stack "${P[@]}" --stack-name sgs-llm-backend-service
+aws cloudformation wait stack-delete-complete "${P[@]}" --stack-name sgs-llm-backend-service
+aws cloudformation delete-stack "${P[@]}" --stack-name sgs-llm-backend-foundation
+aws cloudformation wait stack-delete-complete "${P[@]}" --stack-name sgs-llm-backend-foundation
+
+# Retained on purpose — delete only if the stored user data is really finished with:
+aws s3 rm s3://sgs-llm-data-259789526488 --recursive "${P[@]}"
+aws s3api delete-bucket --bucket sgs-llm-data-259789526488 "${P[@]}"
+aws dynamodb delete-table --table-name sgs-llm-feedback "${P[@]}"
+aws dynamodb delete-table --table-name sgs-llm-conversations "${P[@]}"
+```
+
+Repoint the CloudFront agent behaviors back at the EC2 origin first, or the chat
+path 502s.
 
 ### Region
 
@@ -474,18 +839,25 @@ residency is later required — Bedrock is available there too.
 
 ## Follow-ups (post-POC)
 
+- **Data-protection sign-off** for storing conversation turns and feedback emails,
+  and a privacy notice that matches the retention actually configured — see
+  [What gets stored](#what-gets-stored). Blocking for real user traffic.
 - Move to **eu-central-2 (Zurich)** once the region is enabled.
-- Replace the EC2 mock-agent with the production agent backend on **ECS Fargate +
-  ALB** — see [Backend deployment](#backend-deployment).
+- **Terminate the EC2 mock-agent** once the Fargate backend has run a while (it is
+  kept stopped as a rollback origin in the meantime).
 - **Scale the backend out** — raise the ECS desired count and enable autoscaling
   (on CPU or ALB connection count) once past the single pilot task.
 - **Load-test the backend** — drive concurrent WebSocket chat sessions to size
   the task (CPU/memory), the autoscaling thresholds, and the ALB idle timeout
   before production traffic.
+- **Second NAT gateway** (one per AZ) when egress becomes availability-critical.
 - **Custom domain** + ACM certificate.
 
 Done since the initial POC: ✔ GitHub Actions deploy on push to `main` (OIDC
-role, no static keys — see step 7 and "Redeploy the frontend").
+role, no static keys — see step 7 and "Redeploy the frontend"); ✔ agent backend on
+ECS Fargate + ALB with keyless CI deploys, persistence for feedback and
+conversation logs, and IP-scoped developer access to the models and the tables
+(see [Backend deployment](#backend-deployment)).
 
 ## Appendix: CloudFront distribution config
 

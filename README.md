@@ -22,9 +22,12 @@ LLM agent backend during development. The frontend talks to the public Swisstopo
 directly for map interactivity, and to the agent backend over a versioned WebSocket protocol
 ([`docs/protocol.md`](docs/protocol.md)).
 
-The production agent backend (LLM provisioning, orchestration, MCP client) is developed
-separately and connects over the same protocol. This is a prototype — not for operational
-use; interfaces and layout may still change.
+The agent backend (LLM orchestration, MCP client) will live in this repository under
+`backend/` and connects over the same protocol; its AWS infrastructure — ECS Fargate, ALB,
+Bedrock access, and persistence for feedback and conversation logs — is already deployed
+([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md#backend-deployment)) and
+currently runs the mock-agent as its container image. This is a prototype — not for
+operational use; interfaces and layout may still change.
 
 A live POC instance (frontend + mock-agent) is deployed on AWS at
 **https://denpw8uo5zpkl.cloudfront.net/**. See [Deployment](#deployment).
@@ -174,10 +177,18 @@ redeploy fallback:
 PROFILE=swisstopo ./scripts/deploy-frontend.sh
 ```
 
-The **production agent backend** replaces the development EC2 mock-agent with a managed
-container service — **ECS Fargate behind an ALB**, image from **ECR**, fronted by the same
-CloudFront distribution and shipped by the same GitHub-OIDC pattern. The target design and
-rationale are in [`docs/deployment.md`](docs/deployment.md).
+The **agent backend** runs as a container on **ECS Fargate behind an ALB** (image from
+**ECR**, same CloudFront distribution, same GitHub-OIDC deploy pattern), with Bedrock for
+inference and DynamoDB for feedback and conversation logs. Its infrastructure is defined in
+[`infra/`](infra/) as two CloudFormation stacks and is deployed and operable today — the
+bundled mock-agent runs as the container image until the agent code lands under `backend/`,
+so pushing that code is the only step left. Deploy, environment contract, runbook and
+teardown are in
+[`docs/deployment.md`](docs/deployment.md#backend-deployment). Manual redeploy fallback:
+
+```bash
+PROFILE=swisstopo ./scripts/deploy-backend.sh
+```
 
 ## Support
 

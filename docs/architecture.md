@@ -9,9 +9,10 @@ calls the Swisstopo public APIs directly for the catalog, tiles, and identify;
 **ALB** to the agent backend on **ECS Fargate**. The backend runs the LLM loop
 on **Amazon Bedrock** and calls the geodata **MCP server** (still TBD), which
 produces the result **data layers** in S3; the backend relays their presigned
-URLs to the browser, which fetches them. The backend host is the target (ECS
-Fargate behind an ALB); the pilot initially runs the bundled mock-agent on EC2
-(see [`deployment.md`](./deployment.md#backend-deployment)).
+URLs to the browser, which fetches them. The backend also persists submitted
+**feedback** and **chat turns** to DynamoDB. The service runs on ECS Fargate
+behind an ALB today, with the bundled mock-agent as its container image until the
+agent code lands (see [`deployment.md`](./deployment.md#backend-deployment)).
 
 ```mermaid
 flowchart TB
@@ -34,24 +35,28 @@ built assets + config.json`")]
 WebSocket upgrade`"]
     orch["`**Agent backend** · ECS Fargate
 ————
-sgs-llm-module · WS protocol v1 · LLM loop · MCP client`"]
+backend/ · WS protocol v1 · LLM loop · MCP client`"]
     bedrock["`**Amazon Bedrock**
 ————
-Claude Sonnet 4.6 · EU profile`"]
+Claude Sonnet · Mistral · EU profiles`"]
     mcp["`**MCP server(s) · TBD**
 ————
 geodata tools · separate work package`"]
     s3d[("`**S3** · data-layer artifacts
 ————
 GeoJSON / GeoParquet`")]
+    ddb[("`**DynamoDB**
+————
+feedback · conversation turns (TTL)`")]
 
     browser -- "https / wss" --> cf
     cf -- "default →" --> s3f
-    cf -- "/ws/v1 · /feedback →" --> alb
+    cf -- "/ws/v1 · /feedback · /data/* →" --> alb
     alb -- "WebSocket" --> orch
     browser -- "Track A · direct calls" --> topo
     orch -- "LLM · InvokeModel" --> bedrock
     orch -- "MCP client" --> mcp
+    orch -- "feedback · chat log" --> ddb
     mcp -- "produces data layers" --> s3d
     mcp -. "tool JSON (+ layer URLs)" .-> orch
     orch -. "answer + layer URLs" .-> browser
@@ -158,24 +163,28 @@ protocol change required.
 
 ## Backend architecture
 
-The chat side is served by the agent backend, developed separately in
-[`swisstopo/sgs-llm-module`](https://github.com/swisstopo/sgs-llm-module) and
-connected over the WebSocket protocol; the notes below record the **design
-decisions** for that backend. How the service is deployed is in
+The chat side is served by the agent backend, which lives in this repository under
+`backend/` and connects over the WebSocket protocol; the notes below record its
+**design decisions**. Its infrastructure is deployed and operable today — the
+bundled mock-agent runs as the container image until the agent code lands, so the
+deployed path is exercised end-to-end. How the service is deployed is in
 [`deployment.md`](./deployment.md#backend-deployment); the client side of the
 geodata tool interface is in [MCP client interface](#mcp-client-interface).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│ Agent backend (sgs-llm-module)                                     │
-│   Dockerized Python service · WebSocket protocol v1 (stateless)    │
+│ Agent backend (backend/, this repository)                          │
+│   Dockerized service · WebSocket protocol v1 (stateless)           │
+│   ECS Fargate, 4 vCPU / 8 GB behind an ALB                         │
 │                                                                    │
 │   /ws/v1 ◄──► agent orchestrator (LLM loop)                        │
-│                 ├─ LLM ──► Amazon Bedrock — Claude                 │
-│                 │          (eu.anthropic.* EU inference profile)   │
+│                 ├─ LLM ──► Amazon Bedrock — Claude + Mistral        │
+│                 │          (eu.* EU inference profiles)            │
 │                 └─ MCP client ──► MCP server(s): geodata tools,    │
 │                                   fetch_layer_data  (separate)     │
 │                                                                    │
+│   /feedback  ──► DynamoDB  sgs-llm-feedback       (TTL)            │
+│   chat turns ──► DynamoDB  sgs-llm-conversations  (TTL)            │
 │   data layers ──► GeoJSON / GeoParquet on S3 (presigned URLs)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -257,7 +266,12 @@ requests today, but that is operational behavior, not a contract).
   inside a `sandbox=""` iframe.
 - Geolocation: browser API only, used on demand for the locate button; the
   position is never sent anywhere.
-- No authentication, no user data storage (public prototype, by design).
+- No authentication (public prototype, by design). The **frontend** stores nothing
+  server-side; the **agent backend** does: chat turns and submitted feedback (which
+  may include an email address the user typed) are persisted to DynamoDB with a TTL
+  so the pilot can be evaluated. That is personal data — see
+  [`deployment.md`](./deployment.md#what-gets-stored) for the schema, retention and
+  the sign-off still outstanding.
 
 ## Testing
 

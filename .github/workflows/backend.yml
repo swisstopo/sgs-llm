@@ -1,0 +1,74 @@
+name: Backend
+
+# Deploys the agent backend to ECS Fargate. Runs only when backend code changes,
+# so ordinary frontend commits do not restart the service. Credentials come from
+# a GitHub OIDC role in the swisstopo POC account — no long-lived keys; the role
+# may only push to the one ECR repository and roll the one ECS service
+# (see docs/deployment.md#backend-deployment).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'mock-agent/**'
+      - 'scripts/deploy-backend.sh'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+# Never let two deploys race the same ECS service.
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirrors the same rule in scripts/deploy-backend.sh: the real backend takes
+      # over the moment it lands a Dockerfile, with no change needed here.
+      - name: Select the image source
+        run: |
+          if [ -f backend/Dockerfile ]; then
+            echo "DOCKERFILE=backend/Dockerfile" >> "$GITHUB_ENV"
+          else
+            echo "DOCKERFILE=mock-agent/Dockerfile" >> "$GITHUB_ENV"
+            echo "::notice::backend/Dockerfile not found — deploying the mock-agent bootstrap image"
+          fi
+
+      - name: Build the image
+        run: docker build -f "$DOCKERFILE" -t sgs-llm-backend:ci .
+
+      # Fail here rather than in the cluster: the container must serve the ALB
+      # health check and accept a protocol v1 WebSocket upgrade before it ships.
+      - name: Smoke-test the image
+        run: |
+          docker run -d --name smoke -p 8787:8787 sgs-llm-backend:ci
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8787/health >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8787/health
+          status=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            --max-time 5 http://127.0.0.1:8787/ws/v1 || true)
+          echo "WebSocket upgrade returned $status"
+          test "$status" = "101"
+          docker rm -f smoke
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::259789526488:role/github-actions-sgs-llm-backend-deploy
+          aws-region: eu-central-1
+
+      # Pushes the image and rolls the service. The ECS deployment circuit
+      # breaker rolls back automatically if the new task never becomes healthy,
+      # and the script then fails the job.
+      - name: Deploy backend
+        run: PROFILE= ./scripts/deploy-backend.sh

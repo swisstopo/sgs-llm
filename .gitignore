@@ -12,3 +12,8 @@ mock-agent/feedback.log
 
 # Internal cost analysis — kept local only, not published
 docs/model-cost-options/
+
+# Deploy parameters that must not be published (e.g. the developer access IP).
+# See infra/dev-access.env.example.
+infra/*.local.env
+infra/*.params.local.json

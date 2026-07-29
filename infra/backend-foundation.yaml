@@ -1,0 +1,820 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SGS LLM agent backend — durable foundation: VPC, ALB, ECR, DynamoDB (feedback +
+  conversation log), data-layer bucket, log group, secret, and IAM roles.
+  Deployed once and then left alone; the ECS service lives in backend-service.yaml
+  because it cannot be created before a container image exists in ECR.
+  See docs/deployment.md#backend-deployment.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Naming and tagging }
+        Parameters: [ProjectTag, BackendName]
+      - Label: { default: Networking }
+        Parameters: [VpcCidr, ContainerPort, AlbIdleTimeoutSeconds, CloudFrontPrefixListId]
+      - Label: { default: Frontend integration }
+        Parameters: [FrontendOrigin]
+      - Label: { default: Data retention }
+        Parameters: [FeedbackTtlDays, ConversationTtlDays, DataLayerExpiryDays]
+      - Label: { default: CI/CD and developer access }
+        Parameters: [OidcProviderArn, GitHubRepo, GitHubBranch, DevAccessCidr, DevAccessPrincipalArn]
+
+Parameters:
+  ProjectTag:
+    Type: String
+    Default: sgs-llm-poc
+    Description: Value of the `project` tag applied to every taggable resource.
+  BackendName:
+    Type: String
+    Default: sgs-llm-backend
+    Description: Base name for the ECR repository, log group, ALB and IAM roles.
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$
+    Description: CIDR for the backend VPC. Must not overlap the default VPC.
+  ContainerPort:
+    Type: Number
+    Default: 8787
+    Description: Port the agent container listens on (protocol v1 + /feedback + /health).
+  AlbIdleTimeoutSeconds:
+    Type: Number
+    Default: 3600
+    MinValue: 60
+    MaxValue: 4000
+    Description: >-
+      ALB idle timeout. Long-lived chat WebSockets must survive quiet periods
+      mid-conversation, so this is deliberately far above the 60s default.
+  CloudFrontPrefixListId:
+    Type: String
+    AllowedPattern: ^pl-[0-9a-f]+$
+    Description: >-
+      Managed prefix list id for com.amazonaws.global.cloudfront.origin-facing in
+      THIS region — the ALB accepts traffic from nowhere else. Look it up with:
+      aws ec2 describe-managed-prefix-lists --filters
+      Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing
+      --query 'PrefixLists[0].PrefixListId' --output text
+  FrontendOrigin:
+    Type: String
+    Default: https://denpw8uo5zpkl.cloudfront.net
+    Description: >-
+      Browser origin allowed to fetch data-layer artifacts from S3 via presigned
+      URLs (the CloudFront distribution serving the frontend).
+  FeedbackTtlDays:
+    Type: Number
+    Default: 365
+    MinValue: 1
+    Description: >-
+      Retention for user feedback (may contain an email address the user typed).
+      Enforced by the backend writing `expires_at`; DynamoDB TTL then deletes.
+  ConversationTtlDays:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    Description: Retention for stored conversation turns (chat content is user data).
+  DataLayerExpiryDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    Description: Lifecycle expiry for MCP-produced GeoJSON/GeoParquet artifacts.
+  OidcProviderArn:
+    Type: String
+    Default: ''
+    Description: >-
+      ARN of the existing GitHub Actions OIDC provider. Leave empty to derive
+      arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
+      (created once for the frontend deploy role — this template never recreates it).
+  GitHubRepo:
+    Type: String
+    Default: swisstopo/sgs-llm
+    Description: Repository allowed to assume the backend deploy role.
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch allowed to assume the backend deploy role. Nothing else can.
+  DevAccessCidr:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >-
+      Optional CIDR (e.g. a fixed office IP as x.x.x.x/32) that may use the
+      developer role for Bedrock inference and read-only DynamoDB access. Pass it
+      on the deploy command line — never commit it. Empty disables the role.
+  DevAccessPrincipalArn:
+    Type: String
+    Default: ''
+    Description: >-
+      Principal allowed to assume the developer role. Empty trusts the account
+      root, i.e. any already-authenticated principal in this account (all human
+      access here is IAM Identity Center). Narrow it to a specific role ARN if needed.
+
+Conditions:
+  HasOidcProviderArn: !Not [!Equals [!Ref OidcProviderArn, '']]
+  EnableDevAccess: !Not [!Equals [!Ref DevAccessCidr, '']]
+  HasDevPrincipal: !Not [!Equals [!Ref DevAccessPrincipalArn, '']]
+
+Resources:
+  # ---------------------------------------------------------------- networking
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-vpc' }
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-igw' }
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public subnets hold only the ALB and the NAT gateway.
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 4, 8]]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-public-a' }
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 4, 8]]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-public-b' }
+
+  # Fargate tasks run here — no public IP, egress through the NAT gateway.
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 4, 8]]
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-private-a' }
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Select [3, !Cidr [!Ref VpcCidr, 4, 8]]
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-private-b' }
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-public-rt' }
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEip:
+    Type: AWS::EC2::EIP
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-nat-eip' }
+
+  # One NAT gateway, not one per AZ: halves the cost and is acceptable for the
+  # pilot (an AZ outage takes egress with it). Add a second for production.
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-nat' }
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-private-rt' }
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ----------------------------------------------------------- security groups
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${BackendName} ALB - CloudFront origin-facing ranges only'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId: !Ref CloudFrontPrefixListId
+          Description: HTTP from CloudFront edge locations only
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-alb-sg' }
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${BackendName} Fargate tasks - inbound from the ALB only'
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Bedrock, ECR, Secrets Manager, DynamoDB and the MCP server via NAT
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-task-sg' }
+
+  # Separate resources so the two groups can reference each other without a cycle.
+  TaskIngressFromAlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+      Description: Agent protocol traffic from the load balancer
+
+  AlbEgressToTasks:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      DestinationSecurityGroupId: !Ref TaskSecurityGroup
+      Description: Forward to the agent tasks
+
+  # ---------------------------------------------------------- load balancing
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${BackendName}-alb'
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      LoadBalancerAttributes:
+        - { Key: idle_timeout.timeout_seconds, Value: !Ref AlbIdleTimeoutSeconds }
+        - { Key: routing.http2.enabled, Value: 'true' }
+        - { Key: deletion_protection.enabled, Value: 'false' }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${BackendName}-tg'
+      VpcId: !Ref Vpc
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: '200' }
+      TargetGroupAttributes:
+        # Give in-flight WebSocket conversations time to drain on a rolling deploy.
+        - { Key: deregistration_delay.timeout_seconds, Value: '30' }
+        - { Key: stickiness.enabled, Value: 'false' }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # Plain HTTP: TLS terminates at CloudFront, which forwards X-Forwarded-Proto:
+  # https (same arrangement as the EC2 mock-agent origin).
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # ------------------------------------------------------------------- registry
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref BackendName
+      ImageTagMutability: MUTABLE
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the 20 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 20
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # ---------------------------------------------------------------- persistence
+  # Retained on stack deletion: this is user-submitted content, not disposable
+  # infrastructure. Teardown deletes it explicitly (docs/deployment.md).
+  FeedbackTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sgs-llm-feedback
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: id, AttributeType: S }
+        - { AttributeName: log_date, AttributeType: S }
+        - { AttributeName: ts, AttributeType: S }
+      KeySchema:
+        - { AttributeName: id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        # Newest-first reads for one day without scanning the table. Named
+        # log_date, not `day`: DAY is a DynamoDB reserved word and would force an
+        # expression-attribute alias into every query.
+        - IndexName: ByDay
+          KeySchema:
+            - { AttributeName: log_date, KeyType: HASH }
+            - { AttributeName: ts, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  ConversationTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sgs-llm-conversations
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: conversation_id, AttributeType: S }
+        - { AttributeName: turn, AttributeType: S }
+        - { AttributeName: log_date, AttributeType: S }
+        - { AttributeName: ts, AttributeType: S }
+      KeySchema:
+        # `turn` sorts as "<iso-timestamp>#<message_id>", so one conversation
+        # reads back in order with a single Query.
+        - { AttributeName: conversation_id, KeyType: HASH }
+        - { AttributeName: turn, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: ByDay
+          KeySchema:
+            - { AttributeName: log_date, KeyType: HASH }
+            - { AttributeName: ts, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # MCP-produced GeoJSON/GeoParquet. The browser fetches these cross-origin from
+  # presigned URLs, so CORS must allow the frontend origin.
+  DataLayerBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'sgs-llm-data-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, HEAD]
+            AllowedOrigins: [!Ref FrontendOrigin]
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag, Content-Length]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-data-layers
+            Status: Enabled
+            ExpirationInDays: !Ref DataLayerExpiryDays
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  DataLayerBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataLayerBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub '${DataLayerBucket.Arn}'
+              - !Sub '${DataLayerBucket.Arn}/*'
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${BackendName}'
+      RetentionInDays: 30
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # Placeholder so the task definition can reference the JSON keys from day one.
+  # Fill in real values out-of-band; they are never stored in git.
+  BackendSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: sgs-llm/backend
+      Description: Non-AWS credentials for the agent backend (MCP server token, etc.)
+      SecretString: '{"MCP_SERVER_TOKEN":""}'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # ------------------------------------------------------------------ IAM roles
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${BackendName}-task-execution'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-backend-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref BackendSecret
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # What the agent process itself may do. No API keys anywhere: Bedrock access is
+  # this role.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${BackendName}-task'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: bedrock-inference
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Converse is authorised by InvokeModel and ConverseStream by
+              # InvokeModelWithResponseStream — there is no separate Allow action
+              # for them. Cross-region (EU) inference profiles need both the
+              # profile and the foundation models in the regions it routes to.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*::foundation-model/*'
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:GetFoundationModel
+                  - bedrock:ListInferenceProfiles
+                  - bedrock:GetInferenceProfile
+                Resource: '*'
+        - PolicyName: persist-logs-and-feedback
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt FeedbackTable.Arn
+                  - !Sub '${FeedbackTable.Arn}/index/*'
+                  - !GetAtt ConversationTable.Arn
+                  - !Sub '${ConversationTable.Arn}/index/*'
+        - PolicyName: data-layer-artifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource: !Sub '${DataLayerBucket.Arn}/*'
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt DataLayerBucket.Arn
+        - PolicyName: runtime-support
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref BackendSecret
+              # ECS Exec, so a shell into a running task is possible without SSH.
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: '*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub '${LogGroup.Arn}:*'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # Keyless CI deploys, same pattern as the frontend role: GitHub's OIDC token is
+  # exchanged for short-lived credentials, trusted for one repo and one branch.
+  BackendDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'github-actions-${BackendName}-deploy'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - HasOidcProviderArn
+                - !Ref OidcProviderArn
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+      Policies:
+        - PolicyName: push-image-and-roll-service
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                  - ecr:DescribeImages
+                Resource: !GetAtt EcrRepository.Arn
+              - Effect: Allow
+                Action: [ecs:DescribeServices, ecs:UpdateService]
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/sgs-llm/${BackendName}'
+              - Effect: Allow
+                Action: [ecs:DescribeTasks, ecs:ListTasks]
+                Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/sgs-llm'
+              # RegisterTaskDefinition has no resource-level permissions.
+              - Effect: Allow
+                Action: [ecs:RegisterTaskDefinition, ecs:DescribeTaskDefinition]
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: [!GetAtt TaskRole.Arn, !GetAtt TaskExecutionRole.Arn]
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # Local development access: call the pilot's models and read what the backend
+  # stored, from one fixed network location, without any long-lived key.
+  DevAccessRole:
+    Type: AWS::IAM::Role
+    Condition: EnableDevAccess
+    Properties:
+      RoleName: sgs-llm-dev
+      Description: Bedrock inference + read-only access to the SGS LLM tables, IP-restricted.
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !If
+                - HasDevPrincipal
+                - !Ref DevAccessPrincipalArn
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-pilot-models
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Covers the Converse / ConverseStream APIs too (see TaskRole).
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*::foundation-model/*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:GetFoundationModel
+                  - bedrock:ListInferenceProfiles
+                  - bedrock:GetInferenceProfile
+                Resource: '*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
+        - PolicyName: read-stored-data
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Read-only on purpose: inspection must not be able to alter or
+              # delete what users submitted.
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:DescribeTable
+                  - dynamodb:PartiQLSelect
+                Resource:
+                  - !GetAtt FeedbackTable.Arn
+                  - !Sub '${FeedbackTable.Arn}/index/*'
+                  - !GetAtt ConversationTable.Arn
+                  - !Sub '${ConversationTable.Arn}/index/*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
+              - Effect: Allow
+                Action: dynamodb:ListTables
+                Resource: '*'
+                Condition:
+                  IpAddress: { 'aws:SourceIp': [!Ref DevAccessCidr] }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export: { Name: !Sub '${AWS::StackName}-VpcId' }
+  PrivateSubnetIds:
+    Description: Comma-separated private subnets for the Fargate service.
+    Value: !Join [',', [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+    Export: { Name: !Sub '${AWS::StackName}-PrivateSubnetIds' }
+  TaskSecurityGroupId:
+    Value: !Ref TaskSecurityGroup
+    Export: { Name: !Sub '${AWS::StackName}-TaskSecurityGroupId' }
+  TargetGroupArn:
+    Value: !Ref TargetGroup
+    Export: { Name: !Sub '${AWS::StackName}-TargetGroupArn' }
+  AlbDnsName:
+    Description: Set this as the CloudFront origin DomainName for /ws/v1, /feedback and /data/*.
+    Value: !GetAtt LoadBalancer.DNSName
+    Export: { Name: !Sub '${AWS::StackName}-AlbDnsName' }
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export: { Name: !Sub '${AWS::StackName}-EcrRepositoryUri' }
+  LogGroupName:
+    Value: !Ref LogGroup
+    Export: { Name: !Sub '${AWS::StackName}-LogGroupName' }
+  FeedbackTableName:
+    Value: !Ref FeedbackTable
+    Export: { Name: !Sub '${AWS::StackName}-FeedbackTableName' }
+  ConversationTableName:
+    Value: !Ref ConversationTable
+    Export: { Name: !Sub '${AWS::StackName}-ConversationTableName' }
+  DataLayerBucketName:
+    Value: !Ref DataLayerBucket
+    Export: { Name: !Sub '${AWS::StackName}-DataLayerBucketName' }
+  BackendSecretArn:
+    Value: !Ref BackendSecret
+    Export: { Name: !Sub '${AWS::StackName}-BackendSecretArn' }
+  # Retention lives here, next to the tables that enforce it via TTL; the service
+  # stack imports these into the container environment so the backend stamps
+  # `expires_at` consistently. One source of truth for both halves.
+  FeedbackTtlDays:
+    Value: !Ref FeedbackTtlDays
+    Export: { Name: !Sub '${AWS::StackName}-FeedbackTtlDays' }
+  ConversationTtlDays:
+    Value: !Ref ConversationTtlDays
+    Export: { Name: !Sub '${AWS::StackName}-ConversationTtlDays' }
+  TaskRoleArn:
+    Value: !GetAtt TaskRole.Arn
+    Export: { Name: !Sub '${AWS::StackName}-TaskRoleArn' }
+  TaskExecutionRoleArn:
+    Value: !GetAtt TaskExecutionRole.Arn
+    Export: { Name: !Sub '${AWS::StackName}-TaskExecutionRoleArn' }
+  BackendDeployRoleArn:
+    Description: role-to-assume for the backend deploy workflow (not a secret).
+    Value: !GetAtt BackendDeployRole.Arn
+  DevAccessRoleArn:
+    Description: Role a developer assumes for Bedrock + read-only table access.
+    Condition: EnableDevAccess
+    Value: !GetAtt DevAccessRole.Arn

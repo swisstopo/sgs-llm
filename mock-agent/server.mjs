@@ -17,7 +17,10 @@ import { routeScenario } from './scenarios/index.mjs';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DATA_DIR = fileURLToPath(new URL('./data', import.meta.url));
-const FEEDBACK_LOG = fileURLToPath(new URL('./feedback.log', import.meta.url));
+// Overridable so a read-only or non-root container image can point it elsewhere
+// (the container image sets FEEDBACK_LOG=/tmp/feedback.log).
+const FEEDBACK_LOG =
+  process.env.FEEDBACK_LOG ?? fileURLToPath(new URL('./feedback.log', import.meta.url));
 const SUPPORTED_LANGS = new Set(['de', 'fr', 'it', 'en', 'rm']);
 const FEEDBACK_CATEGORIES = new Set(['bug', 'feature', 'improvement', 'question', 'other']);
 const FEEDBACK_CORS = {
@@ -35,6 +38,13 @@ const CANCEL_MESSAGES = {
 
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
+  // Liveness probe for the container platform's load balancer (see
+  // docs/deployment.md#backend-deployment). Must stay cheap and dependency-free.
+  if (url.pathname === '/health') {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
   if (url.pathname === '/feedback') {
     handleFeedback(req, res);
     return;
@@ -189,3 +199,18 @@ wss.on('connection', (socket, req) => {
 httpServer.listen(PORT, () => {
   console.log(`mock-agent listening on http://localhost:${PORT} (WS: /ws/v1)`);
 });
+
+// Container platforms stop a task with SIGTERM and SIGKILL it after a grace
+// period. As PID 1 the default handler does not apply, so shut down explicitly:
+// stop accepting connections, close the live sockets, then exit.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    console.log(`${signal} received — shutting down`);
+    httpServer.close(() => process.exit(0));
+    for (const client of wss.clients) {
+      client.close(1001, 'server shutting down');
+    }
+    // Backstop in case a socket refuses to drain within the grace period.
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}

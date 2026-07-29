@@ -20,7 +20,26 @@ npm start            # ws://localhost:8787/ws/v1  +  POST http://localhost:8787/
   The `parquet` scenario intentionally returns an unsupported format to
   exercise the client's graceful degradation.
 - **Feedback** — `POST /feedback` validates `{category, message, ...}` and
-  appends it to `feedback.log` (JSONL, git-ignored).
+  appends it to `feedback.log` (JSONL, git-ignored; override the path with
+  `FEEDBACK_LOG`).
+- **Health** — `GET /health` returns `{"status":"ok"}`. This is what the
+  production load balancer probes, so the endpoint is part of the backend
+  contract, not a mock-only convenience.
+
+## Running as the deployed backend image
+
+`Dockerfile` builds this server as the container the ECS Fargate service runs.
+Until the real agent lands under `backend/`, it is the deployed backend — which
+means the whole CloudFront → ALB → Fargate path (including the WebSocket upgrade)
+is exercised by the reference implementation of the protocol.
+
+```bash
+docker build -f mock-agent/Dockerfile -t sgs-llm-backend .   # from the repo root
+docker run --rm -p 8787:8787 sgs-llm-backend
+```
+
+It shuts down on `SIGTERM` so ECS task draining is clean. See
+[`../docs/deployment.md`](../docs/deployment.md#backend-deployment).
 
 ## QA triggers (in the chat message text)
 

@@ -1,0 +1,247 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SGS LLM agent backend — ECS cluster, task definition and Fargate service.
+  Deployed AFTER backend-foundation.yaml and after a first image exists in ECR
+  (a service cannot start from an empty repository). Routine code deploys do not
+  touch this stack: CI registers a new task definition revision and rolls the
+  service. See docs/deployment.md#backend-deployment.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Wiring }
+        Parameters: [FoundationStackName, ClusterName, BackendName, ProjectTag]
+      - Label: { default: Task sizing }
+        Parameters: [TaskCpu, TaskMemory, DesiredCount, ImageTag, ContainerPort]
+      - Label: { default: Backend configuration }
+        Parameters:
+          - PrimaryModelId
+          - SecondaryModelId
+          - BedrockRegion
+          - PublicBaseUrl
+          - McpServerUrl
+          - DataLayerPresignTtl
+          - LogLevel
+
+Parameters:
+  FoundationStackName:
+    Type: String
+    Default: sgs-llm-backend-foundation
+    Description: Stack name whose exports this service consumes.
+  ClusterName:
+    Type: String
+    Default: sgs-llm
+    Description: >-
+      ECS cluster name. Must match the cluster in the foundation stack's deploy
+      role policy, otherwise CI cannot roll the service.
+  BackendName:
+    Type: String
+    Default: sgs-llm-backend
+    Description: Service, task family and container name. Must match the deploy role policy.
+  ProjectTag:
+    Type: String
+    Default: sgs-llm-poc
+  TaskCpu:
+    Type: String
+    Default: '4096'
+    AllowedValues: ['512', '1024', '2048', '4096', '8192', '16384']
+    Description: Fargate task CPU units (4096 = 4 vCPU).
+  TaskMemory:
+    Type: String
+    Default: '8192'
+    Description: >-
+      Task memory in MiB. Must be a combination Fargate allows for the chosen CPU
+      (4096 CPU permits 8192-30720 in 1024 steps).
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    Description: >-
+      Running tasks. 1 for the pilot (autoscaling deliberately off); set 0 to
+      park the service without deleting anything.
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: >-
+      ECR image tag to run. CI deploys by immutable commit sha and does not
+      update this stack, so it only matters for the initial create.
+  ContainerPort:
+    Type: Number
+    Default: 8787
+    Description: Must match the foundation stack's target group port.
+  PrimaryModelId:
+    Type: String
+    Default: eu.anthropic.claude-sonnet-4-6
+    Description: >-
+      Bedrock model or EU inference profile id for the primary agent model.
+      Verify against `aws bedrock list-inference-profiles` before deploying.
+  SecondaryModelId:
+    Type: String
+    Default: ''
+    Description: >-
+      Second model for side-by-side evaluation (the Mistral profile id).
+      Resolved from the account at deploy time; empty until then.
+  BedrockRegion:
+    Type: String
+    Default: eu-central-1
+    Description: Region the Bedrock client targets (the EU profile routes on from there).
+  PublicBaseUrl:
+    Type: String
+    Default: https://denpw8uo5zpkl.cloudfront.net
+    Description: >-
+      Public origin the browser talks to. The backend emits same-origin data URLs
+      against it and accepts it as a WebSocket origin.
+  McpServerUrl:
+    Type: String
+    Default: ''
+    Description: Streamable-HTTP MCP server endpoint. Empty until that work package lands.
+  DataLayerPresignTtl:
+    Type: Number
+    Default: 3600
+    Description: Lifetime in seconds of presigned data-layer URLs handed to the browser.
+  LogLevel:
+    Type: String
+    Default: info
+    AllowedValues: [debug, info, warning, error]
+
+Conditions:
+  HasSecondaryModel: !Not [!Equals [!Ref SecondaryModelId, '']]
+  HasMcpServer: !Not [!Equals [!Ref McpServerUrl, '']]
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      ClusterSettings:
+        # Container Insights is billed per metric; the ALB and awslogs cover the
+        # pilot's observability needs.
+        - { Name: containerInsights, Value: disabled }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref BackendName
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      # Pinned: CI builds on x86 runners, so the task must not default elsewhere.
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${FoundationStackName}-TaskExecutionRoleArn'
+      TaskRoleArn: !ImportValue
+        Fn::Sub: '${FoundationStackName}-TaskRoleArn'
+      ContainerDefinitions:
+        - Name: !Ref BackendName
+          Image: !Sub
+            - '${Repo}:${ImageTag}'
+            - Repo: !ImportValue
+                Fn::Sub: '${FoundationStackName}-EcrRepositoryUri'
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          # Matches the target group's 30s deregistration delay so a rolling
+          # deploy drains WebSocket conversations instead of cutting them.
+          StopTimeout: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !ImportValue
+                Fn::Sub: '${FoundationStackName}-LogGroupName'
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backend
+          # The deploy-time contract with the backend code. Everything here is
+          # non-secret configuration; secrets come from Secrets Manager below.
+          Environment:
+            - { Name: PORT, Value: !Ref ContainerPort }
+            - { Name: LOG_LEVEL, Value: !Ref LogLevel }
+            - { Name: AWS_REGION, Value: !Ref AWS::Region }
+            - { Name: BEDROCK_REGION, Value: !Ref BedrockRegion }
+            - { Name: BEDROCK_PRIMARY_MODEL_ID, Value: !Ref PrimaryModelId }
+            - Name: BEDROCK_SECONDARY_MODEL_ID
+              Value: !If [HasSecondaryModel, !Ref SecondaryModelId, '']
+            - Name: FEEDBACK_TABLE
+              Value: !ImportValue
+                Fn::Sub: '${FoundationStackName}-FeedbackTableName'
+            - Name: CONVERSATION_TABLE
+              Value: !ImportValue
+                Fn::Sub: '${FoundationStackName}-ConversationTableName'
+            - Name: FEEDBACK_TTL_DAYS
+              Value: !ImportValue
+                Fn::Sub: '${FoundationStackName}-FeedbackTtlDays'
+            - Name: CONVERSATION_TTL_DAYS
+              Value: !ImportValue
+                Fn::Sub: '${FoundationStackName}-ConversationTtlDays'
+            - Name: DATA_LAYER_BUCKET
+              Value: !ImportValue
+                Fn::Sub: '${FoundationStackName}-DataLayerBucketName'
+            - { Name: DATA_LAYER_PRESIGN_TTL, Value: !Ref DataLayerPresignTtl }
+            - { Name: PUBLIC_BASE_URL, Value: !Ref PublicBaseUrl }
+            - { Name: ALLOWED_ORIGINS, Value: !Ref PublicBaseUrl }
+            - Name: MCP_SERVER_URL
+              Value: !If [HasMcpServer, !Ref McpServerUrl, '']
+          Secrets:
+            # Injected as an environment variable at task start; the value never
+            # appears in the task definition, the repo, or CI logs.
+            - Name: MCP_SERVER_TOKEN
+              ValueFrom: !Sub
+                - '${SecretArn}:MCP_SERVER_TOKEN::'
+                - SecretArn: !ImportValue
+                    Fn::Sub: '${FoundationStackName}-BackendSecretArn'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref BackendName
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      EnableExecuteCommand: true
+      PropagateTags: SERVICE
+      # Give a new task time to boot before the ALB verdict counts against it.
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        # A task that never goes healthy rolls back to the previous definition
+        # instead of leaving the service down — the safety net for deploys that
+        # happen while nobody is watching.
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Split
+            - ','
+            - !ImportValue
+                Fn::Sub: '${FoundationStackName}-PrivateSubnetIds'
+          SecurityGroups:
+            - !ImportValue
+                Fn::Sub: '${FoundationStackName}-TaskSecurityGroupId'
+      LoadBalancers:
+        - ContainerName: !Ref BackendName
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !ImportValue
+            Fn::Sub: '${FoundationStackName}-TargetGroupArn'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !GetAtt Service.Name
+  TaskDefinitionArn:
+    Description: Initial revision. CI registers later revisions outside this stack.
+    Value: !Ref TaskDefinition
