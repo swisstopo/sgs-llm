@@ -7,12 +7,14 @@ The whole system in one picture. The browser runs the frontend, served via
 calls the Swisstopo public APIs directly for the catalog, tiles, and identify;
 **[Track B](#overview)** speaks WebSocket protocol v1 through CloudFront and an
 **ALB** to the agent backend on **ECS Fargate**. The backend runs the LLM loop
-on **Amazon Bedrock** and calls the geodata **MCP server** (still TBD), which
-produces the result **data layers** in S3; the backend relays their presigned
-URLs to the browser, which fetches them. The backend also persists submitted
-**feedback** and **chat turns** to DynamoDB. The service runs on ECS Fargate
-behind an ALB today, with the bundled mock-agent as its container image until the
-agent code lands (see [`deployment.md`](./deployment.md#backend-deployment)).
+on **Amazon Bedrock** and calls the geodata **MCP server**, which produces the
+result **data layers** in S3; the backend relays their presigned URLs to the
+browser, which fetches them. The backend also persists submitted **feedback** and
+**chat turns** to DynamoDB. Until swisstopo's MCP server exists there is no
+geodata source to answer from, so the chat **refuses every turn** and waits for
+`MCP_SERVER_URL` (see
+[`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)); the map is
+unaffected.
 
 ```mermaid
 flowchart TB
@@ -39,9 +41,10 @@ backend/ · WS protocol v1 · LLM loop · MCP client`"]
     bedrock["`**Amazon Bedrock**
 ————
 Claude Sonnet · Mistral · EU profiles`"]
-    mcp["`**MCP server(s) · TBD**
+    mcp["`**MCP server(s)**
 ————
-geodata tools · separate work package`"]
+geodata tools · swisstopo's
+required for the chat to answer`"]
     s3d[("`**S3** · data-layer artifacts
 ————
 GeoJSON / GeoParquet`")]
@@ -67,9 +70,9 @@ feedback · conversation turns (TTL)`")]
 ## Overview
 
 The SGS LLM prototype is a chat + web map application for Swiss federal
-geodata. This phase implements the **frontend work package**; the agent
-backend (LLM orchestration, MCP client) is developed separately and connects
-over the WebSocket protocol described in [protocol.md](./protocol.md).
+geodata. The frontend and the agent backend both live in this repository and
+meet at the WebSocket protocol described in [protocol.md](./protocol.md); the
+frontend additionally calls the Swisstopo APIs directly for map interactivity.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -79,12 +82,13 @@ over the WebSocket protocol described in [protocol.md](./protocol.md).
 │                                                             │
 │   ├── direct Swisstopo API calls (catalog, identify,        │
 │   │   legends, layersConfig, WMTS/WMS tiles, GeoJSON)       │
-│   └── WebSocket /ws/v1 ──► Agent backend (askEarth, later)  │
-│                            └─ mock-agent/ in development    │
+│   └── WebSocket /ws/v1 ──► Agent backend (backend/)         │
+│                            └─ mock-agent/ as a test double  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Two tracks make the app dynamic before the agent backend exists:
+Two tracks serve the app, and they are independent - the map stays fully usable
+if the agent is unavailable:
 
 - **Track A — direct Swisstopo interactivity.** Browse the official catalog
   tree (CatalogServer) with a client-side filter and translated topic names,
@@ -164,12 +168,13 @@ protocol change required.
 ## Backend architecture
 
 The chat side is served by the agent backend, which lives in this repository under
-`backend/` and connects over the WebSocket protocol; the notes below record its
-**design decisions**. Its infrastructure is deployed and operable today — the
-bundled mock-agent runs as the container image until the agent code lands, so the
-deployed path is exercised end-to-end. How the service is deployed is in
-[`deployment.md`](./deployment.md#backend-deployment); the client side of the
-geodata tool interface is in [MCP client interface](#mcp-client-interface).
+[`backend/`](../backend/) and connects over the WebSocket protocol. It is **implemented**:
+a Python service (FastAPI + uvicorn) running the LLM loop on Bedrock through the Converse
+API, an MCP client for the geodata tools, and persistence for feedback and conversation
+turns. How the service is deployed is in
+[`deployment.md`](./deployment.md#backend-deployment); the client side of the geodata tool
+interface is in [MCP client interface](#mcp-client-interface); model choice is in
+[`llm.md`](./llm.md).
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
@@ -192,21 +197,43 @@ geodata tool interface is in [MCP client interface](#mcp-client-interface).
 - **Stateless protocol v1** — the backend receives the full conversation history and map context on every turn (see [protocol.md](./protocol.md)), so it can restart or scale freely; versioning at the URL (`/ws/v1`) lets it release independently of the frontend.
 - **MCP client + LLM orchestrator** — the backend runs the LLM loop and the MCP client that calls the geodata tools; the MCP **server** is a separate component (see [Swisstopo connector](#swisstopo-connector)).
 - **Amazon Bedrock, Claude via the EU inference profile** (`eu.anthropic.claude-*`) — managed, IAM-authenticated model access that stays within EU regions, with no API key to store; model choice in [`llm.md`](./llm.md).
-- **Agent loop → protocol events** — tool and LLM progress stream as `intermediate`, the answer and data layers as `final`, turn completion as `done`, and a client `cancel` aborts the in-flight turn.
-- **Data layers on S3** — results are written by the MCP Server as GeoJSON / GeoParquet and returned as presigned URLs in `LayerSpec` (see [Data layers from chat](#data-layers-from-chat)).
+- **Both models are first-class, in two regions.** One Converse code path serves either; they differ only in id and region, because Claude is reached through an EU inference profile in `BEDROCK_REGION` while the pilot's Mistral is offered in-region in `eu-west-1` only. Claude is tried first. An `AccessDeniedException` - which is the *expected* result until organization SCP `p-ddxnpgbm` is amended - is logged once, the model is marked unavailable for the process lifetime, and the secondary serves the turn. Claude starts working on the next task start, with no code, image or template change.
+- **Prompts are per-model, and follow the model that actually served the turn.** `MODEL_PROMPTS` in [`app/agent/prompts.py`](../backend/app/agent/prompts.py) maps a case-insensitive substring of the Bedrock model id (`"claude"`, `"mistral"`, or a full id) to a prompt template; anything unmatched gets the shared `_BASE`. The prompt is a *callable* rendered per Converse attempt rather than once per turn, because otherwise a turn that fell back to the secondary would have been sent the primary's prompt. It is empty by default - the two pilot models currently share one prompt, and a variant should be justified by an eval run rather than a guess. Note that this makes [`evals.md`](./evals.md) a comparison of *model + prompt* pairs, which is the right thing to compare when choosing one, but state it that way when quoting a result.
+- **Agent loop → protocol events** - tool and LLM progress stream as `intermediate`, the answer and data layers as `final`, turn completion as `done`, and a client `cancel` aborts the in-flight turn. The transport (`app/ws.py`) owns the exchange lifecycle and emits the terminating `done` for every outcome, so the loop cannot produce two terminal events. The final tool-loop iteration steers the model to answer with an instruction rather than by withdrawing the tool set - once a conversation contains `toolUse`/`toolResult` blocks, Bedrock rejects the whole request with `ValidationException` if no `toolConfig` accompanies them, so withdrawing them failed exactly the multi-step questions the loop exists for.
+- **Degrade rather than drop.** An unreachable MCP server, a failed tool call, or an unavailable DynamoDB table never ends the exchange: the model is told the tools are unavailable, a failed tool is reported as a failed step it can work around, and a storage failure is logged and swallowed. A chat that explains what it could not reach beats a chat that disconnects.
+- **But refuse rather than substitute.** Degrading applies to a geodata server that is *configured and failing*. A server that was never configured is not a degraded state, it is an unfinished deployment, and answering from the bundled stand-in would pass non-production data off as production output - so those turns are refused instead. See [Waiting for the production MCP server](./protocol.md#waiting-for-the-production-mcp-server).
+- **Data layers on S3** - results are written as GeoJSON and returned as presigned URLs in `LayerSpec` (see [Data layers from chat](#data-layers-from-chat)). With no bucket configured - local development, and CI's credential-free smoke test - artifacts are held in memory and served from `/data/<name>`, the same path CloudFront already routes, so the frontend needs no special case.
+- **Limits instead of a key** - the endpoint is unauthenticated by design; per-client rate limits, an origin allowlist and payload caps are what protect it. See [Limits and the optional key](./protocol.md#limits-and-the-optional-key).
 
 ## MCP client interface
 
 The backend is the **MCP client**; the geodata tools live on a separate MCP
-**server** (the connector). This section fixes the **client side**
-so backend work can proceed.
+**server** (the connector). The client side is **implemented** as described below.
+
+Until swisstopo's server exists there is nothing to connect to, and the backend
+**refuses chat turns rather than answering from a stand-in** - the reasoning is in
+[`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server). Turning the chat on
+is setting `MCP_SERVER_URL`; no code or image change.
+
+The bundled [`mcp_dummy/`](../mcp_dummy/README.md) - a real MCP server over Streamable
+HTTP whose tools are backed by the live geo.admin.ch APIs - therefore serves development
+and measurement only. It is **not in the deployed image** and the backend never wires it
+up: `MCP_SERVER_URL` is the only way it is ever reached, so running it locally
+(`python -m mcp_dummy.server`) is a deliberate act. The [evaluation harness](./evals.md)
+and the integration tests construct it themselves, over the SDK's in-memory transport.
+
+Those tests use the in-memory transport rather than a loopback HTTP listener because the
+loopback version had a real failure mode: uvicorn's socket accepts connections before the
+ASGI lifespan has started the MCP session manager, and requests landing in that window are
+answered but never handled - so the agent silently ran with no tools, in about a third of
+runs under load.
 
 Client side:
 
-- **Transport** — connect to the server over **Streamable HTTP** (remote MCP), not stdio: `initialize`, cache `tools/list`, invoke with `tools/call`.
-- **In the agent loop** — the server's tools are offered to Claude as its tool set; each model `tool_use` becomes a `tools/call`, and the result is fed back until the model produces the final answer.
-- **Mapping to protocol v1** — the client converts tool output into the frontend's events: a fetchable GeoJSON/GeoParquet URL with a WGS84 `bbox` (and optional style hint) becomes a `LayerSpec`; tool progress streams as `intermediate`; a client `cancel` aborts the in-flight `tools/call`; failures surface as `error`.
-- **Auth & secrets** — the client presents the server's credential (bearer token / OAuth) from Secrets Manager; the server endpoint must be reachable from the Fargate task's egress.
+- **Transport** - connect to the server over **Streamable HTTP** (remote MCP), not stdio: `initialize`, cache `tools/list`, invoke with `tools/call`. One session per turn, so several tool calls in one answer share one `initialize` and nothing stale has to be reconnected between turns. The catalogue is paginated to the end via `next_cursor`, and the server's `ttl_ms` bounds how long the cache survives; `cache_scope` is not consulted, since it distinguishes a shared cache from a per-user one and this is the latter. An empty catalogue is never cached, so a server that answers before it is ready does not leave the agent toolless for the life of the task.
+- **In the agent loop** - the server's tools are offered to the model as its tool set; each model `tool_use` becomes a `tools/call`, and the result is fed back until the model produces the final answer. When a model emits several `tool_use` blocks at once, all their results go back in one message, which is what Bedrock requires. Tool JSON Schemas are normalised before being offered (pydantic's presentation keys are stripped - Mistral is less tolerant of unexpected schema keys than Claude).
+- **Mapping to protocol v1** - the client converts tool output into the frontend's events: a fetchable GeoJSON/GeoParquet URL with a WGS84 `bbox` (and optional style hint) becomes a `LayerSpec`; tool progress streams as `intermediate`; a client `cancel` aborts the in-flight `tools/call`; failures surface as `error`. The conversion is deliberately **generic** - it recognises that shape anywhere in a tool result rather than matching the bundled server's schema, so swisstopo's server should work without code changes. Anything that would fail the frontend's `isLayerSpec` guard is dropped rather than emitted, and a `bbox` that is not plausible WGS84 (LV95 metres, say) is discarded rather than sent to move the map. **One clause is implemented differently and is not yet confirmed:** a failed *tool call* surfaces as `intermediate` with `status: "failed"` rather than as `error`, because `error` is terminal and one flaky call would otherwise end the exchange. `error` is reserved for a failed turn. See [`protocol.md`](./protocol.md#intermediate--toolwork-progress).
+- **Auth & secrets** - the client presents the server's credential (bearer token from Secrets Manager as `Authorization: Bearer`); the server endpoint must be reachable from the Fargate task's egress.
 
 Needed from the server:
 
@@ -266,16 +293,40 @@ requests today, but that is operational behavior, not a contract).
   inside a `sandbox=""` iframe.
 - Geolocation: browser API only, used on demand for the locate button; the
   position is never sent anywhere.
-- No authentication (public prototype, by design). The **frontend** stores nothing
-  server-side; the **agent backend** does: chat turns and submitted feedback (which
-  may include an email address the user typed) are persisted to DynamoDB with a TTL
-  so the pilot can be evaluated. That is personal data — see
+- No authentication (public prototype, by design), but the chat endpoint is rate-limited
+  and origin-checked, with an optional shared key that is off by default - including why
+  that key cannot be a security boundary in a browser app, and why the browser cannot
+  send it as a header at all: see
+  [Limits and the optional key](./protocol.md#limits-and-the-optional-key).
+- **Prompt injection is treated as a data problem, not only a message problem.** Tool
+  results are public-source content, so the system prompt states that data is never
+  instruction, and the evaluation set attacks both routes - hostile text in the user's
+  message and hostile text inside fetched feature attributes
+  ([`evals.md`](./evals.md#prompt-injection-via-data)).
+- The **frontend** stores nothing server-side; the **agent backend** does: chat turns and
+  submitted feedback (which may include an email address the user typed) are persisted to
+  DynamoDB with a TTL so the pilot can be evaluated. That is personal data - see
   [`deployment.md`](./deployment.md#what-gets-stored) for the schema, retention and
   the sign-off still outstanding.
 
 ## Testing
 
-`vitest` (node environment) covers the logic surface: protocol guards,
+**Backend** - `pytest` covers the whole logic surface with no AWS and no network: the
+protocol (emitted frames are validated against `docs/protocol/*.schema.json`, so the
+schemas stay the single source of truth), the exchange invariant over a real WebSocket,
+cancel and timeout, the rate limits and origin check, the model fallback on
+`AccessDeniedException`, MCP schema conversion, `LayerSpec` extraction from malformed tool
+output, the DynamoDB item shapes, and the geo.admin.ch wrappers against recorded
+responses. One integration test runs the **real** MCP transport against the bundled server
+with only geo.admin.ch stubbed, so tool discovery, chaining, artifact publishing and
+layer extraction are exercised as they run in production. The evaluation harness's own
+scoring logic is tested too ([`evals.md`](./evals.md)) - a benchmark is only quotable if
+its scoring is right.
+
+That the suite needs no credentials is deliberate: it is the same property that lets CI
+smoke-test the image before allowing a deploy.
+
+**Frontend** - `vitest` (node environment) covers the logic surface: protocol guards,
 AgentClient state machine, ChatService reducer, catalog parsing/merging,
 style mapping (chat style hints and the geoadmin vector-style parser),
 projection helpers, layer ordering/zoom/refresh logic in `LayerService`, and

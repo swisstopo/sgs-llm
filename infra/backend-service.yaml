@@ -23,6 +23,12 @@ Metadata:
           - McpServerUrl
           - DataLayerPresignTtl
           - LogLevel
+      - Label: { default: Limits and optional key }
+        Parameters:
+          - ApiKey
+          - TurnTimeoutSeconds
+          - RateLimitMessagesPerMinute
+          - MaxConnectionsPerIp
 
 Parameters:
   FoundationStackName:
@@ -103,7 +109,41 @@ Parameters:
   McpServerUrl:
     Type: String
     Default: ''
-    Description: Streamable-HTTP MCP server endpoint. Empty until that work package lands.
+    Description: >-
+      Streamable-HTTP MCP server endpoint, and the switch that enables the chat. Empty
+      means no production geodata server, so /ws/v1 accepts connections and refuses
+      every turn rather than answering from the bundled stand-in (see
+      docs/protocol.md). Set this to swisstopo's endpoint to turn the chat on, with no
+      image change.
+  ApiKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+    # The browser sends this as a Sec-WebSocket-Protocol entry, which RFC 6455 requires
+    # to be an HTTP token. A key containing / = , or a space makes the WebSocket
+    # constructor throw, and the frontend then retries forever with no diagnostic. This
+    # pattern is the token character set, so base64 has to be encoded before use.
+    AllowedPattern: '^[A-Za-z0-9!#$%&''*+._`|~^-]*$'
+    ConstraintDescription: >-
+      Only unreserved token characters. No / = , : ; or spaces, so base64url or hex
+      rather than plain base64.
+    Description: >-
+      Optional shared key for /ws/v1 and /feedback. Empty (the default) leaves the
+      endpoints open, which is what docs/protocol.md describes. Note that the frontend
+      must read this from the publicly served config.json, so it deters casual scanners
+      and is NOT a security boundary - the rate limits are what protect the service.
+  TurnTimeoutSeconds:
+    Type: Number
+    Default: 90
+    Description: Wall-clock budget for one chat turn before it fails with `timeout`.
+  RateLimitMessagesPerMinute:
+    Type: Number
+    Default: 20
+    Description: Per-client message allowance. Every turn spends Bedrock tokens.
+  MaxConnectionsPerIp:
+    Type: Number
+    Default: 8
+    Description: Concurrent WebSocket connections allowed from one client address.
   DataLayerPresignTtl:
     Type: Number
     Default: 3600
@@ -200,6 +240,10 @@ Resources:
             - { Name: ALLOWED_ORIGINS, Value: !Ref PublicBaseUrl }
             - Name: MCP_SERVER_URL
               Value: !If [HasMcpServer, !Ref McpServerUrl, '']
+            - { Name: API_KEY, Value: !Ref ApiKey }
+            - { Name: TURN_TIMEOUT_SECONDS, Value: !Ref TurnTimeoutSeconds }
+            - { Name: RATE_LIMIT_MESSAGES_PER_MINUTE, Value: !Ref RateLimitMessagesPerMinute }
+            - { Name: MAX_CONNECTIONS_PER_IP, Value: !Ref MaxConnectionsPerIp }
           Secrets:
             # Injected as an environment variable at task start; the value never
             # appears in the task definition, the repo, or CI logs.

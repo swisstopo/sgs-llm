@@ -1,0 +1,36 @@
+# Tooling config only - the image installs from requirements.txt, so this file
+# deliberately declares no package metadata.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "ASYNC", "RUF", "ARG"]
+
+[tool.ruff.lint.per-file-ignores]
+# E501: tests assert on long literal payloads. ARG: a test double has to match the real
+# signature even where it ignores an argument.
+"tests/*" = ["E501", "ARG"]
+
+[tool.mypy]
+python_version = "3.12"
+# evals/checks.py is the scoring logic behind any quoted benchmark number, and
+# mcp_dummy is what the integration tests run against, so both are checked too.
+files = ["app", "../mcp_dummy", "../evals"]
+strict = true
+# Both live at the repo root, next to backend/.
+mypy_path = ".."
+# boto3 ships no bundled stubs; the AWS surface is exercised by tests instead.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*", "shapely.*", "pyproj.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["error::DeprecationWarning"]
+# "." is backend/ (the app package); ".." is the repo root, which is where mcp_dummy
+# lives - the same two roots the Dockerfile puts on the path.
+pythonpath = [".", ".."]

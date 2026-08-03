@@ -87,6 +87,11 @@ actions in those regions. Consequences:
 - **The models the pilot wants are all EU-profile-only in this region** (recent
   Claude is not hosted in-region in Frankfurt, and neither is Pixtral Large), so
   they are unreachable until this is resolved.
+- **Restart the service after the SCP is amended.** The backend marks a denied model
+  unavailable for the lifetime of the process, so it stops paying the failed call on
+  every turn. Running tasks therefore keep serving from the secondary until they are
+  replaced: `aws ecs update-service --cluster sgs-llm --service sgs-llm-backend
+  --force-new-deployment`. Nothing else needs changing.
 
 #### Workaround found for Mistral: in-region on-demand in eu-west-1
 

@@ -1,3 +1,24 @@
 **/node_modules
 **/dist
 .git
+
+# Python: a local virtualenv is hundreds of megabytes and must never reach the build
+# context, and caches would invalidate layers for no reason.
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Never build secrets into an image.
+.env
+.env.*
+infra/*.local.env
+
+# Development and evaluation only - the stand-in geodata server must never ship
+# (docs/protocol.md#waiting-for-the-production-mcp-server). Excluded from the context as
+# well as uncopied, so a future `COPY mcp_dummy` fails the build instead of silently
+# putting it back in the image.
+mcp_dummy
+evals
+backend/tests
