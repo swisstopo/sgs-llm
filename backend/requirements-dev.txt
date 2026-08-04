@@ -1,0 +1,24 @@
+-r requirements.txt
+
+# Imported by mcp_dummy/ and the tests; app/ uses httpx2.
+httpx==0.28.1
+
+# Geometry for the stand-in MCP server's `compute` tool. Dev-only: mcp_dummy/ is not in
+# the production image, so these must not be in requirements.txt. GeoJSON only for now -
+# the frontend cannot render GeoParquet yet
+# (docs/architecture.md#data-layers-from-chat), so pyarrow is deliberately absent.
+shapely==2.1.2
+pyproj==3.7.2
+
+pytest==9.0.1
+pytest-asyncio==1.3.0
+ruff==0.15.1
+mypy==1.19.0
+
+# Emitted frames are asserted against docs/protocol/*.schema.json, so the schemas
+# stay the single source of truth rather than a second copy in the tests.
+jsonschema==4.26.0
+
+# Eval question set. Stubs because mypy checks evals/ too.
+PyYAML==6.0.3
+types-PyYAML==6.0.12.20250915

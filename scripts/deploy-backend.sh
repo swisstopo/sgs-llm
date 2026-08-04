@@ -125,4 +125,14 @@ Roll back to the previous revision if needed:
 Note: infra/backend-service.yaml's ImageTag parameter is now stale by design
 (CI owns the running image). If you ever update that stack, pass the tag that is
 actually running so it does not revert: ImageTag=$TAG
+
+This script only swaps the image; it never updates the service stack. To change a
+template parameter (limits, ApiKey, McpServerUrl) use:
+
+  PROFILE=$PROFILE ./scripts/deploy-backend-stack.sh McpServerUrl=...
+
+That preserves every parameter you do not name - including this image tag. Do NOT use
+a plain 'aws cloudformation deploy', which resolves anything you omit to its template
+default and would empty SecondaryModelId, removing the fallback model. See
+docs/deployment.md#backend-deployment.
 EOF

@@ -444,12 +444,18 @@ data-layer artifacts) is in
 [`architecture.md`](./architecture.md#backend-architecture); the model choice is in
 [`llm.md`](./llm.md).
 
-The backend **code lives in this repository** under `backend/`. Until that lands,
-the service runs the bundled **mock-agent as its container image** — it is the
-reference implementation of protocol v1, so the deployed path is exercised
-end-to-end (including the WebSocket upgrade) before the real agent exists. When
-`backend/Dockerfile` appears, the deploy workflow builds it instead; no
-infrastructure, IAM or CloudFront change is needed at that point.
+The backend **code lives in this repository** under [`backend/`](../backend/) - a Python
+service (FastAPI + uvicorn) that runs the LLM loop on Bedrock and the MCP client for the
+geodata tools. Because both `scripts/deploy-backend.sh` and the deploy workflow pick
+`backend/Dockerfile` whenever it exists, **committing that file is what puts the real
+backend into production**; no infrastructure, IAM or CloudFront change is needed. The
+bundled `mock-agent/` remains the protocol reference implementation and the rollback
+image.
+
+Two properties make that switch safe to do unattended: the image starts healthy with no
+AWS credentials, no DynamoDB tables and no MCP server configured (which is exactly how CI
+smoke-tests it), and the ECS deployment circuit breaker rolls back a task that never
+becomes healthy.
 
 ```text
                  ┌──────────────── CloudFront (HTTPS / wss) ────────────────────┐
@@ -601,6 +607,30 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
 Then repoint CloudFront at the ALB (see
 [Cut CloudFront over to the backend](#cut-cloudfront-over-to-the-backend)).
 
+> ⚠️ **Use [`scripts/deploy-backend-stack.sh`](../scripts/deploy-backend-stack.sh) for
+> later parameter changes, not `aws cloudformation deploy`.** That command resolves each
+> parameter you omit to its **template default**, not to the value currently deployed.
+> `SecondaryModelId` defaults to empty, so one forgotten override silently removes the
+> fallback model - and while the SCP blocks Claude that leaves every turn failing. The
+> same trap applies to `ImageTag` (CI owns the running image, so the template's value is
+> stale by design) and to `McpServerUrl`, which is what enables the chat at all.
+>
+> ```bash
+> # Change one parameter; everything else keeps its deployed value.
+> PROFILE=swisstopo ./scripts/deploy-backend-stack.sh McpServerUrl=https://mcp.example.ch/mcp
+> DRY_RUN=1 PROFILE=swisstopo ./scripts/deploy-backend-stack.sh ApiKey=...   # plan only
+> ```
+>
+> It sends `UsePreviousValue` for every parameter it is not asked to change, which also
+> handles `ApiKey` - a `NoEcho` value reads back as `****` and must never be re-sent
+> literally. Newly added template parameters (the four limits) have no previous value, so
+> they are omitted and take their template defaults.
+>
+> This stays a human step on purpose: the CI deploy role holds
+> `cloudformation:DescribeStacks` on the foundation stack only, so automating it would
+> mean granting an OIDC-assumable role the power to rewrite the task definition. CI owns
+> the image; humans own the stack.
+
 ### What the container image must provide
 
 The image is the only contract between the backend code and this infrastructure:
@@ -636,9 +666,13 @@ ECS from Secrets Manager at task start.
 | `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON/GeoParquet artifacts |
 | `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
 | `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
-| `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin |
-| `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, once that work package lands |
+| `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin (comma-separated; empty allows any, for local development) |
+| `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, and **the switch that enables the chat**. Empty means no production geodata server, so `/ws/v1` accepts connections and refuses every turn ([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)). Set it to swisstopo's endpoint to turn the chat on |
 | `MCP_SERVER_TOKEN` | **Secrets Manager** `sgs-llm/backend` | MCP credential; never in git, never in CI logs |
+| `API_KEY` | parameter (**empty**) | Optional shared key for `/ws/v1` and `/feedback`. Empty leaves them open, as [`protocol.md`](./protocol.md#limits-and-the-optional-key) describes - read that before enabling it, it is not a security boundary |
+| `TURN_TIMEOUT_SECONDS` | parameter (90) | Wall-clock budget per turn, then `error` `timeout` |
+| `RATE_LIMIT_MESSAGES_PER_MINUTE` | parameter (20) | Per-client allowance; every turn spends Bedrock tokens |
+| `MAX_CONNECTIONS_PER_IP` | parameter (8) | Concurrent WebSocket connections per client |
 
 Fill in a secret value out-of-band, then restart the service to pick it up:
 
@@ -674,10 +708,23 @@ every query.
 | `conversation_id` | partition key |
 | `turn` | sort key, `"<iso-timestamp>#<message_id>"` — one Query returns a conversation in order |
 | `log_date` + `ts` | `ByDay` GSI |
+| `message_id`, `lang` | the turn's protocol id and request language |
+| `user_message`, `assistant_markdown` | the exchange as the user saw it |
+| `model_id` | which model actually served the turn, e.g. `mistral.ministral-3-14b-instruct@eu-west-1` - the fallback means this is not fixed |
+| `tool_calls`, `layer_count` | tool names in call order, and how many layers were returned |
+| `latency_ms`, `input_tokens`, `output_tokens` | for evaluating cost and speed |
+| `error_code` | present only on a failed turn: the protocol codes (`internal`, `timeout`, `cancelled`, `bad_request`), plus `mcp_not_configured` for a turn refused because no geodata server is connected - that one is not a protocol code, it is recorded so the dark period can be counted |
 | `expires_at` | epoch seconds; TTL default 90 days |
 
+Failed turns are recorded too - a turn that timed out is exactly the kind of thing the
+pilot needs to count. Both writes are **best effort**: storage exists to evaluate the
+pilot, so a DynamoDB failure is logged and swallowed rather than costing a user their
+answer or making them retype their feedback.
+
 Everything else (per-request operational logging) goes to the CloudWatch log
-group `/ecs/sgs-llm-backend`, retention 30 days.
+group `/ecs/sgs-llm-backend`, retention 30 days. One line per turn records the model,
+tools, layer count, latency and error code, so the service can be watched with
+`aws logs tail` without reading the tables.
 
 > ⚠️ **Data protection.** Storing conversation turns and feedback (which may
 > include an email address the user typed) is **personal data**, and it changes
@@ -688,6 +735,63 @@ group `/ecs/sgs-llm-backend`, retention 30 days.
 > logging is deliberately left off**: it would capture full prompts and responses,
 > it is an account-wide per-region setting, and the application-level tables above
 > already cover the requirement.
+
+### Run the backend locally
+
+No AWS profile needed beyond a Bedrock key - the same one
+[`scripts/ask-llm.py`](../scripts/ask-llm.py) uses, so the VPN is required.
+
+```bash
+cd backend
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+
+export AWS_BEARER_TOKEN_BEDROCK=<key>
+export BEDROCK_SECONDARY_MODEL_ID=mistral.ministral-3-14b-instruct
+export BEDROCK_SECONDARY_REGION=eu-west-1
+# Leave BEDROCK_PRIMARY_MODEL_ID unset while Claude is blocked by the SCP: the backend
+# then goes straight to the working model instead of failing over on every turn.
+
+PYTHONPATH=..:. .venv/bin/python -m uvicorn app.main:app --port 8787 --reload
+```
+
+With no tables and no bucket configured it runs without AWS: artifacts are served from
+memory at `/data/...` and persistence is disabled. The frontend's default `config.json`
+already points at `localhost:8787`, so `cd frontend && npm run dev` needs no change.
+
+**The chat needs an MCP server.** With `MCP_SERVER_URL` unset the backend refuses every
+turn, exactly as the deployed pilot does. To develop against real geodata, run the
+bundled stand-in in a third terminal and point the backend at it:
+
+```bash
+python -m mcp_dummy.server                       # http://127.0.0.1:8788/mcp
+export MCP_SERVER_URL=http://127.0.0.1:8788/mcp  # then start the backend
+```
+
+Checks before pushing - the same ones CI runs:
+
+```bash
+cd backend
+.venv/bin/python -m ruff check app tests ../mcp_dummy ../evals
+.venv/bin/python -m ruff format --check app tests ../mcp_dummy ../evals
+.venv/bin/python -m mypy          # app, mcp_dummy and evals (see pyproject.toml)
+.venv/bin/python -m pytest
+```
+
+The gate that decides whether the image may deploy - build from the **repository root**,
+which is the context CI and `scripts/deploy-backend.sh` use (`mcp_dummy/` is deliberately
+not copied into the image):
+
+```bash
+cd ..
+docker build -f backend/Dockerfile -t sgs-llm-backend:local .
+docker run -d --name smoke -p 8787:8787 sgs-llm-backend:local
+curl -sf http://127.0.0.1:8787/health
+curl -s -o /dev/null -w '%{http_code}\n' --http1.1 \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  --max-time 5 http://127.0.0.1:8787/ws/v1            # → 101
+docker rm -f smoke
+```
 
 ### Deploy the backend code
 

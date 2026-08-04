@@ -16,18 +16,41 @@ organization and is intended to run on Swisstopo infrastructure.
 
 ## Status
 
-This repository currently contains the **frontend work package**: a runnable chat + web map
-application (`frontend/`) plus a small **mock agent** (`mock-agent/`) that stands in for the
-LLM agent backend during development. The frontend talks to the public Swisstopo APIs
-directly for map interactivity, and to the agent backend over a versioned WebSocket protocol
-([`docs/protocol.md`](docs/protocol.md)).
+This repository contains the runnable chat + web map application (`frontend/`) and the
+**agent backend** (`backend/`) it talks to over a versioned WebSocket protocol
+([`docs/protocol.md`](docs/protocol.md)). The frontend also calls the public Swisstopo APIs
+directly for map interactivity.
 
-The agent backend (LLM orchestration, MCP client) will live in this repository under
-`backend/` and connects over the same protocol; its AWS infrastructure — ECS Fargate, ALB,
-Bedrock access, and persistence for feedback and conversation logs — is already deployed
-([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md#backend-deployment)) and
-currently runs the mock-agent as its container image. This is a prototype — not for
-operational use; interfaces and layout may still change.
+- **`backend/`** - Python service running the LLM loop on Amazon Bedrock and the MCP client
+  for the geodata tools, plus feedback and conversation-turn persistence. See
+  [`docs/architecture.md`](docs/architecture.md#backend-architecture).
+- **`mcp_dummy/`** - a stand-in geodata MCP server whose tools are backed by the **real**
+  geo.admin.ch APIs. It exists so the backend and the benchmark could be built before
+  swisstopo's own MCP server does, and it is used for development and evaluation - **not**
+  to answer production traffic ([`mcp_dummy/README.md`](mcp_dummy/README.md)).
+- **`evals/`** - a user-perspective question set and runner that doubles as a **side-by-side
+  benchmark of the two pilot models** ([`docs/evals.md`](docs/evals.md)).
+- **`mock-agent/`** - the protocol reference implementation, kept as a local test double and
+  deployment rollback image.
+
+The AWS infrastructure - ECS Fargate, ALB, Bedrock access, DynamoDB, S3 - is deployed
+([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md#backend-deployment)). This is
+a prototype - not for operational use; interfaces and layout may still change.
+
+> **The chat waits for a geodata MCP server.** swisstopo's does not exist yet, and the
+> backend does **not** substitute the bundled stand-in for it - the stand-in is a
+> development tool and is not even in the deployed image. With `MCP_SERVER_URL` unset the
+> backend accepts WebSocket connections and refuses every turn, so nothing can mistake
+> stand-in output for production data. Setting that one variable turns the chat on. The map
+> is a separate track and is fully usable meanwhile - see
+> [`docs/protocol.md`](docs/protocol.md#waiting-for-the-production-mcp-server).
+
+> **Model note.** The pilot's primary model is Claude Sonnet 4.6 via a Bedrock EU inference
+> profile. An organization-level Service Control Policy currently denies the EU regions that
+> profile routes to, so the backend automatically falls back to
+> `mistral.ministral-3-14b-instruct` in `eu-west-1`, which works. Claude starts serving the
+> moment the policy is amended, with no redeploy - see
+> [`docs/llm.md`](docs/llm.md).
 
 A live POC instance (frontend + mock-agent) is deployed on AWS at
 **https://denpw8uo5zpkl.cloudfront.net/**. See [Deployment](#deployment).
@@ -75,27 +98,34 @@ Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core, map in EPSG:2056)
   ├── direct calls ─────────────►  Swisstopo public APIs
   │                                (api3.geo.admin.ch, wmts.geo.admin.ch,
   │                                 wms.geo.admin.ch, data.geo.admin.ch)
-  └── WebSocket /ws/v1 ─────────►  Agent backend (askEarth, separate)
-                                   └─ mock-agent/ during development
+  └── WebSocket /ws/v1 ─────────►  Agent backend (backend/)
+                                     ├─ Amazon Bedrock - Claude / Mistral, EU regions
+                                     ├─ MCP client ──► geodata tools (mcp_dummy/ today)
+                                     └─ DynamoDB - feedback + conversation turns
 ```
 
 The full design — stack decisions, services, the Swisstopo connector and the API limits it
 honors, security notes, and the manual demo script — is in
 [`docs/architecture.md`](docs/architecture.md). The chat/agent contract is in
 [`docs/protocol.md`](docs/protocol.md) with JSON Schemas under [`docs/protocol/`](docs/protocol/).
-The target architecture for the separately-developed agent backend — its MCP-client /
-LLM-orchestration design (Amazon Bedrock for Claude) and its AWS deployment (ECS Fargate +
-ALB) — is recorded in [`docs/architecture.md`](docs/architecture.md) and
-[`docs/deployment.md`](docs/deployment.md).
+The agent backend's design - the MCP client, the LLM loop, and the AWS deployment (ECS
+Fargate + ALB) - is in [`docs/architecture.md`](docs/architecture.md#backend-architecture)
+and [`docs/deployment.md`](docs/deployment.md#backend-deployment); model choice and the
+current Bedrock access situation are in [`docs/llm.md`](docs/llm.md); the evaluation set and
+model benchmark are in [`docs/evals.md`](docs/evals.md).
 
 ## Repository layout
 
 ```text
 frontend/      Lit + TypeScript + Vite chat + map application
+backend/       Python agent backend: protocol v1, Bedrock LLM loop, MCP client, persistence
+mcp_dummy/     Stand-in geodata MCP server backed by the real geo.admin.ch APIs
+evals/         Question set + runner; doubles as a side-by-side model benchmark
 mock-agent/    Node WebSocket server implementing the agent protocol for development
 layers/        Per-layer presentation overrides (layers_wmts.json5)
-docs/          Architecture, the agent WebSocket protocol (+ JSON Schemas), and deployment
-scripts/       Operational helpers (e.g. deploy-frontend.sh)
+infra/         CloudFormation templates for the backend stacks
+docs/          Architecture, the agent WebSocket protocol (+ JSON Schemas), LLM, deployment, evals
+scripts/       Operational helpers (deploy-frontend.sh, deploy-backend.sh, deploy-backend-stack.sh, ask-llm.py, read-db.sh)
 ```
 
 ## Getting started
@@ -105,13 +135,35 @@ git clone https://github.com/swisstopo/sgs-llm.git
 cd sgs-llm
 ```
 
-### Run the mock agent (terminal 1)
+### Run an agent backend (terminal 1)
+
+Either the real backend, which answers with a live model and real geodata (needs a Bedrock
+key and the project VPN - see
+[`docs/deployment.md`](docs/deployment.md#run-the-backend-locally)):
+
+```bash
+# The geodata server the chat answers from; without it every turn is refused.
+python -m mcp_dummy.server &                     # http://127.0.0.1:8788/mcp
+
+cd backend
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+export AWS_BEARER_TOKEN_BEDROCK=<key>
+export BEDROCK_SECONDARY_MODEL_ID=mistral.ministral-3-14b-instruct
+export BEDROCK_SECONDARY_REGION=eu-west-1
+export MCP_SERVER_URL=http://127.0.0.1:8788/mcp
+PYTHONPATH=..:. .venv/bin/python -m uvicorn app.main:app --port 8787 --reload
+```
+
+…or the mock agent, which needs nothing and replays canned scenarios:
 
 ```bash
 cd mock-agent
 npm install
 npm start          # WebSocket on ws://localhost:8787/ws/v1, feedback on /feedback
 ```
+
+Both serve the same endpoints on the same port, so the frontend does not care which is
+running.
 
 ### Run the frontend (terminal 2)
 
@@ -180,10 +232,10 @@ PROFILE=swisstopo ./scripts/deploy-frontend.sh
 The **agent backend** runs as a container on **ECS Fargate behind an ALB** (image from
 **ECR**, same CloudFront distribution, same GitHub-OIDC deploy pattern), with Bedrock for
 inference and DynamoDB for feedback and conversation logs. Its infrastructure is defined in
-[`infra/`](infra/) as two CloudFormation stacks and is deployed and operable today — the
-bundled mock-agent runs as the container image until the agent code lands under `backend/`,
-so pushing that code is the only step left. Deploy, environment contract, runbook and
-teardown are in
+[`infra/`](infra/) as two CloudFormation stacks and is deployed and operable today. Both the
+deploy workflow and `scripts/deploy-backend.sh` build `backend/Dockerfile` whenever it is
+present, so committing it is what puts the real backend in production; `mock-agent/` stays
+available as the rollback image. Deploy, environment contract, runbook and teardown are in
 [`docs/deployment.md`](docs/deployment.md#backend-deployment). Manual redeploy fallback:
 
 ```bash

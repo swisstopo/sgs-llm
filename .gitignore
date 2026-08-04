@@ -3,6 +3,18 @@ dist/
 .vite/
 __pycache__/
 *.log
+
+# Python tooling
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Evaluation runs contain model output, are large, and are regenerated on demand.
+evals/results/
+
+# Working notes kept out of the public repo (*.local alone does not match *.local.md).
+*.local.md
 mock-agent/feedback.log
 .env
 .env.*
