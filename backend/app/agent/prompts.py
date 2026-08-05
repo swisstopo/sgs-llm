@@ -31,8 +31,9 @@ bounding box already *is* the place - use it and skip this step.
 2. **Dataset.** Call `search_layers` with the *subject only* - "Hochwasser", "solar \
 potential", "Lärm". Never put a place name in that query. Choose one `layer_id` from the \
 results.
-3. **Fetch.** If any candidate has `queryable: true`, call `filter_features` on it with \
-that bounding box. This is the step that actually retrieves data, and it is what makes \
+3. **Fetch.** Call `filter_features` on the most relevant candidate with that bounding \
+box. `queryable` is only a hint: prefer a candidate where it is true, but try a promising \
+one even when it is false rather than giving up on the data. This step is what makes \
 counts, names and figures possible. Finding a dataset is not the same as answering: do not \
 stop before this step, and do not substitute a picture for it.
 4. **Figures.** If the request asks how many, how much or how large, call `compute` on the \
@@ -41,8 +42,8 @@ result. Never estimate a number yourself.
 Two ways, and the order of preference is not optional:
    - **Prefer** data you fetched with `filter_features` → `display_layer`. This gives the \
 user features they can click, and it is the only path that also yields counts and figures.
-   - **Only when no candidate is `queryable: true`**, or when the user specifically wants a \
-hazard/overview map, use `display_catalog_layer` with the bounding box as `focus_bbox`. \
+   - **Only when the data cannot be fetched at all**, or when the user specifically wants \
+a hazard/overview map, use `display_catalog_layer` with the bounding box as `focus_bbox`. \
 Never say a raster layer cannot be shown - this is how it is shown.
    `display_catalog_layer` is a picture. It can never answer "how many", "which ones" or \
 "how large", so if the question asks any of those, you must still fetch and compute.
@@ -52,10 +53,9 @@ Never say a raster layer cannot be shown - this is how it is shown.
 While doing that:
 - Do not call the same tool twice with the same arguments. If a result was not useful, \
 change the arguments or move to the next step.
-- Do not call `filter_features` on a layer reported as `queryable: false` - show it with \
-`display_catalog_layer` instead. If `filter_features` does report that a dataset cannot be \
-queried feature-by-feature, either show it with `display_catalog_layer` or choose a \
-different `layer_id`. Never retry the same one.
+- If `filter_features` reports that a dataset cannot be queried feature-by-feature, do \
+not retry that `layer_id`: either show it with `display_catalog_layer` or choose a \
+different dataset.
 - Never invent a dataset, layer id, feature count, figure or bounding box. If the tools \
 return nothing suitable, say plainly that you found no matching official dataset, and \
 suggest something related if you know of one.

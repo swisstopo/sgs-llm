@@ -48,11 +48,12 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         """Find official Swiss geodata datasets by topic.
 
         Use this first for any question about what data exists. Returns candidate
-        layer_id values, each flagged with how it can be used:
+        layer_id values, each with a `queryable` hint:
 
-        - `queryable: true`  → filter_features can fetch individual features from it.
-        - `queryable: false` → it is a raster/image layer. Do NOT call filter_features on
-          it; call display_catalog_layer to put it on the map instead.
+        - `queryable: true`  → filter_features is very likely to return features.
+        - `queryable: false` → it may still work. The hint is conservative, so try
+          filter_features anyway when you need the data; it will say plainly if the
+          dataset cannot be queried feature-by-feature.
 
         `query` should be the subject only (e.g. "Hochwasser", "solar potential"), not a
         place name.
@@ -162,8 +163,8 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         """Put an official geo.admin.ch layer on the user's map, without fetching it.
 
         This is how to show raster and image layers - flood hazard (Aquaprotect), noise
-        maps, warning maps - i.e. anything search_layers reports as `queryable: false`.
-        The client renders it straight from swisstopo.
+        maps, warning maps - anything filter_features cannot return features for. The
+        client renders it straight from swisstopo.
 
         Pass `focus_bbox` (from search_locations) to zoom to the area asked about: the
         layer itself covers all of Switzerland and cannot be subset. Use `name` to label
