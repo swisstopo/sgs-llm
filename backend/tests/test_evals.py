@@ -19,6 +19,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from evals.checks import Observation, detect_language, evaluate  # noqa: E402
+from evals.run import QUESTIONS as QUESTIONS_PATH  # noqa: E402
+from evals.run import wants_judge  # noqa: E402
 
 QUESTIONS = yaml.safe_load((REPO_ROOT / "evals" / "questions.yaml").read_text(encoding="utf-8"))
 
@@ -345,3 +347,26 @@ class TestReport:
             }
         ]
         assert "1/1" in summarise(rows)
+
+
+class TestJudgeSelection:
+    """`judge` sits under `expect`, and both read sites went to the top level, so
+    --judge silently graded nothing and every row came back with no score."""
+
+    def test_reads_the_flag_from_expect(self) -> None:
+        assert wants_judge({"expect": {"judge": True}}) is True
+        assert wants_judge({"expect": {"judge": False}}) is False
+        assert wants_judge({"expect": {}}) is False
+        assert wants_judge({}) is False
+
+    def test_a_top_level_flag_is_not_where_the_set_puts_it(self) -> None:
+        assert wants_judge({"judge": True}) is False
+
+    def test_the_real_question_set_has_judged_questions(self) -> None:
+        """A silent zero here is exactly the failure that went unnoticed."""
+        questions = yaml.safe_load(QUESTIONS_PATH.read_text(encoding="utf-8"))
+        judged = [q for q in questions if wants_judge(q)]
+        assert len(judged) > 0, "no question would be judged; the lookup is wrong again"
+        assert len(judged) == sum(
+            1 for q in questions if "judge" in (q.get("expect") or {}) and q["expect"]["judge"]
+        )

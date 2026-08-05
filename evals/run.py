@@ -34,7 +34,7 @@ import json
 import sys
 import time
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -131,6 +131,15 @@ async def tool_gateway(inject: bool) -> AsyncIterator[ToolGateway]:
         yield ToolGateway(server=build_server(artifacts, swisstopo=api))
     finally:
         await api.aclose()
+
+
+def wants_judge(question: dict[str, Any]) -> bool:
+    """`judge` lives under `expect`, alongside the rule checks it complements.
+
+    Both read sites went to the top level, so --judge silently graded nothing and every
+    row came back with no score.
+    """
+    return bool((question.get("expect") or {}).get("judge"))
 
 
 def _tool_for_step(step_id: str, calls: list[str]) -> str:
@@ -249,6 +258,7 @@ async def run_model(
     settings: Settings,
     use_judge: bool,
     judge_handle: ModelHandle | None,
+    sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     models = BedrockModels(settings)
     rows: list[dict[str, Any]] = []
@@ -267,7 +277,7 @@ async def run_model(
                 )
                 verdict = evaluate(question, observed)
 
-                if use_judge and question.get("judge") and judge_handle is not None:
+                if use_judge and wants_judge(question) and judge_handle is not None:
                     score, reason = await judge(
                         question, observed, models=models, handle=judge_handle
                     )
@@ -278,19 +288,20 @@ async def run_model(
                     "PASS" if verdict.passed else f"FAIL ({', '.join(verdict.stages)})",
                     f"{observed.latency_ms}ms",
                 )
-                rows.append(
-                    {
-                        "model": str(handle),
-                        "question_set": QUESTION_SET,
-                        "prompt_variant": prompt_variant_for(handle.model_id),
-                        "catalog_layers": settings.enable_catalog_layers,
-                        "question": question["id"],
-                        "category": question.get("category", "uncategorised"),
-                        "lang": question.get("lang", "de"),
-                        "observed": asdict(observed),
-                        "verdict": asdict(verdict),
-                    }
-                )
+                row = {
+                    "model": str(handle),
+                    "question_set": QUESTION_SET,
+                    "prompt_variant": prompt_variant_for(handle.model_id),
+                    "catalog_layers": settings.enable_catalog_layers,
+                    "question": question["id"],
+                    "category": question.get("category", "uncategorised"),
+                    "lang": question.get("lang", "de"),
+                    "observed": asdict(observed),
+                    "verdict": asdict(verdict),
+                }
+                rows.append(row)
+                if sink is not None:
+                    sink(row)
     return rows
 
 
@@ -449,7 +460,7 @@ async def main() -> None:
         for category, bucket in sorted(by_category.items()):
             print(f"{category} ({len(bucket)})")
             for question in bucket:
-                judged = " [judged]" if question.get("judge") else ""
+                judged = " [judged]" if wants_judge(question) else ""
                 text = question["question"][:60]
                 print(f"  {question['id']:<28} {question['lang']}  {text}{judged}")
             print()
@@ -463,25 +474,32 @@ async def main() -> None:
     handles = resolve_handles(args, settings)
     judge_handle = handles[0] if args.judge else None
 
-    rows: list[dict[str, Any]] = []
-    for handle in handles:
-        print(f"\n=== {handle} ({len(questions)} questions) ===")
-        rows.extend(
-            await run_model(
-                handle,
-                questions,
-                settings=settings,
-                use_judge=args.judge,
-                judge_handle=judge_handle,
-            )
-        )
-
     RESULTS_DIR.mkdir(exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     jsonl = RESULTS_DIR / f"{stamp}.jsonl"
-    with jsonl.open("w", encoding="utf-8") as handle_out:
-        for row in rows:
+
+    # Written as each question finishes, not at the end: a full run takes tens of minutes,
+    # and an interruption used to discard every completed turn. `summarise` takes a row
+    # list, so a partial file can still be reported on.
+    rows: list[dict[str, Any]] = []
+    with jsonl.open("w", encoding="utf-8", buffering=1) as handle_out:
+
+        def sink(row: dict[str, Any]) -> None:
             handle_out.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle_out.flush()
+
+        for handle in handles:
+            print(f"\n=== {handle} ({len(questions)} questions) ===")
+            rows.extend(
+                await run_model(
+                    handle,
+                    questions,
+                    settings=settings,
+                    use_judge=args.judge,
+                    judge_handle=judge_handle,
+                    sink=sink,
+                )
+            )
 
     report = RESULTS_DIR / f"{stamp}.md"
     report.write_text(summarise(rows), encoding="utf-8")
