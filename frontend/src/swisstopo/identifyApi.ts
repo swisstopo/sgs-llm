@@ -33,6 +33,11 @@ export interface IdentifyFeature {
   label: string;
   /** GeoJSON geometry in EPSG:2056 (when returned). */
   geometry?: unknown;
+  /**
+   * Attributes to show inline instead of fetching the htmlPopup fragment. Set for
+   * client-side vector hits (data layers), where no htmlPopup exists to fetch.
+   */
+  properties?: Record<string, unknown>;
 }
 
 /** Spatial identify on the Swisstopo MapServer (features at a click point). */

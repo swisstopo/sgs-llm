@@ -46,7 +46,9 @@
   "identify": {
     "loading": "Objekte werden abgefragt …",
     "empty": "Keine Objekte an dieser Stelle.",
-    "close": "Schliessen"
+    "close": "Schliessen",
+    "feature": "Objekt",
+    "noAttributes": "Dieses Objekt hat keine Attribute."
   },
   "legend": {
     "loading": "Legende wird geladen …",

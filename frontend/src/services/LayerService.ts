@@ -95,6 +95,11 @@ export class LayerService {
     return this.olLayers.has(id);
   }
 
+  /** The OpenLayers layer backing a panel entry - used to name a feature's source. */
+  olLayerFor(id: string): BaseLayer | undefined {
+    return this.olLayers.get(id);
+  }
+
   async addOfficialLayer(id: string): Promise<AddLayerResult> {
     if (this.olLayers.has(id)) {
       return 'exists';
