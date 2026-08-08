@@ -1197,8 +1197,15 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
 ```
 
 Then set the repository variable **`GEOSEARCH_INDEX_URI`** to that `IndexUri` so CI can
-build the image. Until it is set, `.github/workflows/geosearch.yml` runs the tests and
-skips the deploy with a `::notice::` rather than passing on an image it never built.
+build the image.
+
+**Do this before merging geosearch to `main`.** Until it is set,
+`.github/workflows/geosearch.yml` runs the tests and then **fails the deploy job**. That is
+deliberate: the job cannot build an image without an index, and a green run that built and
+shipped nothing reads as a successful deploy to everyone who sees only the tick. The same
+job also fails if the sync finds no DuckDB file, no `.faiss` vectors or no boundaries under
+`s3/` — `aws s3 sync` exits 0 against an empty prefix, so the files are the check, not the
+transfer.
 
 #### Turn the chat on
 
