@@ -24,6 +24,10 @@ behaviors point at `alb-agent`, so rolling back is flipping three
 task runs the same mock-agent as its container image, so behaviour is unchanged.
 See [Backend deployment](#backend-deployment).
 
+The geodata tools the backend calls over MCP run as a **second Fargate service in the
+same ECS cluster**, with no load balancer and no public path — see
+[Geodata MCP server](#geodata-mcp-server-geosearch-deployment).
+
 Key design points:
 
 - **TLS** is terminated at CloudFront with the default `*.cloudfront.net`
@@ -99,6 +103,23 @@ templates; generated values come from the stack outputs:
 | Task roles (IAM) | `sgs-llm-backend-task`, `sgs-llm-backend-task-execution` |
 | CI deploy role (IAM) | `github-actions-sgs-llm-backend-deploy` — same repo/branch trust, scoped to ECR push + rolling the one service |
 | Developer role (IAM) | `sgs-llm-dev` — Bedrock inference + read-only tables, restricted to one source IP |
+
+Geodata MCP server ([Geodata MCP server](#geodata-mcp-server-geosearch-deployment)) — **not
+yet deployed**; the names below are fixed by the templates, the generated values are not:
+
+| Resource | ID / value |
+| --- | --- |
+| CloudFormation stacks | `sgs-llm-geosearch-foundation`, `sgs-llm-geosearch-service` |
+| ECS cluster / service | `sgs-llm` — **the same cluster as the backend** / `sgs-llm-geosearch` (Fargate, 2 vCPU / 8 GB, desired 1, capped at 1) |
+| ECR repository | `259789526488.dkr.ecr.eu-central-1.amazonaws.com/sgs-llm-geosearch` |
+| Load balancer | **none** — private DNS only, at `sgs-llm-geosearch.sgs-llm.local:8790` |
+| Cloud Map namespace | `sgs-llm.local` (private, in the backend's VPC) |
+| S3 bucket (search index) | `sgs-llm-index-259789526488` (versioned, no expiry — CI builds the image from it) |
+| S3 bucket (data layers) | `sgs-llm-data-259789526488` — **shared with the backend**, so a layer either service publishes is served the same way |
+| Security group | task SG admitting the backend's task SG on 8790, and nothing else |
+| CloudWatch log group | `/ecs/sgs-llm-geosearch` (30 days) |
+| Task roles (IAM) | `sgs-llm-geosearch-task`, `sgs-llm-geosearch-task-execution` |
+| CI deploy role (IAM) | `github-actions-sgs-llm-geosearch-deploy` — same repo/branch trust, scoped to its own ECR repo, its own service, and read on the index bucket |
 
 Everything is tagged `project=sgs-llm-poc`.
 
@@ -472,7 +493,9 @@ becomes healthy.
                                      ├─► Amazon Bedrock — Claude + Mistral, EU profiles (task IAM role)
                                      ├─► DynamoDB — user feedback + conversation turns
                                      ├─► S3 — data-layer artifacts; backend relays presigned URLs
-                                     └─► MCP server(s) — geodata tools (separate work package)
+                                     └─► geosearch — the geodata MCP server, a second Fargate
+                                         service in the SAME cluster, reached over private DNS
+                                         (see "Geodata MCP server" below)
 ```
 
 - **ECS on Fargate behind an ALB** — managed containers with native WebSocket and zero-downtime rolling deploys (the Azure Container Apps analogue).
@@ -667,7 +690,7 @@ ECS from Secrets Manager at task start.
 | `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
 | `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
 | `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin (comma-separated; empty allows any, for local development) |
-| `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, and **the switch that enables the chat**. Empty means no production geodata server, so `/ws/v1` accepts connections and refuses every turn ([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)). Set it to swisstopo's endpoint to turn the chat on |
+| `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, and **the switch that enables the chat**. Empty means no production geodata server, so `/ws/v1` accepts connections and refuses every turn ([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)). Set it to `http://sgs-llm-geosearch.sgs-llm.local:8790/mcp` — the geosearch foundation stack's `McpServerUrl` output — to turn the chat on ([Geodata MCP server](#geodata-mcp-server-geosearch-deployment)) |
 | `MCP_SERVER_TOKEN` | **Secrets Manager** `sgs-llm/backend` | MCP credential; never in git, never in CI logs |
 | `API_KEY` | parameter (**empty**) | Optional shared key for `/ws/v1` and `/feedback`. Empty leaves them open, as [`protocol.md`](./protocol.md#limits-and-the-optional-key) describes - read that before enabling it, it is not a security boundary |
 | `TURN_TIMEOUT_SECONDS` | parameter (90) | Wall-clock budget per turn, then `error` `timeout` |
@@ -1036,6 +1059,281 @@ in Frankfurt or Zurich), so the model is available without enabling Zurich.
 Enable **eu-central-2 (Zurich)** for the compute/data path if in-country Swiss
 residency is later required — Bedrock is available there too.
 
+## Geodata MCP server (geosearch) deployment
+
+The geodata tools the backend calls over MCP are served by **`geosearch`**, a second
+container in this repository ([`geosearch/`](../geosearch/)). It runs as a **second ECS
+Fargate service in the same `sgs-llm` cluster** as the backend, with **no load balancer**:
+the backend reaches it over private DNS at
+
+```text
+http://sgs-llm-geosearch.sgs-llm.local:8790/mcp
+```
+
+Its internal design (the FAISS index, the rerank stage, the `result_id` handles) is in
+[`geosearch/README.md`](../geosearch/README.md).
+
+```text
+        ECS cluster `sgs-llm`  (one cluster, two services)
+        ┌──────────────────────────────────────────────────────────────────┐
+ ALB ──▶│  service sgs-llm-backend      4 vCPU / 8 GB   task SG: from ALB   │
+        │        │                                                          │
+        │        │  MCP over HTTP, private DNS, VPC-internal only           │
+        │        ▼                                                          │
+        │  service sgs-llm-geosearch    2 vCPU / 8 GB   task SG: from backend SG
+        │        image carries: FAISS index + 6272 boundaries + 2.1 GB model│
+        └────────┬──────────────────────────────┬──────────────────────────┘
+                 │                              │
+                 ▼                              ▼
+        api3.geo.admin.ch              Bedrock (rerank, eu-west-1)
+        (features at query time)       S3 sgs-llm-data-* (published layers)
+```
+
+### Why the same cluster
+
+**We do not create a new cluster.**
+[`infra/geosearch-service.yaml`](../infra/geosearch-service.yaml) takes `ClusterName` as a
+plain string parameter and references the cluster that
+[`infra/backend-service.yaml`](../infra/backend-service.yaml) creates. Two stacks cannot
+both own one cluster, so exactly one does.
+
+The reason is that **on Fargate a cluster is a namespace, not a machine.** It owns no
+capacity, has no size, and costs nothing; billing is per task vCPU-second and GB-second,
+identically either way. A second cluster would therefore buy no isolation and no
+capacity — it would only split the metrics, the `ecs execute-command` invocations and the
+operator's attention across two names.
+
+What actually isolates the two services is what *is* separate: their own task definitions,
+task roles, security groups, log groups, ECR repositories, CI deploy roles and
+CloudFormation stacks. A geosearch deploy cannot touch the backend service, and the
+geosearch task role cannot read the conversation tables.
+
+> This flips if the launch type ever changes. On **EC2** capacity a cluster owns real
+> instances, and you would not want geosearch's 8 GB, model-loading container scheduled
+> onto the same instances as the backend. On Fargate there are no instances to share.
+
+### Three ways this differs from the backend
+
+| | Backend | Geosearch | Why |
+| --- | --- | --- | --- |
+| Ingress | ALB, from CloudFront | **None** — Cloud Map private DNS | The only client is a task in the same VPC. The browser never speaks MCP; it only fetches the presigned S3 URL a tool returns. Saves the ALB's ~$20/month and leaves no public path to it |
+| Scale | desired 1, raisable | desired 1, **`MaxValue: 1`** | `result_id` handles live in the `ResultCache` inside one process ([`geosearch/results.py`](../geosearch/results.py)). A second task answers `compute` with "unknown result_id" for half the handles it just issued |
+| Deploy | 100/200 rolling, zero downtime | **0/100** — old task stops first | Same reason. The cost is a gap of a minute or two per deploy, during which the backend's tool calls fail. Raising either needs a shared result store or sticky routing first |
+
+### The index is built by a human, not by CI
+
+The image needs a prebuilt search index, and **the build must never run in the Dockerfile
+or in CI**: `python -m geosearch.build` takes ~25 minutes, makes a few thousand requests to
+`geo.admin.ch`, and two runs a week apart produce two different indexes — the opposite of a
+reproducible image.
+
+```text
+  workstation                     S3                        CI                    ECS
+  python -m geosearch.build  ──▶  sgs-llm-index-*/index  ──▶  docker build  ──▶  service
+  (~25 min, once per refresh)     (versioned, no expiry)     (bakes the model)   (rolls)
+```
+
+What ends up inside the image:
+
+| Baked in | Size | Rebuilt when |
+| --- | --- | --- |
+| DuckDB rows + three `.faiss` files | ~36 MB | a human runs `geosearch.build` |
+| 6272 division boundaries (GeoJSON) | ~108 MB | same |
+| e5-large ONNX weights | ~2.1 GB | the model in the index's `meta` table changes |
+| **Layer catalogue and feature data** | — | **not baked** — fetched from `geo.admin.ch` per request |
+
+That last row matters: a six-month-old image still queries today's data. Only the
+*searchable set of layers* is as of the build.
+
+Row `rid` in DuckDB is vector `rid` in the `.faiss` files, and `GeoIndex` refuses to load
+under a different embedding model, so the index and the code ship together or not at all.
+The Dockerfile's bake step constructs `GeoIndex` rather than naming a model — which both
+fetches exactly the right model and proves at build time that the index loads.
+
+### Infrastructure: two more CloudFormation stacks
+
+| Stack | Template | Contents |
+| --- | --- | --- |
+| `sgs-llm-geosearch-foundation` | [`infra/geosearch-foundation.yaml`](../infra/geosearch-foundation.yaml) | ECR repository, the index bucket, Cloud Map namespace + discovery service, log group, task security group, task/execution roles, CI deploy role. Consumes the backend foundation's VPC, subnets, task security group and data-layer bucket; creates no network topology |
+| `sgs-llm-geosearch-service` | [`infra/geosearch-service.yaml`](../infra/geosearch-service.yaml) | Task definition and the Fargate service. **References the existing cluster; does not create one** |
+
+Split for the same reason the backend's is: an ECS service cannot be created before an
+image exists in ECR, and ECR is itself infrastructure.
+
+The index bucket is versioned with **no object expiry**, unlike `sgs-llm-data-*` — whose
+`expire-data-layers` rule deletes everything after 30 days. That rule is correct for
+published layers and fatal for a search index, which is why the two are separate buckets
+and why the division boundaries ship inside the image rather than in either one.
+
+#### Deploy the infrastructure
+
+Order matters: the backend's foundation and service stacks must exist first (the foundation
+exports the VPC wiring; the service creates the cluster).
+
+```bash
+PROFILE=swisstopo
+REGION=eu-central-1
+
+aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
+  --stack-name sgs-llm-geosearch-foundation \
+  --template-file infra/geosearch-foundation.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+
+# Build and publish the index — ~25 minutes, from a machine with network access.
+python -m geosearch.build
+INDEX_URI=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" \
+  --stack-name sgs-llm-geosearch-foundation \
+  --query "Stacks[0].Outputs[?OutputKey=='IndexUri'].OutputValue" --output text)
+aws s3 sync index/ "$INDEX_URI/" --delete --profile "$PROFILE" --region "$REGION"
+
+# First image, so the service stack has something to start. BUILD_ONLY skips the
+# ECS roll, which cannot work yet because the service does not exist.
+BUILD_ONLY=1 USE_LOCAL_INDEX=1 PROFILE=$PROFILE ./scripts/deploy-geosearch.sh
+
+aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
+  --stack-name sgs-llm-geosearch-service \
+  --template-file infra/geosearch-service.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Then set the repository variable **`GEOSEARCH_INDEX_URI`** to that `IndexUri` so CI can
+build the image.
+
+**Do this before merging geosearch to `main`.** Until it is set,
+`.github/workflows/geosearch.yml` runs the tests and then **fails the deploy job**. That is
+deliberate: the job cannot build an image without an index, and a green run that built and
+shipped nothing reads as a successful deploy to everyone who sees only the tick. The same
+job also fails if the sync finds no DuckDB file, no `.faiss` vectors or no boundaries under
+`s3/` — `aws s3 sync` exits 0 against an empty prefix, so the files are the check, not the
+transfer.
+
+#### Turn the chat on
+
+The backend refuses every turn while `MCP_SERVER_URL` is empty. Point it at the geosearch
+foundation stack's `McpServerUrl` output — a template parameter, so **no image rebuild**:
+
+```bash
+PROFILE=swisstopo ./scripts/deploy-backend-stack.sh \
+  McpServerUrl=http://sgs-llm-geosearch.sgs-llm.local:8790/mcp
+```
+
+Use [`deploy-backend-stack.sh`](../scripts/deploy-backend-stack.sh), not a bare
+`aws cloudformation deploy`: the latter blanks the `NoEcho` `ApiKey` parameter.
+
+The template default stays empty on purpose. An unreachable URL would make every turn fail
+with a connection error instead of the clean "no geodata server" refusal
+([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)), so the switch is
+thrown once geosearch is actually running.
+
+#### Environment contract
+
+| Variable | Source | Meaning |
+| --- | --- | --- |
+| `PORT` | parameter (8790) | Must match the security group rule and the DNS record |
+| `GEOSEARCH_S3_BUCKET` | backend foundation stack | Where published layers go. **Setting it is what switches the server from the local moto stand-in to real S3** (`geosearch/server.py:_artifact_store`), so it must always be present here |
+| `GEOSEARCH_S3_REGION` | stack region | — |
+| `BEDROCK_SECONDARY_MODEL_ID` | parameter (`mistral.ministral-3-14b-instruct`) | Reranks the FAISS candidates. Small on purpose — a filter, not a writer, and it runs on every search |
+| `BEDROCK_SECONDARY_REGION` | parameter (`eu-west-1`) | In-region on-demand is the one path the organization SCP does not block ([`llm.md`](./llm.md)) |
+| `GEOSEARCH_MODEL_CACHE` | **Dockerfile** (`/srv/models`) | Read at import time, so it is baked, not a task-definition value |
+| `LOG_LEVEL` | parameter (`info`) | — |
+
+There is no `MCP_SERVER_TOKEN` equivalent: the server has no auth, because its security
+group admits only the backend's security group. That is the boundary — do not put it behind
+a public endpoint without adding one.
+
+#### Deploy the code
+
+Pushing changes under `geosearch/` to `main` runs
+[`.github/workflows/geosearch.yml`](../.github/workflows/geosearch.yml): ruff and the
+geosearch tests always, then (if `GEOSEARCH_INDEX_URI` is set, and never on a pull request,
+which must not reach the AWS role) fetch the index, build, smoke-test `/health` in a
+container, and call the same script a human would:
+
+```bash
+PROFILE=swisstopo ./scripts/deploy-geosearch.sh
+```
+
+Deploys are immutable — the image is tagged with the commit sha and a **new task definition
+revision** is registered, so a rollback is pointing the service at the previous revision
+(the script prints the exact command). The circuit breaker rolls back automatically if the
+new task never becomes healthy, and the script then fails the job.
+
+`USE_LOCAL_INDEX=1` builds from `./index` as it stands instead of fetching; `BUILD_ONLY=1`
+publishes the image without touching the service.
+
+#### Health checks
+
+`streamable_http_app` serves `/mcp` and nothing else, and `/mcp` cannot answer a plain GET,
+so the server adds **`/health`** beside it — returning the index counts, not just `ok`:
+
+```json
+{"status": "ok", "layers": 896, "divisions": 6272}
+```
+
+With no load balancer, the **container** health check is what decides whether the task's IP
+is registered in Cloud Map DNS at all, so a task that started without an index never
+receives traffic. It is declared in both the Dockerfile and the task definition; ECS reads
+the task definition's. `StartPeriod` is 120 s to cover loading 2.1 GB of ONNX weights.
+
+#### Operate geosearch
+
+```bash
+P=(--profile swisstopo --region eu-central-1)
+
+# Is it healthy, and is DNS pointing at it?
+aws ecs describe-services "${P[@]}" --cluster sgs-llm --services sgs-llm-geosearch \
+  --query 'services[0].{desired:desiredCount,running:runningCount,taskDef:taskDefinition}'
+aws servicediscovery discover-instances "${P[@]}" \
+  --namespace-name sgs-llm.local --service-name sgs-llm-geosearch
+
+aws logs tail /ecs/sgs-llm-geosearch "${P[@]}" --since 30m --follow
+
+# Reach /health from inside (there is no public path, by design)
+TASK=$(aws ecs list-tasks "${P[@]}" --cluster sgs-llm --service-name sgs-llm-geosearch \
+  --query 'taskArns[0]' --output text)
+aws ecs execute-command "${P[@]}" --cluster sgs-llm --task "$TASK" \
+  --container sgs-llm-geosearch --interactive \
+  --command "python -c \"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8790/health').read())\""
+
+# Park it (the backend then fails every turn — it is not optional for the chat)
+aws ecs update-service "${P[@]}" --cluster sgs-llm --service sgs-llm-geosearch --desired-count 0
+```
+
+#### Geosearch cost
+
+Approximate, on top of the backend's ~$190, excluding Bedrock usage:
+
+| Item | ~ per month |
+| --- | --- |
+| Fargate 2 vCPU / 8 GB, 1 task, 24/7 | ~$98 |
+| Load balancer | **$0** — there isn't one |
+| Cloud Map namespace + private hosted zone | ~$1 |
+| ECR (last 5 images kept, ~3 GB each), index bucket (~143 MB), CloudWatch | a few dollars |
+| **Total** | **~$105** |
+
+Fargate again dominates, so `--desired-count 0` between demos is the lever. Memory is the
+binding constraint, not CPU: the ONNX session alone is ~2.2 GB resident and
+`filter_features` holds a whole layer's geometry while clipping it. Dropping to 1 vCPU
+saves ~$34/month; dropping memory below 8 GB will OOM on a large canton.
+
+#### Geosearch teardown
+
+```bash
+P=(--profile swisstopo --region eu-central-1)
+aws cloudformation delete-stack "${P[@]}" --stack-name sgs-llm-geosearch-service
+aws cloudformation wait stack-delete-complete "${P[@]}" --stack-name sgs-llm-geosearch-service
+aws cloudformation delete-stack "${P[@]}" --stack-name sgs-llm-geosearch-foundation
+aws cloudformation wait stack-delete-complete "${P[@]}" --stack-name sgs-llm-geosearch-foundation
+
+# Retained on purpose — deleting it means a 25-minute rebuild to get back:
+aws s3 rm s3://sgs-llm-index-259789526488 --recursive "${P[@]}"
+aws s3api delete-bucket --bucket sgs-llm-index-259789526488 "${P[@]}"
+```
+
+Set the backend's `McpServerUrl` back to `''` first, or the chat fails every turn on a
+connection error instead of refusing cleanly. The backend stacks and the cluster are
+unaffected — the cluster belongs to `sgs-llm-backend-service`.
+
 ## Follow-ups (post-POC)
 
 - **Data-protection sign-off** for storing conversation turns and feedback emails,
@@ -1051,12 +1349,20 @@ residency is later required — Bedrock is available there too.
   before production traffic.
 - **Second NAT gateway** (one per AZ) when egress becomes availability-critical.
 - **Custom domain** + ACM certificate.
+- **Scale geosearch past one task** — needs a shared `result_id` store (or sticky
+  routing) first; until then `DesiredCount` is capped at 1 and every deploy takes a
+  short outage. See [Three ways this differs from the backend](#three-ways-this-differs-from-the-backend).
+- **Automate the index refresh** — `python -m geosearch.build` is a manual ~25-minute
+  step today; a scheduled job that builds, publishes and opens a PR would keep the
+  searchable layer set current without a human.
 
 Done since the initial POC: ✔ GitHub Actions deploy on push to `main` (OIDC
 role, no static keys — see step 7 and "Redeploy the frontend"); ✔ agent backend on
 ECS Fargate + ALB with keyless CI deploys, persistence for feedback and
 conversation logs, and IP-scoped developer access to the models and the tables
-(see [Backend deployment](#backend-deployment)).
+(see [Backend deployment](#backend-deployment)); ✔ the geodata MCP server as a
+second Fargate service in the same cluster, with its own stacks, index bucket and
+keyless CI deploys (see [Geodata MCP server](#geodata-mcp-server-geosearch-deployment)).
 
 ## Appendix: CloudFront distribution config
 
