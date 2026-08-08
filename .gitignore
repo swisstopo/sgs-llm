@@ -13,6 +13,10 @@ __pycache__/
 # Evaluation runs contain model output, are large, and are regenerated on demand.
 evals/results/
 
+# Derived by `python -m geosearch.build`: a DuckDB file, the FAISS indexes and a mirror
+# of ~2300 boundary GeoJSONs, ~60 MB in total. Rebuildable from swisstopo in one command.
+index/
+
 # Working notes kept out of the public repo (*.local alone does not match *.local.md).
 *.local.md
 mock-agent/feedback.log
