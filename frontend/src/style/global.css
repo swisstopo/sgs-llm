@@ -196,9 +196,14 @@ sgs-map .sgs-map-target {
   background: #e8ecef;
 }
 
-/* Anchor element managed by ol/Overlay; the popup positions itself above it. */
+/*
+ * Anchor element managed by ol/Overlay. It must stay in normal flow and carry the
+ * popup's real size: ol positions its own absolutely-placed wrapper with a percentage
+ * transform, which resolves against that wrapper's box. Taking the anchor out of flow
+ * collapses the wrapper to 0x0, the percentages resolve to nothing, and every
+ * `positioning` value lands on the same point.
+ */
 sgs-map .sgs-identify-anchor {
-  position: absolute;
-  width: 0;
-  height: 0;
+  width: 20rem;
+  max-width: 70vw;
 }

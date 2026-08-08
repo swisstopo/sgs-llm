@@ -46,7 +46,9 @@
   "identify": {
     "loading": "Interrogation des objets …",
     "empty": "Aucun objet à cet endroit.",
-    "close": "Fermer"
+    "close": "Fermer",
+    "feature": "Objet",
+    "noAttributes": "Cet objet n’a aucun attribut."
   },
   "legend": {
     "loading": "Chargement de la légende …",

@@ -46,7 +46,9 @@
   "identify": {
     "loading": "Interrogaziun dals elements …",
     "empty": "Nagins elements a quest lieu.",
-    "close": "Serrar"
+    "close": "Serrar",
+    "feature": "Object",
+    "noAttributes": "Quest object n’ha nagins attributs."
   },
   "legend": {
     "loading": "Chargiar la legenda …",
