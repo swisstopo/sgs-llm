@@ -31,16 +31,16 @@ npm ci
 npm run build
 
 echo ">> Syncing fingerprinted assets (long cache)"
-aws s3 sync dist/ "s3://$BUCKET/" --delete "${PROFILE_ARGS[@]}" \
+aws s3 sync dist/ "s3://$BUCKET/" --delete ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} \
   --cache-control "public,max-age=31536000,immutable" \
   --exclude index.html --exclude config.json
 
 echo ">> Uploading index.html (no-cache)"
-aws s3 cp dist/index.html "s3://$BUCKET/index.html" "${PROFILE_ARGS[@]}" \
+aws s3 cp dist/index.html "s3://$BUCKET/index.html" ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} \
   --cache-control "no-cache" --content-type "text/html"
 
 echo ">> Invalidating CloudFront"
 aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths '/*' \
-  "${PROFILE_ARGS[@]}" --query 'Invalidation.Id' --output text
+  ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --query 'Invalidation.Id' --output text
 
 echo ">> Done -> https://$DOMAIN/"
