@@ -30,7 +30,8 @@ PROFILE_ARGS=()
 if [[ -n "$PROFILE" ]]; then
   PROFILE_ARGS=(--profile "$PROFILE")
 fi
-AWS=(aws "${PROFILE_ARGS[@]}" --region "$REGION")
+# ${x[@]+"${x[@]}"}: bash 3.2 (macOS) treats an empty array as unset under `set -u`.
+AWS=(aws ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --region "$REGION")
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
