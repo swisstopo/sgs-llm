@@ -43,7 +43,10 @@ PROFILE_ARGS=()
 if [[ -n "$PROFILE" ]]; then
   PROFILE_ARGS=(--profile "$PROFILE")
 fi
-AWS=(aws "${PROFILE_ARGS[@]}" --region "$REGION")
+# ${x[@]+"${x[@]}"} rather than "${x[@]}": bash 3.2, which is what macOS ships and
+# what anyone running this by hand is likely on, treats an empty array as unset and
+# `set -u` aborts. Bash 5 on the CI runner does not, so this fails only off-CI.
+AWS=(aws ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --region "$REGION")
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -136,7 +139,7 @@ if "${AWS[@]}" ecs wait services-stable --cluster "$CLUSTER" --services "$SERVIC
   echo ">> Done — running $RUNNING_TD"
   if [[ "$RUNNING_TD" != "$NEW_TD_ARN" ]]; then
     echo "!! The service rolled back to $RUNNING_TD — the new task never became healthy." >&2
-    echo "   Check: aws logs tail /ecs/$SERVICE --since 15m ${PROFILE_ARGS[*]} --region $REGION" >&2
+    echo "   Check: aws logs tail /ecs/$SERVICE --since 15m ${PROFILE_ARGS[*]-} --region $REGION" >&2
     exit 1
   fi
 else
@@ -150,7 +153,7 @@ cat <<EOF
 
 Roll back to the previous revision if needed:
   aws ecs update-service --cluster $CLUSTER --service $SERVICE \\
-    --task-definition $CURRENT_TD_ARN ${PROFILE_ARGS[*]} --region $REGION
+    --task-definition $CURRENT_TD_ARN ${PROFILE_ARGS[*]-} --region $REGION
 
 Note: infra/geosearch-service.yaml's ImageTag parameter is now stale by design
 (CI owns the running image). If you ever update that stack, pass the tag that is
