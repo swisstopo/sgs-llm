@@ -12,6 +12,12 @@
   "layers": {
     "empty": "Nessun livello sulla mappa.",
     "opacity": "Opacità",
+    "style": "Stile e simbologia",
+    "fillColor": "Colore di riempimento",
+    "strokeColor": "Colore del contorno",
+    "strokeWidth": "Spessore del contorno",
+    "pointRadius": "Dimensione dei punti",
+    "fillOpacity": "Opacità del riempimento",
     "remove": "Rimuovere il livello",
     "moveUp": "Sposta in alto",
     "moveDown": "Sposta in basso",

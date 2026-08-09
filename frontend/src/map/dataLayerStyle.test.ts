@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import CircleStyle from 'ol/style/Circle';
-import { buildDataLayerStyle, hexToRgba } from './dataLayerStyle';
+import { buildDataLayerStyle, hexToRgba, resolveStyle } from './dataLayerStyle';
 import type { LayerSpec } from '../protocol/v1';
 
 const baseSpec: LayerSpec = {
@@ -47,5 +47,29 @@ describe('buildDataLayerStyle', () => {
     const style = buildDataLayerStyle(baseSpec);
     expect(style.getFill()?.getColor()).toBe('rgba(216, 35, 42, 0.35)');
     expect(style.getStroke()?.getWidth()).toBe(1.5);
+  });
+});
+
+describe('resolveStyle', () => {
+  it('fills in the defaults the symbology editor needs', () => {
+    expect(resolveStyle(baseSpec)).toEqual({
+      fillColor: '#d8232a',
+      strokeColor: '#d8232a',
+      strokeWidth: 1.5,
+      pointRadius: 6,
+      opacity: 0.35,
+    });
+    expect(resolveStyle({ ...baseSpec, geometry_type: 'line' }).strokeWidth).toBe(2.5);
+    expect(resolveStyle({ ...baseSpec, geometry_type: 'point' }).opacity).toBe(0.85);
+  });
+
+  it('reports the edited values back, so a re-render shows what the map draws', () => {
+    const edited = { ...baseSpec, style_hint: { fill_color: '#00ff00', stroke_width: 4 } };
+    expect(resolveStyle(edited)).toMatchObject({
+      fillColor: '#00ff00',
+      strokeColor: '#00ff00', // stroke follows the fill until it is set explicitly
+      strokeWidth: 4,
+    });
+    expect(buildDataLayerStyle(edited).getStroke()?.getWidth()).toBe(4);
   });
 });

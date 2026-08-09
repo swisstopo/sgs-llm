@@ -12,6 +12,12 @@
   "layers": {
     "empty": "Anc nagins nivels sin la charta.",
     "opacity": "Opacitad",
+    "style": "Stil e simbologia",
+    "fillColor": "Colur da la plumpadira",
+    "strokeColor": "Colur da la lingia",
+    "strokeWidth": "Grossezza da la lingia",
+    "pointRadius": "Grondezza dals puncts",
+    "fillOpacity": "Opacitad da la plumpadira",
     "remove": "Allontanar il nivel",
     "moveUp": "Spustar ensi",
     "moveDown": "Spustar engiu",

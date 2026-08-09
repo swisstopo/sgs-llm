@@ -12,6 +12,12 @@
   "layers": {
     "empty": "Aucune couche sur la carte.",
     "opacity": "Opacité",
+    "style": "Style et symbologie",
+    "fillColor": "Couleur de remplissage",
+    "strokeColor": "Couleur du contour",
+    "strokeWidth": "Épaisseur du contour",
+    "pointRadius": "Taille des points",
+    "fillOpacity": "Opacité du remplissage",
     "remove": "Supprimer la couche",
     "moveUp": "Monter",
     "moveDown": "Descendre",

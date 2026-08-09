@@ -12,6 +12,12 @@
   "layers": {
     "empty": "No layers on the map yet.",
     "opacity": "Opacity",
+    "style": "Styling and symbology",
+    "fillColor": "Fill colour",
+    "strokeColor": "Outline colour",
+    "strokeWidth": "Outline width",
+    "pointRadius": "Point size",
+    "fillOpacity": "Fill opacity",
     "remove": "Remove layer",
     "moveUp": "Move up",
     "moveDown": "Move down",

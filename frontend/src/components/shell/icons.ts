@@ -115,6 +115,11 @@ export const gripIcon = icon(
 /** Close (reuses the cross). */
 export const closeIcon = removeIcon;
 
+export const paletteIcon = icon(
+  svg`<path d="M12 3.5a8.5 8.5 0 100 17h1.6a1.9 1.9 0 001.4-3.2 1.9 1.9 0 011.4-3.2h1.9a4.2 4.2 0 004.2-4.2A8.5 8.5 0 0012 3.5z" /><circle cx="7.8" cy="12.4" r="1" /><circle cx="9.6" cy="8.4" r="1" /><circle cx="14.4" cy="8" r="1" />`,
+  18,
+);
+
 export const chevronUpIcon = icon(svg`<path d="M6 14l6-6 6 6" />`, 18);
 
 export const chevronDownIcon = icon(svg`<path d="M6 10l6 6 6-6" />`, 18);

@@ -12,6 +12,12 @@
   "layers": {
     "empty": "Noch keine Ebenen auf der Karte.",
     "opacity": "Deckkraft",
+    "style": "Darstellung und Symbolisierung",
+    "fillColor": "Füllfarbe",
+    "strokeColor": "Linienfarbe",
+    "strokeWidth": "Linienbreite",
+    "pointRadius": "Punktgrösse",
+    "fillOpacity": "Deckkraft der Füllung",
     "remove": "Ebene entfernen",
     "moveUp": "Nach oben",
     "moveDown": "Nach unten",

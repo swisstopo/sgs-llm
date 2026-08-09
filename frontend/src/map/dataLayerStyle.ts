@@ -4,8 +4,18 @@ import CircleStyle from 'ol/style/Circle';
 import Style from 'ol/style/Style';
 import type { LayerSpec, StyleHint } from '../protocol/v1';
 
-const DEFAULT_COLOR = '#d8232a';
+export const DEFAULT_COLOR = '#d8232a';
 const DEFAULT_FILL_OPACITY = 0.35;
+const DEFAULT_POINT_OPACITY = 0.85;
+
+/** A `style_hint` with every default filled in - what the symbology editor shows. */
+export interface ResolvedStyle {
+  fillColor: string;
+  strokeColor: string;
+  strokeWidth: number;
+  pointRadius: number;
+  opacity: number;
+}
 
 /** Converts a #rgb/#rrggbb hex color to rgba() with the given alpha. */
 export function hexToRgba(hex: string, alpha: number): string {
@@ -23,28 +33,32 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** Fills in the per-geometry defaults a `style_hint` leaves out. */
+export function resolveStyle(spec: LayerSpec): ResolvedStyle {
+  const hint: StyleHint = spec.style_hint ?? {};
+  const fillColor = hint.fill_color ?? DEFAULT_COLOR;
+  const isPoint = spec.geometry_type === 'point';
+  return {
+    fillColor,
+    strokeColor: hint.stroke_color ?? fillColor,
+    strokeWidth: hint.stroke_width ?? (spec.geometry_type === 'line' ? 2.5 : 1.5),
+    pointRadius: hint.point_radius ?? 6,
+    opacity: hint.opacity ?? (isPoint ? DEFAULT_POINT_OPACITY : DEFAULT_FILL_OPACITY),
+  };
+}
+
 /**
  * Maps a protocol `style_hint` onto an OpenLayers style, with sensible
  * defaults per geometry type.
  */
 export function buildDataLayerStyle(spec: LayerSpec): Style {
-  const hint: StyleHint = spec.style_hint ?? {};
-  const baseColor = hint.fill_color ?? DEFAULT_COLOR;
-  const strokeColor = hint.stroke_color ?? hint.fill_color ?? DEFAULT_COLOR;
-  const fillOpacity = hint.opacity ?? DEFAULT_FILL_OPACITY;
-  const fill = new Fill({ color: hexToRgba(baseColor, fillOpacity) });
-  const stroke = new Stroke({
-    color: strokeColor,
-    width: hint.stroke_width ?? (spec.geometry_type === 'line' ? 2.5 : 1.5),
-  });
+  const resolved = resolveStyle(spec);
+  const fill = new Fill({ color: hexToRgba(resolved.fillColor, resolved.opacity) });
+  const stroke = new Stroke({ color: resolved.strokeColor, width: resolved.strokeWidth });
 
   if (spec.geometry_type === 'point') {
     return new Style({
-      image: new CircleStyle({
-        radius: hint.point_radius ?? 6,
-        fill: new Fill({ color: hexToRgba(baseColor, hint.opacity ?? 0.85) }),
-        stroke,
-      }),
+      image: new CircleStyle({ radius: resolved.pointRadius, fill, stroke }),
     });
   }
   return new Style({ fill, stroke });
