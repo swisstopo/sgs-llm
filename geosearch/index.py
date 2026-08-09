@@ -1,4 +1,4 @@
-"""The vector store: a CPU embedding model, DuckDB for the records, FAISS for the search.
+"""The vector store: Bedrock for the embeddings, DuckDB for the records, FAISS for search.
 
 DuckDB holds the records, the three .faiss files hold their vectors, and `meta.model`
 records which model produced them - `GeoIndex` refuses to load under a different one,
@@ -19,6 +19,7 @@ divisions an approximate index would trade recall for microseconds nobody will n
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -31,30 +32,51 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# multilingual-e5-large is the quality option (1024-dim, ~2.2 GB); the MiniLM below is
-# ~10x lighter and noticeably faster on CPU. The catalogue is de/fr/it/en/rm, so a
-# multilingual model is not optional - an English-only one cannot match "forêt" to
-# "Wald".
-DEFAULT_MODEL = os.environ.get("GEOSEARCH_EMBED_MODEL", "intfloat/multilingual-e5-large")
-LIGHT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# Cohere Embed v4 on Bedrock. The catalogue is de/fr/it/en/rm, so a multilingual model is
+# not optional - an English-only one cannot match "forêt" to "Wald" - and on 12 known-answer
+# queries across those languages this scores recall@30 1.00 / MRR 0.917 against
+# multilingual-e5-large's 0.92 / 0.737. It also keeps a 2.2 GB ONNX model out of the image.
+#
+# The `eu.` prefix is an inference profile, not decoration: the bare `cohere.embed-v4:0`
+# rejects on-demand invocation outright, and `eu.*` is what the task role in
+# infra/geosearch-foundation.yaml is scoped to. `global.` also works and is ~40% slower.
+DEFAULT_MODEL = "eu.cohere.embed-v4:0"
+
+# Cohere serves 256/512/1024/1536 from the same model (Matryoshka), so this is a real
+# choice rather than a property of the weights. 1024 is what was measured; it is also what
+# e5 produced, so the vector files and their footprint are unchanged.
+EMBED_DIM = 1024
+
+# Bedrock rejects oversized inputs rather than truncating, and a handful of layer
+# abstracts run long. The reranker reads only the first 300 characters anyway.
+MAX_INPUT_CHARS = 2000
+
+# One request per this many texts. Cohere's limit is 96; the build sends ~8000.
+EMBED_BATCH = 96
 
 INDEX_DIR = Path(os.environ.get("GEOSEARCH_INDEX_DIR", "index"))
 
-# fastembed defaults to tempfile.gettempdir(), which on macOS is a per-boot directory the
-# OS sweeps and in a container is a layer that does not survive a restart. Either way the
-# 2.2 GB model re-downloads on a cold start. Point it somewhere durable; in production set
-# this to a mounted volume so the image does not have to carry the weights.
-MODEL_CACHE = Path(os.environ.get("GEOSEARCH_MODEL_CACHE", Path.home() / ".cache" / "fastembed"))
+EMBED_REGION = os.environ.get("GEOSEARCH_EMBED_REGION", "eu-central-1")
 
 TITLE_WEIGHT = 0.6
 DESCRIPTION_WEIGHT = 0.4
 
-# Deliberately low. An absolute cosine floor is not comparable across embedding models
-# - 0.55 discards almost nothing under e5 and almost everything under MiniLM - so tuning
-# one to taste bakes a model choice into the retrieval logic. This sits low enough to
-# only catch "the catalogue has nothing like this", and precision is the reranker's job
-# (geosearch/rerank.py). Raising it would trade away the recall FAISS is here to provide.
-SIMILARITY_FLOOR = 0.30
+# Its only job is to catch "the catalogue has nothing like this". Precision belongs to the
+# reranker (geosearch/rerank.py); raising this trades away the recall FAISS is here to
+# provide, and it does so invisibly - a layer cut here is not ranked low, it is absent.
+#
+# It has to be re-measured on every model change, because an absolute cosine value is not
+# comparable across models: 0.30 discarded almost nothing under e5, and under Cohere it
+# cut the candidate list to a median of 5 and left one gold layer surviving at 0.311.
+# Measured over 12 known-answer queries and 5 with no answer in a geodata catalogue
+# ("risotto recipe with saffron", "bitcoin price history"), geosearch/eval_retrieval.py:
+#
+#   real queries, best score:      min 0.327   median 0.448
+#   nonsense queries, best score:  max 0.235
+#
+# 0.25 sits in that gap. It still rejects all five nonsense queries outright while
+# handing the reranker a median of 14 candidates instead of 5.
+SIMILARITY_FLOOR = 0.25
 
 # The top hit has to beat the runner-up by this much for the agent to be allowed to
 # auto-select it. Ported from search_data.py's confidence gate.
@@ -68,35 +90,61 @@ class Hit:
 
 
 class Embedder:
-    """fastembed on ONNX: CPU-only by design, no torch in the dependency tree."""
+    """Cohere Embed v4 through Bedrock. No model in the image, no torch, no ONNX."""
 
-    def __init__(self, model_name: str = DEFAULT_MODEL) -> None:
-        from fastembed import TextEmbedding
+    def __init__(self, model_name: str = DEFAULT_MODEL, region: str = EMBED_REGION) -> None:
+        import boto3
+        from botocore.config import Config
 
         self.model_name = model_name
-        self._model = TextEmbedding(model_name=model_name, cache_dir=str(MODEL_CACHE))
-        # e5 models are trained with asymmetric prefixes and lose a lot of retrieval
-        # quality without them. fastembed's query_embed/passage_embed do NOT add them
-        # (verified: both return identical vectors for the same text), so we do.
-        self._e5 = "e5" in model_name.lower()
-        self.dim = len(self._encode(["probe"], "query: ")[0])
+        self.dim = EMBED_DIM
+        self._client = boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            # A build is ~84 back-to-back requests and one ThrottlingException at request
+            # 80 would otherwise throw away the other 79. `standard` is what retries
+            # throttles at all - botocore's default `legacy` mode does not.
+            config=Config(retries={"max_attempts": 5, "mode": "standard"}),
+        )
 
-    def _encode(self, texts: Sequence[str], prefix: str) -> np.ndarray:
+    def _encode(self, texts: Sequence[str], input_type: str) -> np.ndarray:
         if not texts:
             # A build with no divisions is legitimate (--no-divisions); an empty list
             # would otherwise reach faiss as a 0-d array and raise inside normalize_L2.
             return np.zeros((0, self.dim), dtype=np.float32)
-        prepared = [f"{prefix}{t}" if self._e5 else t for t in texts]
-        vectors = np.array(list(self._model.embed(prepared)), dtype=np.float32)
+
+        out: list[list[float]] = []
+        for start in range(0, len(texts), EMBED_BATCH):
+            batch = texts[start : start + EMBED_BATCH]
+            body = json.dumps(
+                {
+                    # Bedrock rejects an empty string; a layer with no abstract is a real
+                    # row that still has to occupy its rid, so it embeds a space instead.
+                    "texts": [(t or " ")[:MAX_INPUT_CHARS] for t in batch],
+                    "input_type": input_type,
+                    "embedding_types": ["float"],
+                    "output_dimension": self.dim,
+                }
+            )
+            response = self._client.invoke_model(modelId=self.model_name, body=body)
+            embeddings = json.loads(response["body"].read())["embeddings"]
+            # Asking for embedding_types returns a dict keyed by type; older responses
+            # return the bare list.
+            out.extend(embeddings["float"] if isinstance(embeddings, dict) else embeddings)
+
+        vectors = np.array(out, dtype=np.float32)
         # IndexFlatIP is inner product; on unit vectors that is cosine similarity.
         faiss.normalize_L2(vectors)
         return vectors
 
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
-        return self._encode(texts, "passage: ")
+        # Cohere is trained asymmetrically: what is indexed and what is asked are encoded
+        # differently, and using one type for both measurably costs recall. This is the
+        # same asymmetry e5 expressed as "passage: " / "query: " text prefixes.
+        return self._encode(texts, "search_document")
 
     def encode_query(self, text: str) -> np.ndarray:
-        vector: np.ndarray = self._encode([text], "query: ")[0]
+        vector: np.ndarray = self._encode([text], "search_query")[0]
         return vector
 
 
@@ -129,19 +177,43 @@ class GeoIndex:
         stored_model = self.db.execute(
             "SELECT value FROM meta WHERE key = 'model'"
         ).fetchone()
-        model_name = stored_model[0] if stored_model else DEFAULT_MODEL
+        # No fallback. Assuming a model here would make the check below compare a value
+        # against itself and always pass, so an index whose provenance is unknown would
+        # load and then rank by vectors nothing in this process can read.
+        if stored_model is None:
+            raise ValueError(
+                f"{db_path} has no meta.model row, so what wrote its vectors is unknown. "
+                "Rebuild it: python -m geosearch.build"
+            )
+        model_name = stored_model[0]
         self.embedder = embedder or Embedder(model_name)
         if self.embedder.model_name != model_name:
             # Vectors from two different models share a space only by coincidence.
             raise ValueError(
                 f"Index was built with {model_name!r} but the server loaded "
-                f"{self.embedder.model_name!r}. Rebuild the index or set "
-                f"GEOSEARCH_EMBED_MODEL={model_name!r}."
+                f"{self.embedder.model_name!r}. Rebuild the index against this model."
             )
 
         self.layer_title = faiss.read_index(str(self.directory / "layer_title.faiss"))
         self.layer_description = faiss.read_index(str(self.directory / "layer_description.faiss"))
         self.division_name = faiss.read_index(str(self.directory / "division_name.faiss"))
+
+        # `rid` is positional - row N in DuckDB is vector N in the .faiss file - and the
+        # two are coupled by nothing but build.py walking the same list twice. A mismatched
+        # pair does not raise on search, it silently ranks the wrong layer first, so the
+        # one cheap invariant is checked here: a half-finished `aws s3 sync` or one stale
+        # file from an older build fails at startup instead of in front of a user.
+        counts = self.counts()
+        for name, index, expected in (
+            ("layer_title", self.layer_title, counts["layers"]),
+            ("layer_description", self.layer_description, counts["layers"]),
+            ("division_name", self.division_name, counts["divisions"]),
+        ):
+            if index.ntotal != expected:
+                raise ValueError(
+                    f"{name}.faiss holds {index.ntotal} vectors but {db_path} has "
+                    f"{expected} rows. The index is a set; rebuild or re-sync all of it."
+                )
 
     # ------------------------------------------------------------------ layers
 
@@ -378,7 +450,7 @@ def build(
 def _check_layer_vectors(directory: Path, layers: list[dict[str, Any]], embedder: Embedder) -> int:
     """Confirm the layer vectors already on disk still describe these catalogue rows.
 
-    Embedding 896 abstracts is 20 of the build's 25 minutes and none of it changes when
+    Embedding 896 abstracts is ~100 s of Bedrock calls and none of it changes when
     only the divisions do, so `--reuse-layer-vectors` keeps the existing indexes. What
     makes that safe to offer is this check: a vector that no longer matches its row is not
     an error anywhere downstream, it is a search that quietly ranks the wrong layer first.

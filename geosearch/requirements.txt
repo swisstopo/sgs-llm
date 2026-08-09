@@ -1,6 +1,6 @@
 # Runtime dependencies for the geodata MCP server. Its own file, not backend's: this
 # deploys as a separate container and must not inherit fastapi/pydantic, nor drag faiss
-# and a 2 GB embedding model into the agent image.
+# into the agent image.
 #
 # Pinned exactly, for the same reason backend/requirements.txt is: the image is the
 # contract with the deployed infrastructure.
@@ -21,13 +21,9 @@ duckdb==1.5.5
 faiss-cpu==1.15.0
 numpy==2.5.1
 
-# Embeddings on CPU via ONNX. fastembed is what keeps torch out of the image - the same
-# model through sentence-transformers would add ~2 GB of CUDA-enabled wheels the server
-# never uses. onnxruntime arrives with it and is listed only to pin it.
-fastembed==0.8.0
-onnxruntime==1.28.0
-
-# Bedrock (the rerank stage) and S3.
+# Bedrock (embeddings and the rerank stage) and S3. Embedding is a Bedrock call now, not
+# a local model: fastembed and onnxruntime used to sit here to run multilingual-e5-large
+# on CPU, and between the wheels and the baked weights they were ~4.3 GB of the image.
 boto3==1.43.59
 
 # `compute`. GeoJSON only - the frontend cannot render GeoParquet

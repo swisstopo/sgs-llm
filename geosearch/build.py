@@ -4,8 +4,10 @@
     python -m geosearch.build --no-divisions   # catalogue only, ~30s
 
 Run once; the server only reads what this writes. Everything slow - fetching 896 layer
-descriptions, downloading 2000-odd commune polygons, embedding all of it on CPU -
+descriptions, downloading 2000-odd commune polygons, embedding all of it through Bedrock -
 happens here so that a search at runtime is one query embedding and two FAISS lookups.
+
+Needs AWS credentials, because embedding is now a Bedrock call (geosearch/index.py).
 
 Output:
     index/geosearch.duckdb      records + the model the vectors came from
@@ -181,7 +183,7 @@ async def main_async(args: argparse.Namespace) -> None:
     if not layers:
         raise SystemExit("catalogue came back empty - refusing to write an index over it")
 
-    logger.info("loading %s (first run downloads it)", args.model)
+    logger.info("embedding with %s", args.model)
     embedder = Embedder(args.model)
     stats = build(directory, layers, divisions, embedder, args.reuse_layer_vectors)
     logger.info("built %s: %s", directory, stats)
@@ -196,9 +198,10 @@ def main() -> None:
     parser.add_argument(
         "--reuse-layer-vectors",
         action="store_true",
-        help="keep the existing layer indexes instead of re-embedding 896 abstracts "
-        "(20 of the build's 25 minutes). Only the divisions are rebuilt. Refuses if the "
-        "stored vectors no longer match the catalogue.",
+        help="keep the existing layer indexes instead of re-embedding 896 titles and "
+        "abstracts (~100 s of Bedrock calls; it used to be 20 minutes of CPU, which is "
+        "why the flag exists). Only the divisions are rebuilt. Refuses if the stored "
+        "vectors no longer match the catalogue.",
     )
     args = parser.parse_args()
 

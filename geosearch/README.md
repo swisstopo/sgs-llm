@@ -3,8 +3,8 @@
 Semantic search over the swisstopo catalogue, and the MCP server that serves it.
 
 ```bash
-python -m geosearch.build      # once: fetch, embed, index (~25 min with e5-large)
-python -m geosearch.build --reuse-layer-vectors   # divisions only (~90 s)
+python -m geosearch.build      # once: fetch, embed, index (~12 min; needs AWS credentials)
+python -m geosearch.build --reuse-layer-vectors   # divisions only; saves ~100 s of embedding
 python -m geosearch.server     # http://127.0.0.1:8790/mcp
 python -m pytest geosearch/test_geosearch.py -q
 ```
@@ -34,7 +34,7 @@ that vector search alone gives up; grid-subdivided identify fixes the cap.
 build (once)                          serve (per query)
 ──────────                            ─────────────────
 layersConfig ─┐                       query
-              ├─► 896 records ─┐        │ embed (~60 ms CPU)
+              ├─► 896 records ─┐        │ embed (~275 ms, Bedrock)
 api/MapServer ┘   title+abstract│        ▼
                                 ├─►   FAISS ── 30 candidates ─► LLM filter ─► 8 results
 swissBOUNDARIES3D ─┐            │     (exhaustive,             (cheap model,
@@ -63,11 +63,14 @@ truncated depth, a layer ranking well on title but outside the description's top
 `0.6 × title` alone and lost to a layer present in both lists with two mediocre halves.
 At 896 × 1024 floats a flat scan is well under a millisecond. `test_score_sums_both_halves_not_just_one` pins this.
 
-**The similarity floor is low (0.30) on purpose.** An absolute cosine floor is not
-comparable across embedding models — 0.55 discards almost nothing under e5 and almost
-everything under MiniLM — so tuning one to taste bakes a model choice into the retrieval
-logic. It exists only to detect "the catalogue has nothing like this". Precision is the
-reranker's job.
+**The similarity floor is low (0.25) on purpose, and is re-measured per model.** It exists
+only to detect "the catalogue has nothing like this"; precision is the reranker's job, and
+a layer cut here is not ranked low, it is absent. An absolute cosine value is not
+comparable across models — 0.30 discarded almost nothing under e5 and under Cohere cut the
+candidate list to a median of 5, leaving one gold layer alive at 0.311. Over 12
+known-answer queries and 5 with no answer at all (`geosearch/eval_retrieval.py`), real queries
+score 0.327–0.650 at rank 1 and nonsense tops out at 0.235; 0.25 sits in that gap and
+still rejects all five.
 
 **The LLM filter fails open — but only for unreachability.** If Bedrock cannot be
 reached the vector ranking is returned with a note telling the agent it is unfiltered; a
@@ -156,8 +159,9 @@ was whatever the heap happened to pop. `search_divisions` breaks ties on `rid`, 
 build writes coarsest first, and `division_by_name` orders the same way. An agent that
 takes the top bbox at face value gets the larger, safer one.
 
-**`--reuse-layer-vectors` skips the 20 minutes that never change.** Embedding 896 abstracts
-is most of the build and none of it moves when only the divisions do. The flag keeps the
+**`--reuse-layer-vectors` skips the embedding that never changes.** Embedding 896 abstracts
+is ~100 s of Bedrock calls and none of it moves when only the divisions do — it used to be
+20 minutes of CPU, which is why the flag exists at all. The flag keeps the
 existing layer indexes — but a vector that no longer matches its row is not an error
 anywhere downstream, it is a search that quietly ranks the wrong layer first, so the build
 re-embeds a spread of titles and refuses to reuse anything that has drifted (or whose count
@@ -170,47 +174,48 @@ depth.
 
 ## Embedding model
 
-CPU-only via fastembed (ONNX, no torch). Multilingual is not optional: the catalogue is
-de/fr/it/en/rm, and an English-only model cannot match "forêt" to "Wald". fastembed ships
-exactly three genuinely multilingual models; two were measured on 12 known-answer queries
-across de/fr/it/en (`GOLD` in the eval script — each names a concept with an
-exactly-matching layer):
+`eu.cohere.embed-v4:0` on Bedrock, 1024 dimensions. Multilingual is not optional: the
+catalogue is de/fr/it/en/rm, and an English-only model cannot match "forêt" to "Wald".
 
-| | dim | recall@8 | recall@30 | MRR | query | build | RSS |
+It replaced `intfloat/multilingual-e5-large`, which ran locally on CPU through fastembed.
+Both rows below are one run of `geosearch/eval_retrieval.py` over the same 12 known-answer queries
+across de/fr/it/en (`GOLD` — each names a concept with an exactly-matching layer), scored
+with the same weighted title+description sum, so they are comparable to each other:
+
+| | dim | recall@8 | recall@30 | MRR | query | build | in the image |
 |---|---|---|---|---|---|---|---|
-| `intfloat/multilingual-e5-large` (default) | 1024 | **1.00** | 1.00 | 0.815 | 31 ms | ~40 min | ~2.2 GB |
-| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | 0.67 | 0.67 | 0.627 | 22 ms | ~25 s | ~0.4 GB |
+| `eu.cohere.embed-v4:0` (current) | 1024 | **1.00** | **1.00** | **0.917** | 275 ms | ~5 min | — |
+| `intfloat/multilingual-e5-large` | 1024 | 0.92 | 0.92 | 0.737 | 13 ms | ~40 min | 2.1 GB weights + 2.2 GB wheels |
 
 **recall@30 is the column that settled it.** 30 is what the reranker sees, so a gold layer
-outside it is unreachable no matter how good the LLM stage is — and MiniLM's recall@30 is
-identical to its recall@8. Its four failures are not near-misses the second stage could
-fix; the right layer is simply never retrieved. For the exact query "Waldmischungsgrad" it
-scored `Vereisungshäufigkeit` at 0.809 against `Waldmischungsgrad LFI` at 0.623: a
-paraphrase-trained model matching German compound morphology rather than meaning.
+outside it is unreachable no matter how good the LLM stage is. The decisive case is `peat
+bogs`: e5 put `Hochmoore`/`Flachmoore` at **rank 186** — not a near-miss the second stage
+could rescue, simply never retrieved — where Cohere puts it at rank 2. Cohere also fixes
+`avalanches` (3 → 1), `population inhabitants` (2 → 1) and `statistica delle piene` (2 → 1),
+and loses nothing.
 
-Those are vector-only figures. Re-run through the live server — vector retrieval *and* the
-LLM reranker together, which is what an agent actually sees — the same 12 queries score
-**12/12, gold at rank 1 for eleven of them**, in 411–745 ms including the Bedrock round-trip.
-Worth measuring separately: a second stage that prunes can just as easily discard what the
-first stage got right, and recall@8 alone would not show it.
+Two other things came with it, neither of which is why it was chosen: the image dropped
+~4.3 GB, and the build dropped from ~40 minutes to ~5 (8064 texts in batches of 96, which
+is Cohere's per-request limit).
 
-The cost is build time and memory, not latency — 31 ms per query, because a query is ten
-tokens while the 896 abstracts that make the build slow are up to 512 each. If rebuilds
-become a bottleneck, truncating descriptions before embedding is the lever to pull (the
-reranker already reads only the first 300 characters); it was not needed to reach 1.00.
+**The cost is query latency: 13 ms → 275 ms.** That is the honest trade. It is acceptable
+here because it introduces no new systemic dependency — `search_layers` already called
+Bedrock for the rerank stage on every query, so a geosearch that cannot reach Bedrock was
+already degraded — and against a 411–745 ms end-to-end search it is a fraction, not a
+doubling. If it ever stops being acceptable, the lever is `output_dimension`: Cohere is
+Matryoshka and serves 256/512/1024/1536 from the same model, and 256 would quarter the
+vector files too. 1024 is what was measured.
 
-Switch with `GEOSEARCH_EMBED_MODEL`. The index records which model built it and refuses to
-load under a different one — cosine similarity between two models' vectors is noise, and it
-looks exactly like a working search.
+Cohere is trained asymmetrically — `search_document` for what is indexed, `search_query`
+for what is asked — and `Embedder` sends both. This is the same asymmetry e5 expressed as
+`passage:` / `query:` text prefixes.
 
-The weights land in `GEOSEARCH_MODEL_CACHE` (default `~/.cache/fastembed`). fastembed's own
-default is `tempfile.gettempdir()`, which macOS sweeps and a container discards on restart —
-either way the 2.2 GB re-downloads on every cold start. The image bakes them in instead; see
-below.
-
-e5 needs `query:` / `passage:` prefixes to retrieve well. fastembed's `query_embed` and
-`passage_embed` do **not** add them (verified: both return identical vectors for the same
-input), so `Embedder` adds them.
+**No fallback and no override.** The index records the model in `meta.model` and `GeoIndex`
+refuses to load under a different one; it also refuses to load an index that records no
+model at all. There used to be a fallback there — missing row meant "assume the default" —
+which made the mismatch check compare the default against itself and pass. Cosine
+similarity between two models' vectors is noise, and it reads exactly like a working
+search, so the only safe answer to "which model wrote these?" is the recorded one.
 
 ## S3
 
@@ -241,20 +246,20 @@ to keep beside them.
 ## Deployment
 
 Everything expensive is precomputed and copied in. `geosearch/Dockerfile` never runs
-`build`: that is ~25 minutes and a few thousand requests to geo.admin.ch, and two runs a
+`build`: that is ~12 minutes and a few thousand requests to geo.admin.ch, and two runs a
 week apart produce two different indexes, which is the opposite of an image.
 
 | what | size | where it comes from |
 |---|---|---|
 | `index/*.duckdb`, `index/*.faiss` | 36 MB | `python -m geosearch.build`, copied in |
 | `index/s3/` (boundaries) | 108 MB | same build, copied in |
-| e5-large ONNX weights | 2.1 GB | `RUN` step, baked at image build |
 | layer catalogue (`timeInstant`, WMS config) | — | **fetched at runtime**, not frozen |
 
-So the image is ~3 GB and takes 2–3 minutes for Fargate to pull, against a cold start that
-would otherwise download 2.1 GB before answering its first request — and would do it again
-on every task replacement. Baking it also makes the image the whole contract: the running
-container needs no network except geo.admin.ch and S3.
+There used to be a third row — 2.1 GB of e5-large ONNX weights, baked by a `RUN` step so a
+cold start did not download them, and ~2.2 GB of wheels to run them. Embedding is a Bedrock
+call now, so the image went from ~4.9 GB to ~0.5 GB and the Fargate pull with it. The
+running container needs Bedrock, geo.admin.ch and S3 — Bedrock is not a new dependency, the
+reranker already required it, and a query that cannot reach it was already degraded.
 
 That last row is the one to keep in mind. `Swisstopo.layers_config` is fetched from
 geo.admin.ch on first use and memoised per process, so a six-month-old image still queries
@@ -262,9 +267,11 @@ today's data at today's vintages. Only the *searchable set* of layers is as of t
 a layer swisstopo added last week is not in the index and cannot be found until a rebuild.
 
 ```
-python -m geosearch.build                       # once, ~25 min, writes index/
+python -m geosearch.build                       # once, ~12 min, writes index/
 docker build -f geosearch/Dockerfile -t sgs-llm-geosearch .
-docker run -p 8790:8790 sgs-llm-geosearch       # /mcp, plus /health for the orchestrator
+docker run -p 8790:8790 \
+  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+  sgs-llm-geosearch                             # /mcp, plus /health for the orchestrator
 ```
 
 ### On AWS

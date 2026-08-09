@@ -29,7 +29,7 @@ exclude = "test_geosearch\\.py$"
 mypy_path = ".."
 # boto3 ships no bundled stubs; the AWS surface is exercised by tests instead.
 [[tool.mypy.overrides]]
-module = ["boto3.*", "botocore.*", "shapely.*", "pyproj.*", "duckdb.*", "faiss.*", "fastembed.*", "moto.*"]
+module = ["boto3.*", "botocore.*", "shapely.*", "pyproj.*", "duckdb.*", "faiss.*", "moto.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

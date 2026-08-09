@@ -49,16 +49,17 @@ Parameters:
     Default: '2048'
     AllowedValues: ['1024', '2048', '4096', '8192']
     Description: >-
-      Fargate task CPU units (2048 = 2 vCPU). A query embedding is ~30 ms of pure
-      CPU on ONNX; the rest of a request is waiting on geo.admin.ch.
+      Fargate task CPU units (2048 = 2 vCPU). Embedding is a Bedrock call now, so a
+      request is almost entirely waiting - on Bedrock, then on geo.admin.ch.
   TaskMemory:
     Type: String
-    Default: '8192'
+    Default: '4096'
     Description: >-
-      Task memory in MiB. The e5-large ONNX session alone is ~2.2 GB resident, and
-      filter_features holds a whole layer's features in memory while clipping them
-      (canton Bern's communes are tens of MB of geometry). 2048 CPU permits
-      4096-16384 in 1024 steps.
+      Task memory in MiB. Was 8192 to hold the e5-large ONNX session, which was
+      ~2.2 GB resident; embedding moved to Bedrock and that went with it. What is
+      left is the FAISS indexes (~36 MB) and filter_features, which holds a whole
+      layer's features in memory while clipping them (canton Bern's communes are
+      tens of MB of geometry). 2048 CPU permits 4096-16384 in 1024 steps.
   DesiredCount:
     Type: Number
     Default: 1
@@ -136,7 +137,7 @@ Resources:
           # reads: with no load balancer, container health is what decides whether
           # the task's IP is registered in DNS at all. /health reports the index
           # counts, so a task that started without an index never gets traffic.
-          # startPeriod covers loading 2.1 GB of ONNX weights from local disk.
+          # startPeriod covers reading the index off local disk and opening DuckDB.
           HealthCheck:
             Command:
               - CMD-SHELL

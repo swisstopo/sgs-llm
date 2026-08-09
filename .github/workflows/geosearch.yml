@@ -1,9 +1,9 @@
 name: Geosearch
 
 # Checks, builds and deploys the geodata MCP server. Separate from ci.yml because it needs
-# faiss, onnxruntime and an embedding model download, none of which the frontend or the
-# backend job should wait on. ci.yml's `mypy` already covers geosearch (backend/pyproject
-# lists it in `files`); ruff and the geosearch tests were covered nowhere, and are here.
+# faiss and the 143 MB prebuilt index, neither of which the frontend or the backend job
+# should wait on. ci.yml's `mypy` already covers geosearch (backend/pyproject lists it in
+# `files`); ruff and the geosearch tests were covered nowhere, and are here.
 on:
   push:
     branches: [main]
@@ -35,14 +35,15 @@ jobs:
           cache-dependency-path: geosearch/requirements-dev.txt
       - run: pip install -r geosearch/requirements-dev.txt
       - run: ruff check geosearch
-      # The index fixtures build a two-row index with the MiniLM model, so this downloads
-      # ~500 MB rather than the 2 GB the server uses. Nothing here touches geo.admin.ch.
+      # The index fixtures embed with a deterministic trigram stub, so this job needs no
+      # model download and no AWS role - it could not assume one anyway. Nothing here
+      # touches geo.admin.ch or Bedrock.
       - run: pytest geosearch -q
 
   # Builds the image, proves it serves, and rolls the ECS service onto it.
   #
   # This needs the prebuilt index, which is 143 MB of `python -m geosearch.build` output:
-  # ~25 minutes and a few thousand requests to geo.admin.ch, and two runs a week apart
+  # ~12 minutes and a few thousand requests to geo.admin.ch, and two runs a week apart
   # produce two different indexes. So it is built by a human and published, never rebuilt
   # per commit:
   #
@@ -112,7 +113,7 @@ jobs:
           echo "index: $boundaries boundaries, $(du -sh index | cut -f1)"
 
       # --platform pins what the task definition pins, and keeps these layers in the cache
-      # for the deploy step's rebuild. The model bake makes this several minutes and ~3 GB.
+      # for the deploy step's rebuild. ~0.5 GB, most of it the index being copied in.
       - name: Build the image
         run: docker build --platform linux/amd64 -f geosearch/Dockerfile -t sgs-llm-geosearch:ci .
 

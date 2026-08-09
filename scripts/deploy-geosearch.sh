@@ -13,7 +13,7 @@
 # ambient credentials (e.g. the OIDC role in GitHub Actions).
 #
 # The image needs a prebuilt index, which this script fetches from S3 rather than
-# building: `python -m geosearch.build` is ~25 minutes and a few thousand requests
+# building: `python -m geosearch.build` is ~12 minutes and a few thousand requests
 # to geo.admin.ch, and two runs a week apart produce two different indexes. Publish
 # one first, from a machine that has just built it:
 #
@@ -70,7 +70,7 @@ else
   "${AWS[@]}" s3 sync "$INDEX_URI" index/
 fi
 
-# Fail before the 3 GB build rather than after: a missing index produces an image
+# Fail before the build rather than after: a missing index produces an image
 # that starts, fails its health check, and gets rolled back twenty minutes later.
 if [[ ! -f index/geosearch.duckdb ]]; then
   echo "!! No index at ./index/geosearch.duckdb. Build and publish one first — see the header." >&2
@@ -82,7 +82,7 @@ TAG="${TAG:-$(git rev-parse --short HEAD)$(git diff --quiet || echo '-dirty')}"
 
 # --platform because the task definition pins X86_64 and this is often run from an
 # Apple Silicon machine, where the default would be an image ECS cannot start.
-echo ">> Building geosearch/Dockerfile  tag: $TAG  (bakes a 2.1 GB model; several minutes)"
+echo ">> Building geosearch/Dockerfile  tag: $TAG  (copies in the index; several minutes)"
 docker build --platform linux/amd64 -f geosearch/Dockerfile \
   -t "$REPO_URI:$TAG" -t "$REPO_URI:latest" .
 

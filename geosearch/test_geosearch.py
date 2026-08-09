@@ -13,15 +13,49 @@ from __future__ import annotations
 
 import asyncio
 import json
+import zlib
 
+import numpy as np
 import pytest
 
 from .build import _kind, _s3_key, _slug
-from .index import Embedder, GeoIndex, build, confidence
+from .index import GeoIndex, build, confidence
 from .rerank import _parse
 from .swisstopo import DivisionLayer, Swisstopo, feature_name, to_2d
 
-LIGHT = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+class StubEmbedder:
+    """Deterministic character-trigram vectors. No network, no model.
+
+    Embedding is a Bedrock call now, and a test that calls Bedrock fails in CI, where the
+    job has no role to assume and no reason to have one. Trigram overlap is not semantic -
+    "forêt" and "Wald" are unrelated here, and any test that needed them to be alike would
+    be testing Cohere rather than this code - but it does reproduce the two lexical
+    properties the fixtures rely on: an exact title matches itself at 1.0, and "Zurich"
+    lands nearer "Zürich" than "Baar".
+
+    crc32 rather than hash(): str hashing is salted per process, so the same text would
+    embed differently between runs and a failure would not reproduce.
+    """
+
+    model_name = "stub-trigram"
+    dim = 256
+
+    def _one(self, text: str) -> np.ndarray:
+        vector = np.zeros(self.dim, dtype=np.float32)
+        padded = f"  {text.lower()}  "
+        for i in range(len(padded) - 2):
+            vector[zlib.crc32(padded[i : i + 3].encode()) % self.dim] += 1.0
+        norm = float(np.linalg.norm(vector))
+        return vector / norm if norm else vector
+
+    def encode_documents(self, texts) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        return np.stack([self._one(t) for t in texts])
+
+    def encode_query(self, text: str) -> np.ndarray:
+        return self._one(text)
 
 
 # ------------------------------------------------------------------ geometry
@@ -192,8 +226,8 @@ def tiny_index(tmp_path_factory) -> GeoIndex:
         {"name": "Baar", "kind": "gemeinde", "canton": "ZG", "bbox": [8.4, 47.1, 8.6, 47.3],
          "layer_id": "ch.y", "s3_key": "layers/divisions/gemeinde/baar.geojson"},
     ]
-    build(directory, layers, divisions, Embedder(LIGHT))
-    return GeoIndex(directory, Embedder(LIGHT))
+    build(directory, layers, divisions, StubEmbedder())
+    return GeoIndex(directory, StubEmbedder())
 
 
 @pytest.fixture(scope="module")
@@ -206,8 +240,8 @@ def tiny_index_with_levels(tmp_path_factory) -> GeoIndex:
          "feature_count": 24 if kind == "ortschaft" else 1}
         for kind in ("kanton", "bezirk", "gemeinde", "ortschaft")
     ]
-    build(directory, [_layer("ch.a", "Waldareal", "Wald.")], divisions, Embedder(LIGHT))
-    return GeoIndex(directory, Embedder(LIGHT))
+    build(directory, [_layer("ch.a", "Waldareal", "Wald.")], divisions, StubEmbedder())
+    return GeoIndex(directory, StubEmbedder())
 
 
 def _layer(layer_id: str, title: str, description: str) -> dict:
@@ -273,7 +307,7 @@ def test_reused_layer_vectors_are_checked_against_the_catalogue(tmp_path):
     # Reuse is what makes a divisions-only rebuild 2 minutes instead of 25, and a stale
     # vector is not an error downstream - it is a search that ranks the wrong layer first
     # and looks like it worked. The guard is the only thing standing between the two.
-    embedder = Embedder(LIGHT)
+    embedder = StubEmbedder()
     layers = [_layer("ch.a.wald", "Waldareal", "Wald."), _layer("ch.b.flug", "SIL", "Luftfahrt.")]
     divisions = [{"name": "Baar", "kind": "gemeinde", "canton": "ZG", "bbox": None,
                   "layer_id": "ch.y", "s3_key": "k"}]
@@ -281,7 +315,7 @@ def test_reused_layer_vectors_are_checked_against_the_catalogue(tmp_path):
 
     # Same catalogue: reuse, and the reported dim still comes from the stored vectors.
     stats = build(tmp_path, layers, divisions + divisions, embedder, reuse_layer_vectors=True)
-    assert stats == {"layers": 2, "divisions": 2, "dim": 384}
+    assert stats == {"layers": 2, "divisions": 2, "dim": StubEmbedder.dim}
 
     renamed = [_layer("ch.a.wald", "Gletscher", "Wald."), layers[1]]
     with pytest.raises(ValueError, match="do not match the catalogue"):
@@ -296,13 +330,46 @@ def test_reused_layer_vectors_are_checked_against_the_catalogue(tmp_path):
 
 def test_index_refuses_a_model_it_was_not_built_with(tiny_index):
     # Cosine similarity between vectors from two different models is noise, and it looks
-    # exactly like a working search. A stub stands in for the real model here: loading
-    # 2.2 GB of e5 to read one attribute would make the suite unrunnable.
+    # exactly like a working search.
     class OtherModel:
-        model_name = "intfloat/multilingual-e5-large"
+        model_name = "eu.cohere.embed-v4:0"
 
     with pytest.raises(ValueError, match="built with"):
         GeoIndex(tiny_index.directory, OtherModel())
+
+
+def test_index_refuses_to_guess_the_model_it_was_built_with(tiny_index, tmp_path):
+    # There used to be a fallback here: no meta.model row meant "assume the default".
+    # That made the check above compare the default against itself and pass, so an index
+    # of unknown provenance loaded clean and then ranked by vectors nothing could read.
+    import shutil
+
+    import duckdb
+
+    shutil.copytree(tiny_index.directory, tmp_path / "copy")
+    db = duckdb.connect(str(tmp_path / "copy" / "geosearch.duckdb"))
+    db.execute("DELETE FROM meta WHERE key = 'model'")
+    db.close()
+
+    with pytest.raises(ValueError, match="no meta.model row"):
+        GeoIndex(tmp_path / "copy", StubEmbedder())
+
+
+def test_index_refuses_a_faiss_file_that_lost_rows(tiny_index, tmp_path):
+    # rid is positional: row N in DuckDB is vector N in the .faiss file, coupled by
+    # nothing but build.py walking the same list twice. A half-finished `aws s3 sync`
+    # leaves a shorter index that still searches - and silently returns the wrong layer.
+    import shutil
+
+    import faiss
+
+    shutil.copytree(tiny_index.directory, tmp_path / "short")
+    index = faiss.read_index(str(tmp_path / "short" / "layer_title.faiss"))
+    index.remove_ids(np.array([index.ntotal - 1], dtype=np.int64))
+    faiss.write_index(index, str(tmp_path / "short" / "layer_title.faiss"))
+
+    with pytest.raises(ValueError, match="vectors but"):
+        GeoIndex(tmp_path / "short", StubEmbedder())
 
 
 # ----------------------------------------------------------------------- s3
