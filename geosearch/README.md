@@ -291,10 +291,15 @@ security groups, log groups, ECR repositories, deploy roles and stacks.
 Three things are deliberately unlike the backend:
 
 **No load balancer.** The only client is the backend task, in the same VPC, so the service
-registers in a Cloud Map private namespace and the backend reaches it at
-`http://sgs-llm-geosearch.sgs-llm.local:8790/mcp` — the foundation stack's `McpServerUrl`
+publishes itself through ECS Service Connect and the backend reaches it at
+`http://sgs-llm-geosearch:8790/mcp` — the foundation stack's `McpServerUrl`
 output, and what `backend-service.yaml`'s `McpServerUrl` parameter should be set to. An
-internal ALB would be ~$16/month to say what a DNS record says. The security group admits
+internal ALB would be ~$16/month to say what a name says for free. Service Connect rather
+than a Cloud Map *private DNS* namespace because the account explicitly denies
+`route53:CreateHostedZone`, which a private DNS namespace needs; an HTTP namespace creates
+no zone and resolves through the agent instead. Both ends opt in — hence
+`backend-service.yaml`'s `ServiceConnectNamespace` parameter, which must be set alongside
+`McpServerUrl` or the name resolves nowhere. The security group admits
 the backend's security group and nothing else: no browser ever calls this server, and
 `result_id` handles would be a data leak if one could — they name results the caller never
 fetched.

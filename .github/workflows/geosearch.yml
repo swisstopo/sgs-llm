@@ -121,13 +121,33 @@ jobs:
       # container that started but loaded nothing fails this check.
       - name: Smoke-test the image
         run: |
-          docker run -d --name smoke -p 8790:8790 sgs-llm-geosearch:ci
+          # GEOSEARCH_S3_BUCKET must be set to *something*: unset means local development,
+          # and the image carries no moto to stand in for S3, so the process exits before
+          # it serves anything. The name is never dialled here - S3Store only builds a
+          # boto3 client at startup, and nothing in this check publishes a layer.
+          docker run -d --name smoke -p 8790:8790 \
+            -e GEOSEARCH_S3_BUCKET=smoke-never-written-to \
+            -e GEOSEARCH_ALLOWED_HOSTS=sgs-llm-geosearch:8790 sgs-llm-geosearch:ci
           for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:8790/health >/dev/null && break
             sleep 2
           done
           curl -sf http://127.0.0.1:8790/health
           test "$(curl -s http://127.0.0.1:8790/health | python -c 'import json,sys;print(json.load(sys.stdin)["layers"] > 0)')" = "True"
+          # /health is not enough on its own. It dials loopback, which the MCP SDK's
+          # DNS-rebinding guard always allows, so it stayed green through a deploy where
+          # every POST /mcp came back 421 because the backend addresses this server by
+          # its service name. Send the Host header the backend sends.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8790/mcp \
+            -H 'Host: sgs-llm-geosearch:8790' \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}')
+          if [ "$code" != "200" ]; then
+            echo "::error::POST /mcp with the backend's Host header returned $code, not 200."
+            docker logs smoke | tail -20
+            exit 1
+          fi
           docker rm -f smoke
 
       # Same script as a manual deploy. USE_LOCAL_INDEX=1 because the index is already

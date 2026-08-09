@@ -459,3 +459,29 @@ def test_clip_drops_the_slivers_two_datasets_leave_at_their_shared_edge():
         _square(0.999999, 0, 2, 1, name="misalignment"),
     ]
     assert [f["properties"]["name"] for f in clip(features, boundary)] == ["real overlap"]
+
+
+def test_mcp_answers_the_host_the_backend_dials_and_refuses_the_rest(monkeypatch):
+    """The failure this exists for produced a 421 in the cluster and nothing locally.
+
+    The SDK's DNS-rebinding guard allows loopback only. The container health check dials
+    127.0.0.1 and stayed green, so the service looked healthy while every tool call the
+    backend made - addressed to the service name - came back `421 Misdirected Request`.
+    Asserting the middleware's verdict directly, because a request that never leaves the
+    process is what the guard inspects.
+    """
+    from mcp.server.transport_security import TransportSecurityMiddleware
+
+    from .server import _transport_security
+
+    monkeypatch.setenv("GEOSEARCH_ALLOWED_HOSTS", "sgs-llm-geosearch:8790")
+    guard = TransportSecurityMiddleware(_transport_security(8790))
+
+    assert guard._validate_host("sgs-llm-geosearch:8790")
+    assert guard._validate_host("127.0.0.1:8790"), "the container health check must keep working"
+    assert not guard._validate_host("evil.example.com")
+
+    # Unset is a workstation, where the guard is the only thing standing between a browser
+    # and a local server - it must not fall open just because the deployment var is absent.
+    monkeypatch.delenv("GEOSEARCH_ALLOWED_HOSTS")
+    assert not TransportSecurityMiddleware(_transport_security(8790))._validate_host("sgs-llm-geosearch:8790")

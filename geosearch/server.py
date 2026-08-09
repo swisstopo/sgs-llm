@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .geometry import bounding_box, clip, geometry_type, measure, summarise_properties
 from .index import INDEX_DIR, GeoIndex, confidence
@@ -407,6 +408,23 @@ def _artifact_store() -> S3Store:
         ) from exc
 
 
+def _transport_security(port: int) -> TransportSecuritySettings:
+    """Host headers `/mcp` will answer to.
+
+    The SDK's DNS-rebinding guard allows loopback and nothing else, so in the cluster every
+    POST /mcp came back `421 Misdirected Request` while GET /health stayed green: the health
+    check dials 127.0.0.1, the backend dials the service by name. The name is deployment
+    configuration - it differs between Service Connect, a private DNS namespace and a
+    laptop - so it comes from the environment, comma separated, and `host:*` is allowed for
+    any port. The loopback defaults stay so local runs and the CI smoke test keep the
+    protection that is actually worth something on a workstation: nothing in the cluster can
+    reach this server except the backend's security group, but a browser can reach a laptop.
+    """
+    hosts = [f"127.0.0.1:{port}", f"localhost:{port}"]
+    hosts += [h.strip() for h in os.environ.get("GEOSEARCH_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    return TransportSecuritySettings(allowed_hosts=hosts)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the geodata MCP server.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -432,7 +450,11 @@ def main() -> None:
 
     counts = index.counts()
     logger.info("index: %s | %s", counts, index.embedder.model_name)
-    app = server.streamable_http_app(streamable_http_path="/mcp", stateless_http=True)
+    app = server.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        transport_security=_transport_security(args.port),
+    )
     # The MCP app serves /mcp and nothing else, and an orchestrator needs a URL it can GET
     # without speaking the protocol. Reporting the counts makes it an answer about the
     # index rather than about uvicorn: a container with no index is not healthy.

@@ -123,8 +123,12 @@ Resources:
                 Fn::Sub: '${GeosearchFoundationStackName}-EcrRepositoryUri'
           Essential: true
           PortMappings:
-            - ContainerPort: !Ref ContainerPort
+            # Named and typed because Service Connect addresses ports by name;
+            # an unnamed mapping cannot be published to the namespace.
+            - Name: mcp
+              ContainerPort: !Ref ContainerPort
               Protocol: tcp
+              AppProtocol: http
           StopTimeout: 30
           LogConfiguration:
             LogDriver: awslogs
@@ -157,6 +161,10 @@ Resources:
               Value: !ImportValue
                 Fn::Sub: '${BackendFoundationStackName}-DataLayerBucketName'
             - { Name: GEOSEARCH_S3_REGION, Value: !Ref AWS::Region }
+            # The Host header the backend sends. Without it the MCP SDK's DNS-rebinding
+            # guard answers every POST /mcp with 421 while /health stays green, because
+            # the health check dials loopback and the backend dials this name.
+            - { Name: GEOSEARCH_ALLOWED_HOSTS, Value: !Sub '${GeosearchName}:${ContainerPort}' }
             - { Name: BEDROCK_SECONDARY_MODEL_ID, Value: !Ref RerankModelId }
             - { Name: BEDROCK_SECONDARY_REGION, Value: !Ref RerankModelRegion }
       Tags:
@@ -198,9 +206,20 @@ Resources:
           SecurityGroups:
             - !ImportValue
                 Fn::Sub: '${GeosearchFoundationStackName}-TaskSecurityGroupId'
-      ServiceRegistries:
-        - RegistryArn: !ImportValue
-            Fn::Sub: '${GeosearchFoundationStackName}-DiscoveryServiceArn'
+      # The server side of Service Connect: publish port `mcp` into the namespace
+      # under this service's own name, so the backend reaches it at
+      # http://sgs-llm-geosearch:8790/mcp. ECS runs a proxy sidecar in this task
+      # to terminate that, and registers/deregisters it as tasks come and go.
+      ServiceConnectConfiguration:
+        Enabled: true
+        Namespace: !ImportValue
+          Fn::Sub: '${GeosearchFoundationStackName}-NamespaceArn'
+        Services:
+          - PortName: mcp
+            DiscoveryName: !Ref GeosearchName
+            ClientAliases:
+              - Port: !Ref ContainerPort
+                DnsName: !Ref GeosearchName
       Tags:
         - { Key: project, Value: !Ref ProjectTag }
 

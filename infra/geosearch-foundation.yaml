@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   SGS LLM geodata MCP server — durable foundation: ECR, the index bucket CI builds
-  from, a private DNS namespace, log group, security group and IAM roles. Consumes
+  from, a Service Connect namespace, log group, security group and IAM roles. Consumes
   the backend foundation's VPC, subnets and task security group; creates no network
   topology of its own. Deployed once and then left alone; the ECS service lives in
   geosearch-service.yaml because it cannot be created before an image exists in ECR.
@@ -39,11 +39,11 @@ Parameters:
     Description: Port the MCP server listens on (/mcp, plus /health).
   NamespaceName:
     Type: String
-    Default: sgs-llm.local
+    Default: sgs-llm
     Description: >-
-      Private DNS namespace for service discovery. The backend reaches this server
-      at http://<GeosearchName>.<NamespaceName>:<ContainerPort>/mcp — no load
-      balancer, because nothing outside the VPC may ever call it.
+      Cloud Map namespace for ECS Service Connect. The backend reaches this server
+      at http://<GeosearchName>:<ContainerPort>/mcp — no load balancer, because
+      nothing outside the VPC may ever call it.
   OidcProviderArn:
     Type: String
     Default: ''
@@ -66,7 +66,7 @@ Conditions:
 Resources:
   # ------------------------------------------------------------- index artifacts
   # `python -m geosearch.build` output: DuckDB rows, three .faiss files and the
-  # 6272 division boundaries, ~143 MB. It takes ~25 minutes and a few thousand
+  # 6272 division boundaries, ~143 MB. It takes ~12 minutes and a few thousand
   # requests to geo.admin.ch, and two runs a week apart produce two different
   # indexes — so it is built by a human, published here, and copied into the image
   # by CI. It is deliberately NOT the data-layer bucket: that one expires
@@ -86,8 +86,8 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
       # Versioned because `aws s3 sync --delete` is how an index is published, and
-      # a half-finished sync is otherwise unrecoverable — the previous index is
-      # 25 minutes and an unrepeatable set of upstream responses away.
+      # a half-finished sync is otherwise unrecoverable — rebuilding the previous
+      # index means an unrepeatable set of upstream responses.
       VersioningConfiguration:
         Status: Enabled
       LifecycleConfiguration:
@@ -130,8 +130,8 @@ Resources:
       EncryptionConfiguration:
         EncryptionType: AES256
       LifecyclePolicy:
-        # Five, not the backend's twenty: each image carries a 2.1 GB embedding
-        # model and 143 MB of index. Layers dedupe across builds, but five
+        # Five, not the backend's twenty: each image carries 143 MB of index on
+        # top of its dependencies. Layers dedupe across builds, but five
         # rollback targets is already more than a pilot will ever walk back.
         LifecyclePolicyText: |
           {
@@ -162,32 +162,26 @@ Resources:
   # --------------------------------------------------------- service discovery
   # No load balancer. The MCP server has exactly one client — the backend task, in
   # this VPC — and an internal ALB would be ~$16/month plus a target group and two
-  # more security group rules to say what a DNS name says for a tenth of that.
-  # ECS registers and deregisters the task's private IP as it starts and stops.
+  # more security group rules to say what a name says for nothing at all.
+  #
+  # An HTTP namespace rather than a private DNS one, because this account's
+  # AccountAdmin policy carries an explicit Deny on route53:CreateHostedZone (next
+  # to ~40 ec2 network-topology actions and directconnect:* — the VPC belongs to
+  # swisstopo's cloud team, not to this project). AWS::ServiceDiscovery::
+  # PrivateDnsNamespace creates a private hosted zone, so it fails here, and an
+  # explicit Deny is not something the AdministratorAccess on the same principal
+  # can override. An HTTP namespace creates no zone: ECS Service Connect resolves
+  # the name through the agent in the task rather than through DNS, and costs
+  # nothing. The price is that both ends must opt in, which is why
+  # backend-service.yaml takes a ServiceConnectNamespace parameter.
+  #
+  # No AWS::ServiceDiscovery::Service either — Service Connect creates and
+  # deregisters its own, from the ServiceConnectConfiguration in the ECS service.
   Namespace:
-    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Type: AWS::ServiceDiscovery::HttpNamespace
     Properties:
       Name: !Ref NamespaceName
-      Description: !Sub 'Private service discovery for ${ProjectTag}'
-      Vpc: !ImportValue
-        Fn::Sub: '${BackendFoundationStackName}-VpcId'
-
-  DiscoveryService:
-    Type: AWS::ServiceDiscovery::Service
-    Properties:
-      Name: !Ref GeosearchName
-      NamespaceId: !GetAtt Namespace.Id
-      DnsConfig:
-        # A records, because awsvpc gives the task its own ENI and private IP.
-        # 15s TTL so a replaced task is picked up quickly; the backend's httpx
-        # client is long-lived and would otherwise hold a dead address.
-        DnsRecords:
-          - { Type: A, TTL: 15 }
-        RoutingPolicy: MULTIVALUE
-      # Required for ECS to manage registration: ECS reports task health, rather
-      # than Route 53 probing an endpoint it cannot reach.
-      HealthCheckCustomConfig:
-        FailureThreshold: 1
+      Description: !Sub 'Service Connect namespace for ${ProjectTag}'
 
   # ------------------------------------------------------------ security group
   TaskSecurityGroup:
@@ -394,9 +388,12 @@ Outputs:
   TaskSecurityGroupId:
     Value: !Ref TaskSecurityGroup
     Export: { Name: !Sub '${AWS::StackName}-TaskSecurityGroupId' }
-  DiscoveryServiceArn:
-    Value: !GetAtt DiscoveryService.Arn
-    Export: { Name: !Sub '${AWS::StackName}-DiscoveryServiceArn' }
+  NamespaceArn:
+    Description: >-
+      Both ECS services join this: geosearch-service.yaml to publish the name,
+      and backend-service.yaml's ServiceConnectNamespace to resolve it.
+    Value: !GetAtt Namespace.Arn
+    Export: { Name: !Sub '${AWS::StackName}-NamespaceArn' }
   TaskRoleArn:
     Value: !GetAtt TaskRole.Arn
     Export: { Name: !Sub '${AWS::StackName}-TaskRoleArn' }
@@ -407,7 +404,7 @@ Outputs:
     Description: >-
       Set this as backend-service.yaml's McpServerUrl parameter — it is the switch
       that turns the chat on.
-    Value: !Sub 'http://${GeosearchName}.${NamespaceName}:${ContainerPort}/mcp'
+    Value: !Sub 'http://${GeosearchName}:${ContainerPort}/mcp'
     Export: { Name: !Sub '${AWS::StackName}-McpServerUrl' }
   GeosearchDeployRoleArn:
     Description: role-to-assume for the geosearch deploy workflow (not a secret).
