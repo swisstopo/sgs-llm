@@ -131,6 +131,12 @@ TOOL_RUNNING = {
         "it": "Aggiunta del livello ufficiale …",
         "en": "Adding the official map layer …",
     },
+    "display_division": {
+        "de": "Zeichne die Gebietsgrenze …",
+        "fr": "Tracé de la limite territoriale …",
+        "it": "Tracciamento del confine …",
+        "en": "Drawing the boundary …",
+    },
 }
 
 GENERIC_TOOL = {

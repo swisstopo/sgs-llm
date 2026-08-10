@@ -157,6 +157,17 @@ NO_RASTER_DISPLAY_NOTE = (
     "`filter_features` can still be shown with `display_layer` as described."
 )
 
+# Appended only when the connected server offers `display_division`. The stand-in does
+# not, and naming a tool that is not in the tool set earns an "unknown tool" round trip.
+DIVISION_NOTE = (
+    "\n\nAddition to step 5: when what the user asked to see is the place itself - a "
+    "canton, district, commune or locality rather than a dataset - call "
+    "`display_division` with the `name` and `kind` you kept from step 1. It draws the "
+    "official boundary from stored data, so it needs no dataset and no `filter_features`. "
+    "Use it as well as `display_layer` when showing where fetched features lie is part of "
+    "the answer."
+)
+
 NO_TOOLS_NOTE = (
     "\n\nYour geodata tools are unavailable right now. Answer what you can from general "
     "knowledge, state clearly that you could not query the official datasets, and do not "

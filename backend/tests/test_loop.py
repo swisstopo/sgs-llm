@@ -338,3 +338,54 @@ async def test_catalog_layers_are_withheld_until_the_client_supports_them(settin
     assert final.focus_bbox is None
     # And the model is told not to promise it.
     assert "cannot put raster or image layers" in models.calls[0]["system"]
+
+
+async def test_display_division_is_described_only_when_the_server_offers_it(settings) -> None:
+    """geosearch has the tool and the stand-in does not, so the instruction follows the
+    tool set. Describing a tool that is absent buys an unknown-tool round trip."""
+    session = FakeToolSession({"search_layers": ToolOutcome(text="[]", data=[], is_error=False)})
+    models = FakeModels([text_result("Antwort.")])
+    await _collect(_message(), models, FakeGateway(session), settings, TurnStats())
+    assert "display_division" not in models.calls[0]["system"]
+
+    with_division = FakeToolSession(
+        {
+            "search_layers": ToolOutcome(text="[]", data=[], is_error=False),
+            "display_division": ToolOutcome(text="{}", data={}, is_error=False),
+        }
+    )
+    models = FakeModels([text_result("Antwort.")])
+    await _collect(_message(), models, FakeGateway(with_division), settings, TurnStats())
+    assert "display_division" in models.calls[0]["system"]
+
+
+async def test_a_division_boundary_reaches_the_client_as_a_layer(settings) -> None:
+    """`display_division` answers with the same `layer` envelope as `display_layer`, so a
+    boundary is an ordinary data layer to everything downstream."""
+    payload = {
+        "layer": {
+            "id": "division-kanton-Zug",
+            "name": "Zug",
+            "format": "geojson",
+            "url": "http://127.0.0.1:5000/layers/divisions/kanton-zug.geojson",
+            "geometry_type": "Polygon",
+            "feature_count": 1,
+            "bbox": [8.4, 47.0, 8.7, 47.3],
+        }
+    }
+    session = FakeToolSession(
+        {"display_division": ToolOutcome(text=json.dumps(payload), data=payload, is_error=False)}
+    )
+    models = FakeModels(
+        [
+            tool_result("display_division", {"name": "Zug", "kind": "kanton"}),
+            text_result("Der Kanton Zug ist auf der Karte."),
+        ]
+    )
+
+    events = await _collect(
+        _message("Zeig mir den Kanton Zug"), models, FakeGateway(session), settings, TurnStats()
+    )
+    final = events[-1]
+    assert final.type == "final"
+    assert [layer.name for layer in final.layers] == ["Zug"]
