@@ -21,6 +21,7 @@ Metadata:
           - BedrockRegion
           - PublicBaseUrl
           - McpServerUrl
+          - ServiceConnectNamespace
           - DataLayerPresignTtl
           - LogLevel
       - Label: { default: Limits and optional key }
@@ -115,6 +116,15 @@ Parameters:
       every turn rather than answering from the bundled stand-in (see
       docs/protocol.md). Set this to swisstopo's endpoint to turn the chat on, with no
       image change.
+  ServiceConnectNamespace:
+    Type: String
+    Default: ''
+    Description: >-
+      Cloud Map namespace ARN to join — the geosearch foundation stack's NamespaceArn
+      output. Required whenever McpServerUrl is a Service Connect name such as
+      http://sgs-llm-geosearch:8790/mcp: that name exists only inside the namespace,
+      so without this the backend resolves nothing and every tool call fails. Leave
+      empty for an externally hosted MCP server, or none at all.
   ApiKey:
     Type: String
     Default: ''
@@ -157,6 +167,7 @@ Conditions:
   HasSecondaryModel: !Not [!Equals [!Ref SecondaryModelId, '']]
   HasSecondaryRegion: !Not [!Equals [!Ref SecondaryModelRegion, '']]
   HasMcpServer: !Not [!Equals [!Ref McpServerUrl, '']]
+  HasServiceConnect: !Not [!Equals [!Ref ServiceConnectNamespace, '']]
 
 Resources:
   Cluster:
@@ -290,6 +301,15 @@ Resources:
           SecurityGroups:
             - !ImportValue
                 Fn::Sub: '${FoundationStackName}-TaskSecurityGroupId'
+      # Client side of Service Connect: no Services block, so this task publishes
+      # nothing and only gains the ability to resolve names in the namespace. The
+      # ALB path below is untouched — inbound traffic still lands on the container
+      # port directly; only outbound calls to namespace names go via the sidecar.
+      ServiceConnectConfiguration: !If
+        - HasServiceConnect
+        - Enabled: true
+          Namespace: !Ref ServiceConnectNamespace
+        - !Ref AWS::NoValue
       LoadBalancers:
         - ContainerName: !Ref BackendName
           ContainerPort: !Ref ContainerPort

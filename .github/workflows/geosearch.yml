@@ -1,0 +1,160 @@
+name: Geosearch
+
+# Checks, builds and deploys the geodata MCP server. Separate from ci.yml because it needs
+# faiss and the 143 MB prebuilt index, neither of which the frontend or the backend job
+# should wait on. ci.yml's `mypy` already covers geosearch (backend/pyproject lists it in
+# `files`); ruff and the geosearch tests were covered nowhere, and are here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'geosearch/**'
+      - '.dockerignore'
+      - 'scripts/deploy-geosearch.sh'
+      - '.github/workflows/geosearch.yml'
+  pull_request:
+    paths:
+      - 'geosearch/**'
+      - '.github/workflows/geosearch.yml'
+  workflow_dispatch:
+
+# Never let two deploys race the same ECS service.
+concurrency:
+  group: geosearch-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: geosearch/requirements-dev.txt
+      - run: pip install -r geosearch/requirements-dev.txt
+      - run: ruff check geosearch
+      # The index fixtures embed with a deterministic trigram stub, so this job needs no
+      # model download and no AWS role - it could not assume one anyway. Nothing here
+      # touches geo.admin.ch or Bedrock.
+      - run: pytest geosearch -q
+
+  # Builds the image, proves it serves, and rolls the ECS service onto it.
+  #
+  # This needs the prebuilt index, which is 143 MB of `python -m geosearch.build` output:
+  # ~12 minutes and a few thousand requests to geo.admin.ch, and two runs a week apart
+  # produce two different indexes. So it is built by a human and published, never rebuilt
+  # per commit:
+  #
+  #   python -m geosearch.build
+  #   aws s3 sync index/ s3://sgs-llm-index-<account>/index/ --delete
+  #
+  # Set the repository variable GEOSEARCH_INDEX_URI to that prefix (it is the
+  # geosearch-foundation stack's IndexUri output). Until then this job FAILS: it has no
+  # index, so it cannot build the image, and a green run that shipped nothing would be
+  # read as a successful deploy.
+  deploy:
+    needs: test
+    # Not on pull_request: this job assumes an AWS role, and a fork PR must never be able
+    # to reach it.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      INDEX_URI: ${{ vars.GEOSEARCH_INDEX_URI }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fails rather than skipping. A deploy job that quietly reports green having built
+      # and shipped nothing is worse than a red one: the run is the only signal anybody
+      # reads, and "no index configured" is not a state this repository should sit in
+      # silently once geosearch is on main.
+      - name: Require a published index
+        run: |
+          if [ -z "$INDEX_URI" ]; then
+            echo "::error::GEOSEARCH_INDEX_URI is unset, so there is no index to build \
+          the image from. Publish one and set the repository variable - see the comment \
+          at the top of this job."
+            exit 1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::259789526488:role/github-actions-sgs-llm-geosearch-deploy
+          aws-region: eu-central-1
+
+      # `aws s3 sync` exits 0 against an empty or wrong prefix, having copied nothing, so
+      # the transfer is not the check - the files are. All four are required together:
+      # row `rid` in DuckDB is vector `rid` in the .faiss files, and a partial sync would
+      # otherwise reach `docker build` and fail somewhere far less obvious.
+      - name: Fetch the index
+        run: |
+          aws s3 sync "$INDEX_URI" index/
+          missing=0
+          for f in geosearch.duckdb layer_title.faiss layer_description.faiss division_name.faiss; do
+            if [ ! -s "index/$f" ]; then
+              echo "::error::$INDEX_URI is missing $f, or it is empty."
+              missing=1
+            fi
+          done
+          # The division boundaries are read from the image at runtime (geosearch/s3.py,
+          # BoundaryStore), so an index without them deploys and then 500s on every
+          # display_division call.
+          boundaries=$(find index/s3 -name '*.geojson' 2>/dev/null | wc -l)
+          if [ "$boundaries" -eq 0 ]; then
+            echo "::error::$INDEX_URI has no boundary GeoJSONs under s3/."
+            missing=1
+          fi
+          [ "$missing" -eq 0 ] || exit 1
+          echo "index: $boundaries boundaries, $(du -sh index | cut -f1)"
+
+      # --platform pins what the task definition pins, and keeps these layers in the cache
+      # for the deploy step's rebuild. ~0.5 GB, most of it the index being copied in.
+      - name: Build the image
+        run: docker build --platform linux/amd64 -f geosearch/Dockerfile -t sgs-llm-geosearch:ci .
+
+      # Fail here rather than in the cluster. /health reports the index counts, so a
+      # container that started but loaded nothing fails this check.
+      - name: Smoke-test the image
+        run: |
+          # GEOSEARCH_S3_BUCKET must be set to *something*: unset means local development,
+          # and the image carries no moto to stand in for S3, so the process exits before
+          # it serves anything. The name is never dialled here - S3Store only builds a
+          # boto3 client at startup, and nothing in this check publishes a layer.
+          docker run -d --name smoke -p 8790:8790 \
+            -e GEOSEARCH_S3_BUCKET=smoke-never-written-to \
+            -e GEOSEARCH_ALLOWED_HOSTS=sgs-llm-geosearch:8790 sgs-llm-geosearch:ci
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8790/health >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8790/health
+          test "$(curl -s http://127.0.0.1:8790/health | python -c 'import json,sys;print(json.load(sys.stdin)["layers"] > 0)')" = "True"
+          # /health is not enough on its own. It dials loopback, which the MCP SDK's
+          # DNS-rebinding guard always allows, so it stayed green through a deploy where
+          # every POST /mcp came back 421 because the backend addresses this server by
+          # its service name. Send the Host header the backend sends.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8790/mcp \
+            -H 'Host: sgs-llm-geosearch:8790' \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}')
+          if [ "$code" != "200" ]; then
+            echo "::error::POST /mcp with the backend's Host header returned $code, not 200."
+            docker logs smoke | tail -20
+            exit 1
+          fi
+          docker rm -f smoke
+
+      # Same script as a manual deploy. USE_LOCAL_INDEX=1 because the index is already
+      # fetched — and because it guarantees the image that ships is built from exactly the
+      # index that was just smoke-tested. The build is a cache hit on the layers above.
+      #
+      # The ECS deployment circuit breaker rolls back automatically if the new task never
+      # becomes healthy, and the script then fails the job.
+      - name: Deploy geosearch
+        run: PROFILE= USE_LOCAL_INDEX=1 ./scripts/deploy-geosearch.sh

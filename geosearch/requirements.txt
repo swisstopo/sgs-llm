@@ -1,0 +1,36 @@
+# Runtime dependencies for the geodata MCP server. Its own file, not backend's: this
+# deploys as a separate container and must not inherit fastapi/pydantic, nor drag faiss
+# into the agent image.
+#
+# Pinned exactly, for the same reason backend/requirements.txt is: the image is the
+# contract with the deployed infrastructure.
+
+# MCP 2.0 renamed the client entry point and moved to snake_case model fields; it also
+# supersedes FastMCP with MCPServer. Do not "upgrade" from a 1.x recipe.
+mcp==2.0.0
+uvicorn[standard]==0.52.0
+
+# geosearch/swisstopo.py is written against plain httpx's API, so it is pinned here.
+# httpx2 is a *different library*, and it is installed too - mcp 2.0 requires httpx2>=2.5.0
+# and pulls it in transitively. Both coexist on purpose; removing either breaks something.
+httpx==0.28.1
+
+# Records and vectors: DuckDB holds the rows, the .faiss files hold their embeddings,
+# and row `rid` is vector `rid` - they are written together and only correct together.
+duckdb==1.5.5
+faiss-cpu==1.15.0
+numpy==2.5.1
+
+# Bedrock (embeddings and the rerank stage) and S3. Embedding is a Bedrock call now, not
+# a local model: fastembed and onnxruntime used to sit here to run multilingual-e5-large
+# on CPU, and between the wheels and the baked weights they were ~4.3 GB of the image.
+boto3==1.43.59
+
+# `compute`. GeoJSON only - the frontend cannot render GeoParquet
+# (docs/architecture.md#data-layers-from-chat), so pyarrow is deliberately absent.
+shapely==2.1.2
+pyproj==3.7.2
+
+# moto is NOT here: it stands in for S3 during local development only, and the task role
+# in infra/geosearch-foundation.yaml now covers the real bucket. It lives in
+# requirements-dev.txt, so the deployed image ships no test double.

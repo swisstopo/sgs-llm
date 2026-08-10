@@ -12,6 +12,12 @@
   "layers": {
     "empty": "No layers on the map yet.",
     "opacity": "Opacity",
+    "style": "Styling and symbology",
+    "fillColor": "Fill colour",
+    "strokeColor": "Outline colour",
+    "strokeWidth": "Outline width",
+    "pointRadius": "Point size",
+    "fillOpacity": "Fill opacity",
     "remove": "Remove layer",
     "moveUp": "Move up",
     "moveDown": "Move down",
@@ -46,7 +52,9 @@
   "identify": {
     "loading": "Querying features …",
     "empty": "No features at this location.",
-    "close": "Close"
+    "close": "Close",
+    "feature": "Feature",
+    "noAttributes": "No attributes on this feature."
   },
   "legend": {
     "loading": "Loading legend …",

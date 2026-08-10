@@ -1,0 +1,411 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SGS LLM geodata MCP server — durable foundation: ECR, the index bucket CI builds
+  from, a Service Connect namespace, log group, security group and IAM roles. Consumes
+  the backend foundation's VPC, subnets and task security group; creates no network
+  topology of its own. Deployed once and then left alone; the ECS service lives in
+  geosearch-service.yaml because it cannot be created before an image exists in ECR.
+  See geosearch/README.md#deployment.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Naming and tagging }
+        Parameters: [ProjectTag, GeosearchName]
+      - Label: { default: Wiring }
+        Parameters: [BackendFoundationStackName, ContainerPort, NamespaceName]
+      - Label: { default: CI/CD }
+        Parameters: [OidcProviderArn, GitHubRepo, GitHubBranch]
+
+Parameters:
+  ProjectTag:
+    Type: String
+    Default: sgs-llm-poc
+    Description: Value of the `project` tag applied to every taggable resource.
+  GeosearchName:
+    Type: String
+    Default: sgs-llm-geosearch
+    Description: Base name for the ECR repository, log group, service and IAM roles.
+  BackendFoundationStackName:
+    Type: String
+    Default: sgs-llm-backend-foundation
+    Description: >-
+      Stack whose exports this one consumes: VpcId, ServiceSubnetIds,
+      TaskSecurityGroupId (the backend tasks, the only client allowed in) and
+      DataLayerBucketName (where published layers go).
+  ContainerPort:
+    Type: Number
+    Default: 8790
+    Description: Port the MCP server listens on (/mcp, plus /health).
+  NamespaceName:
+    Type: String
+    Default: sgs-llm
+    Description: >-
+      Cloud Map namespace for ECS Service Connect. The backend reaches this server
+      at http://<GeosearchName>:<ContainerPort>/mcp — no load balancer, because
+      nothing outside the VPC may ever call it.
+  OidcProviderArn:
+    Type: String
+    Default: ''
+    Description: >-
+      ARN of the existing GitHub Actions OIDC provider. Leave empty to derive
+      arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
+      (created once for the frontend deploy role — this template never recreates it).
+  GitHubRepo:
+    Type: String
+    Default: swisstopo/sgs-llm
+    Description: Repository allowed to assume the geosearch deploy role.
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: Branch allowed to assume the geosearch deploy role. Nothing else can.
+
+Conditions:
+  HasOidcProviderArn: !Not [!Equals [!Ref OidcProviderArn, '']]
+
+Resources:
+  # ------------------------------------------------------------- index artifacts
+  # `python -m geosearch.build` output: DuckDB rows, three .faiss files and the
+  # 6272 division boundaries, ~143 MB. It takes ~12 minutes and a few thousand
+  # requests to geo.admin.ch, and two runs a week apart produce two different
+  # indexes — so it is built by a human, published here, and copied into the image
+  # by CI. It is deliberately NOT the data-layer bucket: that one expires
+  # everything after 30 days, which is right for published layers and fatal here.
+  IndexBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'sgs-llm-index-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      # Versioned because `aws s3 sync --delete` is how an index is published, and
+      # a half-finished sync is otherwise unrecoverable — rebuilding the previous
+      # index means an unrepeatable set of upstream responses.
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-superseded-indexes
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  IndexBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref IndexBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt IndexBucket.Arn
+              - !Sub '${IndexBucket.Arn}/*'
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+
+  # ------------------------------------------------------------------- registry
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref GeosearchName
+      ImageTagMutability: MUTABLE
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        # Five, not the backend's twenty: each image carries 143 MB of index on
+        # top of its dependencies. Layers dedupe across builds, but five
+        # rollback targets is already more than a pilot will ever walk back.
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the 5 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${GeosearchName}'
+      RetentionInDays: 30
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # --------------------------------------------------------- service discovery
+  # No load balancer. The MCP server has exactly one client — the backend task, in
+  # this VPC — and an internal ALB would be ~$16/month plus a target group and two
+  # more security group rules to say what a name says for nothing at all.
+  #
+  # An HTTP namespace rather than a private DNS one, because this account's
+  # AccountAdmin policy carries an explicit Deny on route53:CreateHostedZone (next
+  # to ~40 ec2 network-topology actions and directconnect:* — the VPC belongs to
+  # swisstopo's cloud team, not to this project). AWS::ServiceDiscovery::
+  # PrivateDnsNamespace creates a private hosted zone, so it fails here, and an
+  # explicit Deny is not something the AdministratorAccess on the same principal
+  # can override. An HTTP namespace creates no zone: ECS Service Connect resolves
+  # the name through the agent in the task rather than through DNS, and costs
+  # nothing. The price is that both ends must opt in, which is why
+  # backend-service.yaml takes a ServiceConnectNamespace parameter.
+  #
+  # No AWS::ServiceDiscovery::Service either — Service Connect creates and
+  # deregisters its own, from the ServiceConnectConfiguration in the ECS service.
+  Namespace:
+    Type: AWS::ServiceDiscovery::HttpNamespace
+    Properties:
+      Name: !Ref NamespaceName
+      Description: !Sub 'Service Connect namespace for ${ProjectTag}'
+
+  # ------------------------------------------------------------ security group
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${GeosearchName} Fargate tasks - inbound from the backend only'
+      VpcId: !ImportValue
+        Fn::Sub: '${BackendFoundationStackName}-VpcId'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Egress to geo.admin.ch, Bedrock, ECR and S3
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${GeosearchName}-task-sg' }
+
+  # The only way in. Not the ALB and not the CloudFront prefix list: no browser
+  # ever talks to this server, and `result_id` handles would be a data leak if one
+  # could — they name results the caller never fetched.
+  IngressFromBackend:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref TaskSecurityGroup
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      SourceSecurityGroupId: !ImportValue
+        Fn::Sub: '${BackendFoundationStackName}-TaskSecurityGroupId'
+      Description: MCP traffic from the agent backend tasks
+
+  # ------------------------------------------------------------------ IAM roles
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${GeosearchName}-task-execution'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # What the MCP server itself may do. Narrower than the backend's: no DynamoDB,
+  # no Secrets Manager, no conversation data ever reaches this process.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${GeosearchName}-task'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        # The rerank stage: an LLM prunes the FAISS candidates before they are
+        # returned. Same EU inference profiles as the backend (see its TaskRole for
+        # why InvokeModel covers Converse).
+        - PolicyName: bedrock-rerank
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*:${AWS::AccountId}:inference-profile/eu.*'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*::foundation-model/*'
+              - Effect: Allow
+                Action: [bedrock:ListInferenceProfiles, bedrock:GetInferenceProfile]
+                Resource: '*'
+        # display_layer and display_division publish GeoJSON and hand back a
+        # presigned URL. GetObject is needed as well as PutObject: a presigned URL
+        # carries the signer's permissions, so without it every map layer 403s in
+        # the browser. This policy is what retires the moto stand-in.
+        - PolicyName: publish-data-layers
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub
+                  - 'arn:${AWS::Partition}:s3:::${Bucket}/layers/*'
+                  - Bucket: !ImportValue
+                      Fn::Sub: '${BackendFoundationStackName}-DataLayerBucketName'
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !Sub
+                  - 'arn:${AWS::Partition}:s3:::${Bucket}'
+                  - Bucket: !ImportValue
+                      Fn::Sub: '${BackendFoundationStackName}-DataLayerBucketName'
+        - PolicyName: runtime-support
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ECS Exec, so a shell into a running task is possible without SSH.
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: '*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub '${LogGroup.Arn}:*'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  # Its own role rather than extra statements on the backend's: that one is scoped
+  # to one repository and one service on purpose, and widening it would let a
+  # backend deploy roll this service too.
+  GeosearchDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'github-actions-${GeosearchName}-deploy'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - HasOidcProviderArn
+                - !Ref OidcProviderArn
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+      Policies:
+        - PolicyName: build-push-and-roll-service
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Read-only on the index: CI copies it into the image and must never
+              # be able to overwrite the artifact it is building from.
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub '${IndexBucket.Arn}/*'
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt IndexBucket.Arn
+              # deploy-geosearch.sh resolves the ECR repository URI from this
+              # stack's outputs rather than hardcoding it.
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*'
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                  - ecr:DescribeImages
+                Resource: !GetAtt EcrRepository.Arn
+              - Effect: Allow
+                Action: [ecs:DescribeServices, ecs:UpdateService]
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/sgs-llm/${GeosearchName}'
+              - Effect: Allow
+                Action: [ecs:DescribeTasks, ecs:ListTasks]
+                Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/sgs-llm'
+              # RegisterTaskDefinition has no resource-level permissions.
+              - Effect: Allow
+                Action: [ecs:RegisterTaskDefinition, ecs:DescribeTaskDefinition]
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: [!GetAtt TaskRole.Arn, !GetAtt TaskExecutionRole.Arn]
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+Outputs:
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export: { Name: !Sub '${AWS::StackName}-EcrRepositoryUri' }
+  IndexBucketName:
+    Value: !Ref IndexBucket
+    Export: { Name: !Sub '${AWS::StackName}-IndexBucketName' }
+  IndexUri:
+    Description: >-
+      Publish with `aws s3 sync index/ <this>/ --delete`, and set it as the
+      GEOSEARCH_INDEX_URI repository variable so CI can build the image.
+    Value: !Sub 's3://${IndexBucket}/index'
+  LogGroupName:
+    Value: !Ref LogGroup
+    Export: { Name: !Sub '${AWS::StackName}-LogGroupName' }
+  TaskSecurityGroupId:
+    Value: !Ref TaskSecurityGroup
+    Export: { Name: !Sub '${AWS::StackName}-TaskSecurityGroupId' }
+  NamespaceArn:
+    Description: >-
+      Both ECS services join this: geosearch-service.yaml to publish the name,
+      and backend-service.yaml's ServiceConnectNamespace to resolve it.
+    Value: !GetAtt Namespace.Arn
+    Export: { Name: !Sub '${AWS::StackName}-NamespaceArn' }
+  TaskRoleArn:
+    Value: !GetAtt TaskRole.Arn
+    Export: { Name: !Sub '${AWS::StackName}-TaskRoleArn' }
+  TaskExecutionRoleArn:
+    Value: !GetAtt TaskExecutionRole.Arn
+    Export: { Name: !Sub '${AWS::StackName}-TaskExecutionRoleArn' }
+  McpServerUrl:
+    Description: >-
+      Set this as backend-service.yaml's McpServerUrl parameter — it is the switch
+      that turns the chat on.
+    Value: !Sub 'http://${GeosearchName}:${ContainerPort}/mcp'
+    Export: { Name: !Sub '${AWS::StackName}-McpServerUrl' }
+  GeosearchDeployRoleArn:
+    Description: role-to-assume for the geosearch deploy workflow (not a secret).
+    Value: !GetAtt GeosearchDeployRole.Arn

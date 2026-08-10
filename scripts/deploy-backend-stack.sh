@@ -33,7 +33,8 @@ PROFILE_ARGS=()
 if [[ -n "$PROFILE" ]]; then
   PROFILE_ARGS=(--profile "$PROFILE")
 fi
-AWS=(aws "${PROFILE_ARGS[@]}" --region "$REGION")
+# ${x[@]+"${x[@]}"}: bash 3.2 (macOS) treats an empty array as unset under `set -u`.
+AWS=(aws ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --region "$REGION")
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$ROOT/infra/backend-service.yaml"
@@ -79,8 +80,15 @@ PY
   exit 1
 fi
 
-mapfile -t PARAMS <<<"$RESOLVED"
-if [[ ${#PARAMS[@]} -eq 0 || -z "${PARAMS[0]}" ]]; then
+# A read loop rather than `mapfile`, which is bash 4+: macOS ships bash 3.2, and this
+# script's whole reason to exist is being run by hand. The here-string keeps the loop in
+# the current shell, so PARAMS survives it — the caveat above about process substitution
+# applies to `< <(...)`, not to `<<<`.
+PARAMS=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && PARAMS+=("$line")
+done <<<"$RESOLVED"
+if [[ ${#PARAMS[@]} -eq 0 || -z "${PARAMS[0]-}" ]]; then
   echo "!! Resolved an empty parameter list; refusing to submit." >&2
   exit 1
 fi
@@ -112,6 +120,6 @@ if "${AWS[@]}" cloudformation wait stack-update-complete --stack-name "$STACK"; 
   echo ">> Done"
 else
   echo "!! Update failed or rolled back. Inspect:" >&2
-  echo "   aws cloudformation describe-stack-events --stack-name $STACK ${PROFILE_ARGS[*]} --region $REGION --max-items 20" >&2
+  echo "   aws cloudformation describe-stack-events --stack-name $STACK ${PROFILE_ARGS[*]-} --region $REGION --max-items 20" >&2
   exit 1
 fi

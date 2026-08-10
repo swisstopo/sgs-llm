@@ -13,7 +13,7 @@ import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
 import type { MapService } from './MapService';
 import type { LayerConfig } from '../swisstopo/layersConfigApi';
-import type { LayerSpec } from '../protocol/v1';
+import type { LayerSpec, StyleHint } from '../protocol/v1';
 import { wmtsTileUrl } from '../swisstopo/wmts';
 import { wmsParams, wmsUrl } from '../swisstopo/wms';
 import { isDisplayable, layerAttribution } from '../swisstopo/layers';
@@ -93,6 +93,11 @@ export class LayerService {
 
   isActive(id: string): boolean {
     return this.olLayers.has(id);
+  }
+
+  /** The OpenLayers layer backing a panel entry - used to name a feature's source. */
+  olLayerFor(id: string): BaseLayer | undefined {
+    return this.olLayers.get(id);
   }
 
   async addOfficialLayer(id: string): Promise<AddLayerResult> {
@@ -299,6 +304,25 @@ export class LayerService {
     this.olLayers.get(id)?.setOpacity(opacity);
     this.update(
       this.layersSubject.value.map((layer) => (layer.id === id ? { ...layer, opacity } : layer)),
+    );
+  }
+
+  /**
+   * Restyles a chat data layer. The hint is merged into the layer's spec, so
+   * the panel and the map keep showing the same symbology.
+   */
+  setStyle(id: string, hint: StyleHint): void {
+    const state = this.layersSubject.value.find((layer) => layer.id === id);
+    const olLayer = this.olLayers.get(id);
+    if (state?.kind !== 'data' || !(olLayer instanceof VectorLayer)) {
+      return;
+    }
+    const spec: LayerSpec = { ...state.spec, style_hint: { ...state.spec.style_hint, ...hint } };
+    olLayer.setStyle(buildDataLayerStyle(spec));
+    this.update(
+      this.layersSubject.value.map((layer) =>
+        layer.id === id && layer.kind === 'data' ? { ...layer, spec } : layer,
+      ),
     );
   }
 

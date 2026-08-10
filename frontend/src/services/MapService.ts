@@ -13,6 +13,7 @@ import CircleStyle from 'ol/style/Circle';
 import Style from 'ol/style/Style';
 import { defaults as defaultControls } from 'ol/control/defaults';
 import { transformExtent } from 'ol/proj';
+import type BaseLayer from 'ol/layer/Base';
 import { BehaviorSubject, Subject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
@@ -41,6 +42,18 @@ const DEFAULT_ZOOM = 1;
 export type BBox = [number, number, number, number];
 
 /**
+ * Pixel radius for vector hit-testing. A 1 px line is unclickable with a mouse and
+ * hopeless with a finger; this is what makes thin borders and small points selectable.
+ */
+const HIT_TOLERANCE = 6;
+
+/** A vector feature under the pointer, with the map layer it came from. */
+export interface FeatureHit {
+  feature: Feature;
+  layer: BaseLayer;
+}
+
+/**
  * Owns the single OpenLayers map instance: view, basemaps, and camera
  * movements. Components attach it to the DOM and react to its subjects.
  */
@@ -51,7 +64,11 @@ export class MapService {
   private readonly basemapLayers = new Map<BasemapId, TileLayer<XYZ>>();
   private readonly clickSubject = new Subject<[number, number]>();
   private readonly highlightSource = new VectorSource();
+  private readonly hoverSource = new VectorSource();
   private readonly locationSource = new VectorSource();
+  /** Our own overlays, excluded from hit-testing: they are decoration, not data. */
+  private readonly internalLayers = new Set<BaseLayer>();
+  private hovered?: Feature;
 
   constructor(private readonly catalog: CatalogService) {
     this.map = new OlMap({
@@ -71,7 +88,7 @@ export class MapService {
         constrainOnlyCenter: true,
       }),
     });
-    this.map.addLayer(
+    this.addInternalLayer(
       new VectorLayer({
         source: this.highlightSource,
         zIndex: 1000,
@@ -86,7 +103,24 @@ export class MapService {
         }),
       }),
     );
-    this.map.addLayer(
+    // Separate source from the click highlight, and below it: hovering must not wipe
+    // the selection the user just made by clicking.
+    this.addInternalLayer(
+      new VectorLayer({
+        source: this.hoverSource,
+        zIndex: 999,
+        style: new Style({
+          fill: new Fill({ color: 'rgba(255, 255, 255, 0.2)' }),
+          stroke: new Stroke({ color: '#ffffff', width: 4 }),
+          image: new CircleStyle({
+            radius: 10,
+            stroke: new Stroke({ color: '#ffffff', width: 3 }),
+            fill: new Fill({ color: 'rgba(255, 255, 255, 0.3)' }),
+          }),
+        }),
+      }),
+    );
+    this.addInternalLayer(
       new VectorLayer({
         source: this.locationSource,
         zIndex: 1001,
@@ -102,7 +136,60 @@ export class MapService {
     this.map.on('singleclick', (event) => {
       this.clickSubject.next(event.coordinate as [number, number]);
     });
+    this.map.on('pointermove', (event) => {
+      // Panning: the pointer is dragging the map, not pointing at anything.
+      if (event.dragging) {
+        return;
+      }
+      this.onPointerMove(event.pixel);
+    });
+    // OpenLayers has no leave event, and without this the last highlight and the pointer
+    // cursor stick when the mouse exits the map onto a panel.
+    this.map.getViewport().addEventListener('pointerleave', () => this.clearHover());
     void this.initBasemaps();
+  }
+
+  private addInternalLayer(layer: BaseLayer): void {
+    this.internalLayers.add(layer);
+    this.map.addLayer(layer);
+  }
+
+  /**
+   * Hit-tests, then emits and repaints only when the feature under the pointer actually
+   * changes. pointermove fires on every mouse motion, and re-styling a canton polygon on
+   * each one is visible as jitter.
+   */
+  private onPointerMove(pixel: number[]): void {
+    const hit = this.featureAtPixel(pixel);
+    if (hit?.feature === this.hovered) {
+      return;
+    }
+    this.hovered = hit?.feature;
+    this.hoverSource.clear();
+    const geometry = hit?.feature.getGeometry();
+    if (geometry) {
+      this.hoverSource.addFeature(new Feature(geometry));
+    }
+    // The cursor is the affordance: without it nothing suggests features are clickable.
+    this.map.getViewport().style.cursor = hit ? 'pointer' : '';
+  }
+
+  /**
+   * Topmost vector feature at a pixel, or undefined. Raster overlays are invisible here
+   * by construction - they have no client-side geometry, which is why identify exists.
+   */
+  featureAtPixel(pixel: number[]): FeatureHit | undefined {
+    return this.map.forEachFeatureAtPixel(
+      pixel,
+      (feature, layer) => (feature instanceof Feature && layer ? { feature, layer } : undefined),
+      { hitTolerance: HIT_TOLERANCE, layerFilter: (layer) => !this.internalLayers.has(layer) },
+    );
+  }
+
+  clearHover(): void {
+    this.hovered = undefined;
+    this.hoverSource.clear();
+    this.map.getViewport().style.cursor = '';
   }
 
   /** Places (or moves) the geolocation marker, EPSG:2056. */
@@ -152,6 +239,19 @@ export class MapService {
       } catch {
         // skip unparseable geometries
       }
+    }
+  }
+
+  /**
+   * Highlights a feature already on the map. Separate from setHighlight because its
+   * geometry is an OpenLayers object in the view projection, not GeoJSON off the wire -
+   * round-tripping it through the format would only lose precision.
+   */
+  highlightFeature(feature: Feature): void {
+    this.highlightSource.clear();
+    const geometry = feature.getGeometry();
+    if (geometry) {
+      this.highlightSource.addFeature(new Feature(geometry));
     }
   }
 

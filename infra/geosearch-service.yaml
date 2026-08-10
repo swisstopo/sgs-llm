@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SGS LLM geodata MCP server — task definition and Fargate service. Deployed AFTER
+  geosearch-foundation.yaml, after backend-service.yaml has created the cluster, and
+  after a first image exists in ECR. Routine code deploys do not touch this stack: CI
+  registers a new task definition revision and rolls the service.
+  See geosearch/README.md#deployment.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Wiring }
+        Parameters:
+          - GeosearchFoundationStackName
+          - BackendFoundationStackName
+          - ClusterName
+          - GeosearchName
+          - ProjectTag
+      - Label: { default: Task sizing }
+        Parameters: [TaskCpu, TaskMemory, DesiredCount, ImageTag, ContainerPort]
+      - Label: { default: Server configuration }
+        Parameters: [RerankModelId, RerankModelRegion, LogLevel]
+
+Parameters:
+  GeosearchFoundationStackName:
+    Type: String
+    Default: sgs-llm-geosearch-foundation
+    Description: Stack name whose exports this service consumes.
+  BackendFoundationStackName:
+    Type: String
+    Default: sgs-llm-backend-foundation
+    Description: Stack that owns the VPC wiring and the data-layer bucket.
+  ClusterName:
+    Type: String
+    Default: sgs-llm
+    Description: >-
+      Existing ECS cluster, created by backend-service.yaml. Referenced, not
+      created — two stacks cannot both own it. Must match the cluster in the
+      foundation stack's deploy role policy, otherwise CI cannot roll the service.
+  GeosearchName:
+    Type: String
+    Default: sgs-llm-geosearch
+    Description: Service, task family and container name. Must match the deploy role policy.
+  ProjectTag:
+    Type: String
+    Default: sgs-llm-poc
+  TaskCpu:
+    Type: String
+    Default: '2048'
+    AllowedValues: ['1024', '2048', '4096', '8192']
+    Description: >-
+      Fargate task CPU units (2048 = 2 vCPU). Embedding is a Bedrock call now, so a
+      request is almost entirely waiting - on Bedrock, then on geo.admin.ch.
+  TaskMemory:
+    Type: String
+    Default: '4096'
+    Description: >-
+      Task memory in MiB. Was 8192 to hold the e5-large ONNX session, which was
+      ~2.2 GB resident; embedding moved to Bedrock and that went with it. What is
+      left is the FAISS indexes (~36 MB) and filter_features, which holds a whole
+      layer's features in memory while clipping them (canton Bern's communes are
+      tens of MB of geometry). 2048 CPU permits 4096-16384 in 1024 steps.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 1
+    Description: >-
+      Capped at 1 on purpose. `result_id` handles live in the ResultCache inside
+      one process (geosearch/results.py), so a second task would answer `compute`
+      with "unknown result_id" for half the handles it just issued. Raising this
+      needs a shared store or sticky routing first. Set 0 to park the service.
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: >-
+      ECR image tag to run. CI deploys by immutable commit sha and does not update
+      this stack, so it only matters for the initial create.
+  ContainerPort:
+    Type: Number
+    Default: 8790
+    Description: Must match the foundation stack's security group rule and DNS record.
+  RerankModelId:
+    Type: String
+    Default: mistral.ministral-3-14b-instruct
+    Description: >-
+      Model that prunes the FAISS candidates. Small on purpose — it is a filter,
+      not a writer, and it runs on every search.
+  RerankModelRegion:
+    Type: String
+    Default: eu-west-1
+    Description: >-
+      Region for the rerank model. The pilot's Mistral is only offered in-region in
+      eu-west-1, and in-region on-demand is the one path an organization SCP does
+      not block (see docs/llm.md).
+  LogLevel:
+    Type: String
+    Default: info
+    AllowedValues: [debug, info, warning, error]
+
+Resources:
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref GeosearchName
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      # Pinned: CI builds on x86 runners, so the task must not default elsewhere.
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${GeosearchFoundationStackName}-TaskExecutionRoleArn'
+      TaskRoleArn: !ImportValue
+        Fn::Sub: '${GeosearchFoundationStackName}-TaskRoleArn'
+      ContainerDefinitions:
+        - Name: !Ref GeosearchName
+          Image: !Sub
+            - '${Repo}:${ImageTag}'
+            - Repo: !ImportValue
+                Fn::Sub: '${GeosearchFoundationStackName}-EcrRepositoryUri'
+          Essential: true
+          PortMappings:
+            # Named and typed because Service Connect addresses ports by name;
+            # an unnamed mapping cannot be published to the namespace.
+            - Name: mcp
+              ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+              AppProtocol: http
+          StopTimeout: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !ImportValue
+                Fn::Sub: '${GeosearchFoundationStackName}-LogGroupName'
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: geosearch
+          # Declared here as well as in the image, because this is the one ECS
+          # reads: with no load balancer, container health is what decides whether
+          # the task's IP is registered in DNS at all. /health reports the index
+          # counts, so a task that started without an index never gets traffic.
+          # startPeriod covers reading the index off local disk and opening DuckDB.
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - !Sub 'python -c "import urllib.request;urllib.request.urlopen(''http://127.0.0.1:${ContainerPort}/health'').read()"'
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+          Environment:
+            - { Name: PORT, Value: !Ref ContainerPort }
+            - { Name: LOG_LEVEL, Value: !Ref LogLevel }
+            - { Name: AWS_REGION, Value: !Ref AWS::Region }
+            # Setting this is what switches S3Store from the moto stand-in to the
+            # real bucket (geosearch/server.py:_artifact_store). Unset means local
+            # development, so it must always be present here.
+            - Name: GEOSEARCH_S3_BUCKET
+              Value: !ImportValue
+                Fn::Sub: '${BackendFoundationStackName}-DataLayerBucketName'
+            - { Name: GEOSEARCH_S3_REGION, Value: !Ref AWS::Region }
+            # The Host header the backend sends. Without it the MCP SDK's DNS-rebinding
+            # guard answers every POST /mcp with 421 while /health stays green, because
+            # the health check dials loopback and the backend dials this name.
+            - { Name: GEOSEARCH_ALLOWED_HOSTS, Value: !Sub '${GeosearchName}:${ContainerPort}' }
+            - { Name: BEDROCK_SECONDARY_MODEL_ID, Value: !Ref RerankModelId }
+            - { Name: BEDROCK_SECONDARY_REGION, Value: !Ref RerankModelRegion }
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref GeosearchName
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      EnableExecuteCommand: true
+      PropagateTags: SERVICE
+      DeploymentConfiguration:
+        # 0/100, not the backend's 100/200: two tasks must never run at once, for
+        # the same reason DesiredCount is capped at 1. The cost is a gap of a
+        # minute or two on every deploy, during which the backend's tool calls
+        # fail. That is the honest trade against a `compute` that silently cannot
+        # find the features `filter_features` just returned.
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          # ENABLED because the account forbids creating a NAT gateway, and this
+          # task genuinely needs the internet: every filter_features call goes to
+          # geo.admin.ch. Nothing can reach it inbound — its security group admits
+          # the backend's security group alone.
+          AssignPublicIp: ENABLED
+          Subnets: !Split
+            - ','
+            - !ImportValue
+                Fn::Sub: '${BackendFoundationStackName}-ServiceSubnetIds'
+          SecurityGroups:
+            - !ImportValue
+                Fn::Sub: '${GeosearchFoundationStackName}-TaskSecurityGroupId'
+      # The server side of Service Connect: publish port `mcp` into the namespace
+      # under this service's own name, so the backend reaches it at
+      # http://sgs-llm-geosearch:8790/mcp. ECS runs a proxy sidecar in this task
+      # to terminate that, and registers/deregisters it as tasks come and go.
+      ServiceConnectConfiguration:
+        Enabled: true
+        Namespace: !ImportValue
+          Fn::Sub: '${GeosearchFoundationStackName}-NamespaceArn'
+        Services:
+          - PortName: mcp
+            DiscoveryName: !Ref GeosearchName
+            ClientAliases:
+              - Port: !Ref ContainerPort
+                DnsName: !Ref GeosearchName
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+Outputs:
+  ServiceName:
+    Value: !GetAtt Service.Name
+  TaskDefinitionArn:
+    Description: Initial revision. CI registers later revisions outside this stack.
+    Value: !Ref TaskDefinition
+  # The URL to give backend-service.yaml's McpServerUrl is the foundation stack's
+  # McpServerUrl output; it is not repeated here, because two stacks publishing the
+  # same value is two places for it to drift.
