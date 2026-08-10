@@ -34,3 +34,6 @@ docs/model-cost-options/
 # See infra/dev-access.env.example.
 infra/*.local.env
 infra/*.params.local.json
+
+# Local credential scratch file — never commit.
+.secrets

@@ -21,8 +21,9 @@ The pilot starts with two models, plus a third pending release:
   **GOV.UK Chat runs this exact stack — Claude on Bedrock — at national
   scale**.
 - **Mistral** — the second provider, also served from Bedrock EU regions. Gives
-  us a European model to evaluate side by side on the same harness; the exact
-  variant is fixed during evaluation.
+  us a European model to evaluate side by side on the same harness. The variant
+  was fixed during evaluation to **`mistral.ministral-3-14b-instruct`**, called
+  in-region in `eu-west-1` — see [the evaluation evidence](#workaround-found-for-mistral-in-region-on-demand-in-eu-west-1).
 - **Apertus 1.5** — released 2026-07-24 by the Swiss AI Initiative (ETH Zürich /
   EPFL / CSCS). Attractive for Swiss data sovereignty and for the national
   languages, including Romansh, which the UI already ships. **Not deployable on
@@ -62,9 +63,17 @@ offered in eu-central-1 at all:
 despite being on Bedrock elsewhere. So "Mistral on Bedrock in the EU" means Pixtral
 Large, or a different region.
 
-### ⚠️ Blocker: an organization SCP denies cross-region inference
+### ✅ Resolved (2026-07-30): an organization SCP denied cross-region inference
 
-Every `eu.*` profile currently fails, for **Claude and Mistral alike**:
+> **Status.** swisstopo IT amended SCP `p-ddxnpgbm` on **30 July
+> 2026** — "the region should be available now". The deny below is gone: the next
+> call got past it and failed differently, on the Anthropic use-case form
+> ([next section](#-blocker-anthropic-use-case-details-form-not-submitted)). The
+> diagnosis is kept because it explains why the deployment is shaped the way it
+> is, and what to look at if the guardrail is ever reinstated.
+
+As first observed on 2026-07-29, every `eu.*` profile failed, for **Claude and
+Mistral alike**:
 
 ```text
 AccessDeniedException: not authorized to perform: bedrock:InvokeModel on resource:
@@ -73,21 +82,23 @@ with an explicit deny in a service control policy:
 arn:aws:organizations::705927066274:policy/o-ysrrabz20z/service_control_policy/p-ddxnpgbm
 ```
 
-The cause is structural, not a misconfiguration of this project: an EU inference
+The cause was structural, not a misconfiguration of this project: an EU inference
 profile **routes the request to another EU region** (observed: `eu-north-1` for
-Claude, `eu-west-3` for Nova), and an organization-level SCP denies Bedrock
-actions in those regions. Consequences:
+Claude, `eu-west-3` for Nova), and an organization-level SCP denied Bedrock
+actions in those regions. Consequences at the time:
 
 - **Bedrock itself works in eu-central-1.** In-region on-demand calls succeed —
   `mistral.devstral-2-123b` and `qwen.qwen3-235b-a22b-2507-v1:0` were both invoked
   successfully.
-- **No IAM change in this project can fix it.** An SCP deny overrides any
-  identity-based Allow, including for an account administrator. The task role and
-  developer role are already correct and will work unchanged once the SCP does.
+- **No IAM change in this project could fix it.** An SCP deny overrides any
+  identity-based Allow, including for an account administrator — which is why this
+  had to be resolved by the management account, not here. The task role and
+  developer role were already correct and needed no change when the SCP was
+  amended.
 - **The models the pilot wants are all EU-profile-only in this region** (recent
   Claude is not hosted in-region in Frankfurt, and neither is Pixtral Large), so
-  they are unreachable until this is resolved.
-- **Restart the service after the SCP is amended.** The backend marks a denied model
+  they were unreachable for as long as the deny stood.
+- **Restart the service whenever such a gate lifts.** The backend marks a denied model
   unavailable for the lifetime of the process, so it stops paying the failed call on
   every turn. Running tasks therefore keep serving from the secondary until they are
   replaced: `aws ecs update-service --cluster sgs-llm --service sgs-llm-backend
@@ -122,25 +133,57 @@ Because the two models live in different regions, the task definition carries
 not leave it, so this is a *better* residency story than cross-region inference,
 not a worse one.
 
-**Claude has no such workaround.** Recent Claude is not hosted in-region in any
-SCP-permitted EU region — eu-central-1 offers only Claude 3 Haiku, eu-west-1 only
-Claude 3 Sonnet/Haiku (and that one returns `ResourceNotFoundException`). Anything
-from Sonnet 4.6 upward is EU-profile-only and therefore still blocked.
+**Claude had no such workaround**, which is why the SCP had to be amended rather
+than worked around. Recent Claude is not hosted in-region in any EU region —
+eu-central-1 offers only Claude 3 Haiku, eu-west-1 only Claude 3 Sonnet/Haiku.
+Anything from Sonnet 4.6 upward is EU-profile-only, so it stayed unreachable until
+the guardrail changed.
 
-**Action:** an administrator of the management account (`705927066274`) has to
-amend SCP `p-ddxnpgbm` so `bedrock:InvokeModel` /
-`bedrock:InvokeModelWithResponseStream` are permitted in the regions the EU
-profiles route to — `eu-central-1`, `eu-west-1`, `eu-west-3`, `eu-north-1`,
-`eu-south-1`, `eu-south-2`, `eu-central-2` — or, more narrowly, exempt the
-`bedrock.amazonaws.com` service from the region guardrail. This keeps inference
-inside the EU; it is the same set of regions the EU profile is designed around.
-Confirm the exact list with `aws bedrock get-inference-profile
+**Resolution (2026-07-30).** An administrator of the management account
+(`705927066274`) amended SCP `p-ddxnpgbm` to permit `bedrock:InvokeModel` /
+`bedrock:InvokeModelWithResponseStream` in the regions the EU profiles route to.
+Inference still stays inside the EU — that is the same region set the EU profile
+is designed around. No configuration had to change: the roles were already correct.
+Only the running tasks needed replacing (the restart note above) so a fresh process
+would retry Claude.
+Re-confirm the routed regions at any time with `aws bedrock get-inference-profile
 --inference-profile-identifier eu.anthropic.claude-sonnet-4-6`.
 
-Until then the deployed backend runs with the primary set to
-`eu.anthropic.claude-sonnet-4-6` (blocked) and the secondary to
+### ⚠️ Blocker: Anthropic use-case details form not submitted
+
+With the SCP amended, the first Claude call reached Anthropic's own gate instead:
+
+```text
+ResourceNotFoundException: {
+  "message": "Model use case details have not been submitted for this account.
+   Fill out the Anthropic use case details form before using the model.
+   If you have already filled out the form, try again in 15 minutes."
+}
+```
+
+Bedrock requires a one-time [use-case submission per account][anthropic-access]
+before Anthropic models can be invoked — an account-level form, not an IAM or SCP
+matter, so again nothing in this project can fix it. The form text was agreed with
+swisstopo on 2026-07-31 (conversational assistant for public Swiss federal
+geodata; users are members of the public plus swisstopo staff). **Submission is
+with askEarth**, falling back to swisstopo IT if the rights are missing. Access
+propagates within ~15 minutes of submission.
+
+[anthropic-access]: https://repost.aws/knowledge-center/bedrock-access-anthropic-model
+
+**Current state of the deployed backend:** primary
+`eu.anthropic.claude-sonnet-4-6` (**pending the use-case form**), secondary
 `mistral.ministral-3-14b-instruct` in `eu-west-1` (**working**). Claude starts
-working the moment the SCP is amended; nothing needs to be redeployed.
+working once the form clears **and the service is restarted** — this failure is a
+`ResourceNotFoundException`, which the backend also caches for the life of the
+process (restart note above). No configuration change is needed.
+
+Note that the secondary model stays on merit, not as a fallback: an in-region
+on-demand call in Ireland never leaves the EU, which is a *better* residency story
+than cross-region inference, and it was the variant that actually produced correct
+tool calls. What the amended SCP reopens is **Pixtral Large** — the intended
+general-purpose multimodal evaluation model, EU-profile-only and therefore untested
+until now — as a candidate worth re-probing.
 
 ## Apertus 1.5
 
