@@ -42,6 +42,8 @@
     "addToMap": "Show on map",
     "layerAdded": "On the map",
     "formatUnsupported": "This data format is not supported yet.",
+    "truncatedLayer": "This layer is incomplete because the safe retrieval limit was reached.",
+    "renderExpired": "This temporary map layer has expired. Ask again to regenerate it.",
     "featureCount": "{{count}} features",
     "connection": {
       "open": "Connected",

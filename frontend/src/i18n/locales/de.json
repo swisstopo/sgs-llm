@@ -42,6 +42,8 @@
     "addToMap": "Auf Karte anzeigen",
     "layerAdded": "Auf der Karte",
     "formatUnsupported": "Dieses Datenformat wird noch nicht unterstützt.",
+    "truncatedLayer": "Diese Ebene ist unvollständig, da die sichere Abrufgrenze erreicht wurde.",
+    "renderExpired": "Diese temporäre Kartenebene ist abgelaufen. Fragen Sie erneut, um sie neu zu erzeugen.",
     "featureCount": "{{count}} Objekte",
     "connection": {
       "open": "Verbunden",

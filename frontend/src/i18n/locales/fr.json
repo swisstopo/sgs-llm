@@ -42,6 +42,8 @@
     "addToMap": "Afficher sur la carte",
     "layerAdded": "Sur la carte",
     "formatUnsupported": "Ce format de données n'est pas encore pris en charge.",
+    "truncatedLayer": "Cette couche est incomplète car la limite de récupération sûre a été atteinte.",
+    "renderExpired": "Cette couche cartographique temporaire a expiré. Relancez la demande pour la régénérer.",
     "featureCount": "{{count}} objets",
     "connection": {
       "open": "Connecté",

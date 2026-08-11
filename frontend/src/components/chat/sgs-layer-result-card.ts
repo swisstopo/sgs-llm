@@ -1,7 +1,8 @@
 import { LitElement, css, html, nothing } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import type { LayerSpec } from '../../protocol/v1';
 import { t } from '../../i18n/i18n';
+import { isLayerExpired } from '../../map/mvtLayer';
 
 export interface AddLayerEventDetail {
   layer: LayerSpec;
@@ -35,6 +36,8 @@ export class SgsLayerResultCard extends LitElement {
 
     .actions {
       display: flex;
+      align-items: center;
+      flex-wrap: wrap;
       gap: 0.5rem;
     }
 
@@ -58,14 +61,32 @@ export class SgsLayerResultCard extends LitElement {
       color: var(--sgc-color-text--secondary);
       font-style: italic;
     }
+
+    .warning {
+      margin: 0 0 0.5rem;
+      color: var(--sgc-color-text--secondary);
+      font-weight: 600;
+    }
   `;
 
   @property({ attribute: false }) layer!: LayerSpec;
   @property({ type: Boolean }) added = false;
+  @state() private expired = false;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener('sgs-layer-expired', this.onLayerExpired as EventListener);
+  }
+
+  override disconnectedCallback(): void {
+    window.removeEventListener('sgs-layer-expired', this.onLayerExpired as EventListener);
+    super.disconnectedCallback();
+  }
 
   override render() {
     const { layer } = this;
-    const supported = layer.format === 'geojson';
+    const renderExpired = this.expired || isLayerExpired(layer);
+    const supported = layer.format === 'geojson' || (layer.format === 'mvt' && !renderExpired);
     return html`
       <p class="name">${layer.name}</p>
       <p class="meta">
@@ -74,6 +95,9 @@ export class SgsLayerResultCard extends LitElement {
           : nothing}
         ${layer.attribution ? html` · ${layer.attribution}` : nothing}
       </p>
+      ${layer.truncated
+        ? html`<p class="warning" role="alert">${t('chat.truncatedLayer')}</p>`
+        : nothing}
       <div class="actions">
         ${supported
           ? html`
@@ -81,7 +105,9 @@ export class SgsLayerResultCard extends LitElement {
                 ${this.added ? t('chat.layerAdded') : t('chat.addToMap')}
               </button>
             `
-          : html`<span class="unsupported">${t('chat.formatUnsupported')}</span>`}
+          : html`<span class="unsupported"
+              >${renderExpired ? t('chat.renderExpired') : t('chat.formatUnsupported')}</span
+            >`}
       </div>
     `;
   }
@@ -95,6 +121,13 @@ export class SgsLayerResultCard extends LitElement {
       }),
     );
   }
+
+  private readonly onLayerExpired = (event: CustomEvent<{ id: string }>): void => {
+    if (event.detail.id === this.layer.id) {
+      this.expired = true;
+      this.added = false;
+    }
+  };
 }
 
 declare global {

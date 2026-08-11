@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ImageLayer from 'ol/layer/Image';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
+import VectorTileLayer from 'ol/layer/VectorTile';
 import ImageWMS from 'ol/source/ImageWMS';
 import TileWMS from 'ol/source/TileWMS';
 import VectorSource from 'ol/source/Vector';
@@ -11,6 +12,7 @@ import type { CatalogService } from './CatalogService';
 import type { MapService } from './MapService';
 import type { LayerConfig } from '../swisstopo/layersConfigApi';
 import { registerProjections } from '../lib/projection';
+import { MvtTileSource } from '../map/mvtLayer';
 
 // GeoJSON features are reprojected to the EPSG:2056 map projection.
 registerProjections();
@@ -225,5 +227,90 @@ describe('LayerService official layers', () => {
     expect(service.canZoomTo('chat-1')).toBe(true);
     service.zoomToLayer('chat-1');
     expect(mapService.fitBBox).toHaveBeenCalledWith([7, 46, 8, 47]);
+  });
+
+  it('adds MVT without fetching GeoParquet and preserves the source across style edits', async () => {
+    expect(
+      await service.addDataLayer({
+        id: 'chat-large',
+        name: 'Large result',
+        format: 'mvt',
+        url: '/data/tiles/token/{z}/{x}/{y}.mvt',
+        dispose_url: '/data/layers/token',
+        geometry_type: 'polygon',
+        bbox: [7, 46, 8, 47],
+        min_zoom: 0,
+        max_zoom: 16,
+        attribution: 'swisstopo',
+      }),
+    ).toBe('added');
+
+    const layer = addedLayer() as VectorTileLayer;
+    expect(layer).toBeInstanceOf(VectorTileLayer);
+    const source = layer.getSource();
+    expect(source).toBeInstanceOf(MvtTileSource);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mapService.fitBBox).toHaveBeenCalledWith([7, 46, 8, 47]);
+
+    service.setStyle('chat-large', { fill_color: '#00ff00' });
+    expect(service.layers[0]?.kind).toBe('data');
+    expect(layer.getSource()).toBe(source);
+    expect(layer.getStyle()).toBeTruthy();
+  });
+
+  it('aborts MVT requests before disposing the generated server layer', async () => {
+    const abort = vi.spyOn(MvtTileSource.prototype, 'abortPending');
+    await service.addDataLayer({
+      id: 'chat-large',
+      name: 'Large result',
+      format: 'mvt',
+      url: '/data/tiles/token/{z}/{x}/{y}.mvt',
+      dispose_url: '/data/layers/token',
+      geometry_type: 'polygon',
+      min_zoom: 0,
+      max_zoom: 16,
+    });
+    service.removeLayer('chat-large');
+    expect(abort).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith('/data/layers/token', {
+      method: 'DELETE',
+      keepalive: true,
+    });
+    expect(abort.mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]!);
+  });
+
+  it('reports an HTTP disposal failure instead of treating fetch resolution as success', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
+    await service.addDataLayer({
+      id: 'chat-large',
+      name: 'Large result',
+      format: 'mvt',
+      url: '/data/tiles/token/{z}/{x}/{y}.mvt',
+      dispose_url: '/data/layers/token',
+      geometry_type: 'polygon',
+      min_zoom: 0,
+      max_zoom: 16,
+    });
+
+    service.removeLayer('chat-large');
+    await Promise.resolve();
+
+    expect(warning).toHaveBeenCalledWith('Failed to dispose generated layer chat-large: 503');
+  });
+
+  it('rejects an MVT layer whose capability has expired', async () => {
+    expect(
+      await service.addDataLayer({
+        id: 'expired',
+        name: 'Expired',
+        format: 'mvt',
+        url: '/data/tiles/token/{z}/{x}/{y}.mvt',
+        url_expires_at: '2000-01-01T00:00:00Z',
+        geometry_type: 'polygon',
+        min_zoom: 0,
+        max_zoom: 16,
+      }),
+    ).toBe('expired');
   });
 });

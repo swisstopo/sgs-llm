@@ -1,6 +1,7 @@
 import OlMap from 'ol/Map';
 import View from 'ol/View';
 import Feature from 'ol/Feature';
+import type { FeatureLike } from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import GeoJSON from 'ol/format/GeoJSON';
 import TileLayer from 'ol/layer/Tile';
@@ -14,6 +15,7 @@ import Style from 'ol/style/Style';
 import { defaults as defaultControls } from 'ol/control/defaults';
 import { transformExtent } from 'ol/proj';
 import type BaseLayer from 'ol/layer/Base';
+import RenderFeature, { toGeometry } from 'ol/render/Feature';
 import { BehaviorSubject, Subject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { CatalogService } from './CatalogService';
@@ -49,7 +51,7 @@ const HIT_TOLERANCE = 6;
 
 /** A vector feature under the pointer, with the map layer it came from. */
 export interface FeatureHit {
-  feature: Feature;
+  feature: FeatureLike;
   layer: BaseLayer;
 }
 
@@ -68,7 +70,7 @@ export class MapService {
   private readonly locationSource = new VectorSource();
   /** Our own overlays, excluded from hit-testing: they are decoration, not data. */
   private readonly internalLayers = new Set<BaseLayer>();
-  private hovered?: Feature;
+  private hovered?: FeatureLike;
 
   constructor(private readonly catalog: CatalogService) {
     this.map = new OlMap({
@@ -166,7 +168,7 @@ export class MapService {
     }
     this.hovered = hit?.feature;
     this.hoverSource.clear();
-    const geometry = hit?.feature.getGeometry();
+    const geometry = hit ? featureGeometry(hit.feature) : undefined;
     if (geometry) {
       this.hoverSource.addFeature(new Feature(geometry));
     }
@@ -181,7 +183,7 @@ export class MapService {
   featureAtPixel(pixel: number[]): FeatureHit | undefined {
     return this.map.forEachFeatureAtPixel(
       pixel,
-      (feature, layer) => (feature instanceof Feature && layer ? { feature, layer } : undefined),
+      (feature, layer) => (layer ? { feature, layer } : undefined),
       { hitTolerance: HIT_TOLERANCE, layerFilter: (layer) => !this.internalLayers.has(layer) },
     );
   }
@@ -247,9 +249,9 @@ export class MapService {
    * geometry is an OpenLayers object in the view projection, not GeoJSON off the wire -
    * round-tripping it through the format would only lose precision.
    */
-  highlightFeature(feature: Feature): void {
+  highlightFeature(feature: FeatureLike): void {
     this.highlightSource.clear();
-    const geometry = feature.getGeometry();
+    const geometry = featureGeometry(feature);
     if (geometry) {
       this.highlightSource.addFeature(new Feature(geometry));
     }
@@ -358,4 +360,9 @@ export class MapService {
       this.map.addLayer(layer);
     }
   }
+}
+
+/** RenderFeatures use compact tile coordinates and need materialising for highlights. */
+function featureGeometry(feature: FeatureLike) {
+  return feature instanceof RenderFeature ? toGeometry(feature) : feature.getGeometry();
 }

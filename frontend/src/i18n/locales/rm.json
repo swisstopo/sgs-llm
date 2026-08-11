@@ -42,6 +42,8 @@
     "addToMap": "Mussar sin la charta",
     "layerAdded": "Sin la charta",
     "formatUnsupported": "Quest format da datas n'è anc betg sustegnì.",
+    "truncatedLayer": "Quest nivel è incumplet, perquai che la limita segira da chargiar è vegnida cuntanschida.",
+    "renderExpired": "Quest nivel da charta temporar è scrudà. Repeta la dumonda per al generar danovamain.",
     "featureCount": "{{count}} elements",
     "connection": {
       "open": "Connectà",

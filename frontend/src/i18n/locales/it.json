@@ -42,6 +42,8 @@
     "addToMap": "Mostra sulla mappa",
     "layerAdded": "Sulla mappa",
     "formatUnsupported": "Questo formato di dati non è ancora supportato.",
+    "truncatedLayer": "Questo livello è incompleto perché è stato raggiunto il limite di recupero sicuro.",
+    "renderExpired": "Questo livello cartografico temporaneo è scaduto. Ripeti la richiesta per rigenerarlo.",
     "featureCount": "{{count}} oggetti",
     "connection": {
       "open": "Connesso",

@@ -44,6 +44,21 @@ describe('displayProperties', () => {
     ]);
   });
 
+  it('hides renderer internals without hiding ordinary id and bbox-named properties', () => {
+    expect(
+      displayProperties({
+        __feature_id: 7,
+        __sgs_covering: { xmin: 1, ymin: 2, xmax: 3, ymax: 4 },
+        geometry: 'WKB',
+        road_id: 'H21',
+        bbox_note: 'surveyed',
+      }),
+    ).toEqual([
+      ['road_id', 'H21'],
+      ['bbox_note', 'surveyed'],
+    ]);
+  });
+
   it('caps the row count', () => {
     const many = Object.fromEntries(
       Array.from({ length: MAX_PROPERTY_ROWS + 5 }, (_, i) => [`k${i}`, i + 1]),

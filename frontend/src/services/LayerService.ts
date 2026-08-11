@@ -3,6 +3,7 @@ import { isEmpty } from 'ol/extent';
 import ImageLayer from 'ol/layer/Image';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
+import VectorTileLayer from 'ol/layer/VectorTile';
 import ImageWMS from 'ol/source/ImageWMS';
 import TileWMS from 'ol/source/TileWMS';
 import VectorSource from 'ol/source/Vector';
@@ -20,6 +21,7 @@ import { isDisplayable, layerAttribution } from '../swisstopo/layers';
 import { loadGeoAdminStyle } from '../swisstopo/geojsonStyle';
 import { fetchJson } from '../swisstopo/http';
 import { buildDataLayerStyle } from '../map/dataLayerStyle';
+import { createMvtLayer, isLayerExpired, MvtTileSource } from '../map/mvtLayer';
 import { lv95TileGrid } from '../map/swissGrid';
 import { loadLayerOverrides } from '../layers/layerOverrides';
 import { languageChanged$ } from '../i18n/i18n';
@@ -45,7 +47,7 @@ export interface DataLayerState extends BaseLayerState {
 
 export type MapLayerState = OfficialLayerState | DataLayerState;
 
-export type AddLayerResult = 'added' | 'exists' | 'unsupported' | 'unknown' | 'failed';
+export type AddLayerResult = 'added' | 'exists' | 'unsupported' | 'unknown' | 'failed' | 'expired';
 
 /** Official overlays and data layers render above the basemap (zIndex 0). */
 const OVERLAY_BASE_Z_INDEX = 10;
@@ -240,34 +242,45 @@ export class LayerService {
     }
   }
 
-  /** Fetches a chat data layer (GeoJSON) and puts it on the map. */
+  /** Adds a chat layer: eager GeoJSON or lazy, viewport-driven MVT. */
   async addDataLayer(spec: LayerSpec): Promise<AddLayerResult> {
     if (this.olLayers.has(spec.id)) {
       return 'exists';
     }
-    if (spec.format !== 'geojson') {
+    const isMvt = spec.format === 'mvt';
+    if (spec.format !== 'geojson' && !isMvt) {
       return 'unsupported';
     }
-    let data: unknown;
-    try {
-      const response = await fetch(spec.url);
-      if (!response.ok) {
-        throw new Error(`data layer request failed: ${response.status}`);
-      }
-      data = await response.json();
-    } catch (error) {
-      console.error(`Failed to load data layer ${spec.id}`, error);
-      return 'failed';
+    if (isMvt && isLayerExpired(spec)) {
+      return 'expired';
     }
-    const features = new GeoJSON().readFeatures(data, {
-      dataProjection: 'EPSG:4326',
-      featureProjection: 'EPSG:2056',
-    });
-    const olLayer = new VectorLayer({
-      source: new VectorSource({ features }),
-      style: buildDataLayerStyle(spec),
-      properties: spec.attribution ? { attribution: spec.attribution } : {},
-    });
+    let olLayer: VectorLayer | VectorTileLayer;
+    if (isMvt) {
+      olLayer = createMvtLayer(spec, {
+        onExpired: () => this.expireDataLayer(spec.id),
+      });
+    } else {
+      let data: unknown;
+      try {
+        const response = await fetch(spec.url);
+        if (!response.ok) {
+          throw new Error(`data layer request failed: ${response.status}`);
+        }
+        data = await response.json();
+      } catch (error) {
+        console.error(`Failed to load data layer ${spec.id}`, error);
+        return 'failed';
+      }
+      const features = new GeoJSON().readFeatures(data, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:2056',
+      });
+      olLayer = new VectorLayer({
+        source: new VectorSource({ features }),
+        style: buildDataLayerStyle(spec),
+        properties: spec.attribution ? { attribution: spec.attribution } : {},
+      });
+    }
     this.insert(olLayer, {
       kind: 'data',
       id: spec.id,
@@ -287,10 +300,33 @@ export class LayerService {
     if (!olLayer) {
       return;
     }
+    const source = olLayer instanceof VectorTileLayer ? olLayer.getSource() : undefined;
+    if (source instanceof MvtTileSource) {
+      source.abortPending();
+    }
+    const state = this.layersSubject.value.find((layer) => layer.id === id);
+    if (state?.kind === 'data' && state.spec.dispose_url) {
+      void fetch(state.spec.dispose_url, { method: 'DELETE', keepalive: true }).then(
+        (response) => {
+          if (!response.ok) {
+            console.warn(`Failed to dispose generated layer ${id}: ${response.status}`);
+          }
+        },
+        (error: unknown) => console.warn(`Failed to dispose generated layer ${id}`, error),
+      );
+    }
     this.clearRefresh(id);
     this.mapService.map.removeLayer(olLayer);
     this.olLayers.delete(id);
     this.update(this.layersSubject.value.filter((layer) => layer.id !== id));
+  }
+
+  private expireDataLayer(id: string): void {
+    if (!this.olLayers.has(id)) {
+      return;
+    }
+    this.removeLayer(id);
+    window.dispatchEvent(new CustomEvent('sgs-layer-expired', { detail: { id } }));
   }
 
   setVisible(id: string, visible: boolean): void {
@@ -314,7 +350,10 @@ export class LayerService {
   setStyle(id: string, hint: StyleHint): void {
     const state = this.layersSubject.value.find((layer) => layer.id === id);
     const olLayer = this.olLayers.get(id);
-    if (state?.kind !== 'data' || !(olLayer instanceof VectorLayer)) {
+    if (
+      state?.kind !== 'data' ||
+      (!(olLayer instanceof VectorLayer) && !(olLayer instanceof VectorTileLayer))
+    ) {
       return;
     }
     const spec: LayerSpec = { ...state.spec, style_hint: { ...state.spec.style_hint, ...hint } };

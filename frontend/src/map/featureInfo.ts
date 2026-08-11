@@ -28,6 +28,13 @@ const LABEL_KEYS = [
  */
 const HIDDEN_KEYS = new Set(['geometry', 'geom', 'the_geom', 'bbox']);
 
+function isHiddenKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return (
+    HIDDEN_KEYS.has(normalized) || normalized === '__feature_id' || normalized.startsWith('__sgs_')
+  );
+}
+
 /** Rows shown before truncating. A popup is a glance, not a data export. */
 export const MAX_PROPERTY_ROWS = 12;
 
@@ -44,7 +51,7 @@ export function featureLabel(properties: Properties, fallback: string): string {
   // No conventional label key: take the first non-empty string property rather than
   // showing a bare id, which tells the user nothing about what they clicked.
   for (const [key, value] of Object.entries(properties)) {
-    if (!HIDDEN_KEYS.has(key.toLowerCase()) && typeof value === 'string' && value.trim()) {
+    if (!isHiddenKey(key) && typeof value === 'string' && value.trim()) {
       return value.trim();
     }
   }
@@ -75,7 +82,7 @@ export function formatValue(value: unknown): string {
 export function displayProperties(properties: Properties): [string, string][] {
   const rows: [string, string][] = [];
   for (const [key, value] of Object.entries(properties)) {
-    if (HIDDEN_KEYS.has(key.toLowerCase())) {
+    if (isHiddenKey(key)) {
       continue;
     }
     if (value === null || value === undefined || value === '') {
