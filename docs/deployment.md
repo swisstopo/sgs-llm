@@ -97,7 +97,7 @@ templates; generated values come from the stack outputs:
 | Network (consumed, not created) | `vpc-0abf5add40b8be118` (default VPC) · subnets `subnet-0948e33e0f3c89a56`, `subnet-04daf3587f8597662`, `subnet-0c7a22581e6edd850` |
 | Security groups | `sgs-llm-backend-alb-sg` (CloudFront → 80), `sg-0890c6a0bb344e749` task SG (ALB → 8787) |
 | DynamoDB tables | `sgs-llm-feedback`, `sgs-llm-conversations` (on-demand, TTL, PITR) |
-| S3 bucket (data layers) | `sgs-llm-data-259789526488` (private, presigned reads) |
+| S3 bucket (generated layers) | `sgs-llm-data-259789526488` (private GeoParquet sources and tombstones only) |
 | CloudWatch log group | `/ecs/sgs-llm-backend` (30 days) |
 | Secret | `sgs-llm/backend` (MCP token; placeholder until MCP lands) |
 | Task roles (IAM) | `sgs-llm-backend-task`, `sgs-llm-backend-task-execution` |
@@ -115,7 +115,7 @@ yet deployed**; the names below are fixed by the templates, the generated values
 | Load balancer | **none** — ECS Service Connect only, at `sgs-llm-geosearch:8790` |
 | Cloud Map namespace | `sgs-llm` (**HTTP**, not private DNS — the account denies `route53:CreateHostedZone`) |
 | S3 bucket (search index) | `sgs-llm-index-259789526488` (versioned, no expiry — CI builds the image from it) |
-| S3 bucket (data layers) | `sgs-llm-data-259789526488` — **shared with the backend**, so a layer either service publishes is served the same way |
+| S3 bucket (generated layers) | `sgs-llm-data-259789526488` — **shared privately with the backend**; geosearch publishes GeoParquet sources and manifests, while the backend stores reusable MVT tiles |
 | Security group | task SG admitting the backend's task SG on 8790, and nothing else |
 | CloudWatch log group | `/ecs/sgs-llm-geosearch` (30 days) |
 | Task roles (IAM) | `sgs-llm-geosearch-task`, `sgs-llm-geosearch-task-execution` |
@@ -461,7 +461,7 @@ aws iam delete-open-id-connect-provider --profile swisstopo \
 The agent backend runs as a container on **ECS Fargate behind an Application Load
 Balancer**, replacing the EC2 mock-agent as the CloudFront origin for `/ws/v1`,
 `/feedback` and `/data/*`. Its internal design (MCP client, the LLM loop,
-data-layer artifacts) is in
+generated-layer storage and rendering) is in
 [`architecture.md`](./architecture.md#backend-architecture); the model choice is in
 [`llm.md`](./llm.md).
 
@@ -492,7 +492,7 @@ becomes healthy.
                                      image pulled from ECR (sgs-llm-backend)
                                      ├─► Amazon Bedrock — Claude + Mistral, EU profiles (task IAM role)
                                      ├─► DynamoDB — user feedback + conversation turns
-                                     ├─► S3 — data-layer artifacts; backend relays presigned URLs
+                                     ├─► S3 — private GeoParquet sources + shared generated MVT tiles
                                      └─► geosearch — the geodata MCP server, a second Fargate
                                          service in the SAME cluster, reached over Service Connect
                                          (see "Geodata MCP server" below)
@@ -686,14 +686,14 @@ ECS from Secrets Manager at task start.
 | `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | foundation stack | Retention the backend must stamp into `expires_at` |
-| `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON/GeoParquet artifacts |
-| `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
+| `DATA_LAYER_BUCKET` | foundation stack | Private generated GeoParquet manifests/sources; the browser never receives an S3 URL |
 | `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
 | `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin (comma-separated; empty allows any, for local development) |
 | `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, and **the switch that enables the chat**. Empty means no production geodata server, so `/ws/v1` accepts connections and refuses every turn ([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)). Set it to `http://sgs-llm-geosearch:8790/mcp` — the geosearch foundation stack's `McpServerUrl` output, together with `ServiceConnectNamespace` — to turn the chat on ([Geodata MCP server](#geodata-mcp-server-geosearch-deployment)) |
 | `MCP_SERVER_TOKEN` | **Secrets Manager** `sgs-llm/backend` | MCP credential; never in git, never in CI logs |
 | `API_KEY` | parameter (**empty**) | Optional shared key for `/ws/v1` and `/feedback`. Empty leaves them open, as [`protocol.md`](./protocol.md#limits-and-the-optional-key) describes - read that before enabling it, it is not a security boundary |
-| `TURN_TIMEOUT_SECONDS` | parameter (90) | Wall-clock budget per turn, then `error` `timeout` |
+| `MCP_READ_TIMEOUT_SECONDS` | parameter (240) | Read budget for long geodata retrieval and source publication |
+| `TURN_TIMEOUT_SECONDS` | parameter (300) | Wall-clock budget per turn, then `error` `timeout` |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE` | parameter (20) | Per-client allowance; every turn spends Bedrock tokens |
 | `MAX_CONNECTIONS_PER_IP` | parameter (8) | Concurrent WebSocket connections per client |
 
@@ -709,7 +709,22 @@ aws ecs update-service --profile swisstopo --region eu-central-1 \
 
 ### What gets stored
 
-Two DynamoDB tables (on-demand billing, point-in-time recovery on, TTL enabled).
+The private `sgs-llm-data-*` bucket stores generated map layers under capability-scoped
+prefixes. Geosearch writes `layers/<capability>/source.parquet` and commits it by writing
+`manifest.json` last. The backend reads that source only when a visible tile is requested,
+then renders MVT on demand. A bounded process-local LRU reuses recent responses; generated
+tiles are never stored in S3. The browser receives only same-origin MVT bytes; it never
+receives the GeoParquet file, S3 credentials, or an S3 object URL.
+
+Each manifest expires logically after 24 hours. Removing the layer from the map sends an
+idempotent `DELETE /data/layers/<capability>`, which tombstones the capability and removes
+its source objects immediately. If the browser disappears before
+that request completes, the bucket lifecycle deletes every remaining generated object after
+30 days. The lifecycle is a physical cleanup backstop, not the authorization boundary: an
+expired or tombstoned capability stops serving tiles before S3 performs its asynchronous
+deletion.
+
+Two DynamoDB tables use on-demand billing, point-in-time recovery, and TTL.
 The GSI partition key is named `log_date` rather than `day` because **`DAY` is a
 DynamoDB reserved word** and would otherwise need an expression-attribute alias in
 every query.
@@ -777,9 +792,32 @@ export BEDROCK_SECONDARY_REGION=eu-west-1
 PYTHONPATH=..:. .venv/bin/python -m uvicorn app.main:app --port 8787 --reload
 ```
 
-With no tables and no bucket configured it runs without AWS: artifacts are served from
-memory at `/data/...` and persistence is disabled. The frontend's default `config.json`
-already points at `localhost:8787`, so `cd frontend && npm run dev` needs no change.
+With no tables and no bucket configured it runs without AWS: legacy GeoJSON artifacts are
+served from memory at `/data/...`, while generated MVT routes remain disabled. The
+frontend's default `config.json` already points at `localhost:8787`, so
+`cd frontend && npm run dev` needs no change. A real MVT layer needs an S3-compatible
+bucket configured for both geosearch and the backend.
+
+For a complete local MVT flow, start the dev-only shared endpoint once and create its
+bucket:
+
+```bash
+# From the repository root:
+.venv/bin/moto_server -p 5000
+
+# In another terminal:
+AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local .venv/bin/python -c \
+  'import boto3; boto3.client("s3", endpoint_url="http://127.0.0.1:5000", region_name="eu-central-1").create_bucket(Bucket="sgs-local", CreateBucketConfiguration={"LocationConstraint":"eu-central-1"})'
+export GEOSEARCH_S3_BUCKET=sgs-local
+export GEOSEARCH_S3_ENDPOINT=http://127.0.0.1:5000
+export GENERATED_DATA_BUCKET=sgs-local
+export GENERATED_DATA_ENDPOINT_URL=http://127.0.0.1:5000
+export AWS_ACCESS_KEY_ID=local
+export AWS_SECRET_ACCESS_KEY=local
+```
+
+Start geosearch with the first two variables and the backend with the last two. Both
+processes then see the same private source objects; the frontend still receives only MVT.
 
 **The chat needs an MCP server.** With `MCP_SERVER_URL` unset the backend refuses every
 turn, exactly as the deployed pilot does. To develop against real geodata, run the
@@ -794,9 +832,9 @@ Checks before pushing - the same ones CI runs:
 
 ```bash
 cd backend
-.venv/bin/python -m ruff check app tests ../mcp_dummy ../evals
-.venv/bin/python -m ruff format --check app tests ../mcp_dummy ../evals
-.venv/bin/python -m mypy          # app, mcp_dummy and evals (see pyproject.toml)
+.venv/bin/python -m ruff check app tests ../mcp_dummy ../evals ../tile_server ../geosearch
+.venv/bin/python -m ruff format --check app tests ../mcp_dummy ../evals ../tile_server ../geosearch
+.venv/bin/python -m mypy          # all Python runtime packages (see pyproject.toml)
 .venv/bin/python -m pytest
 ```
 
@@ -1116,7 +1154,7 @@ geosearch task role cannot read the conversation tables.
 
 | | Backend | Geosearch | Why |
 | --- | --- | --- | --- |
-| Ingress | ALB, from CloudFront | **None** — Service Connect | The only client is a task in the same VPC. The browser never speaks MCP; it only fetches the presigned S3 URL a tool returns. Saves the ALB's ~$20/month and leaves no public path to it |
+| Ingress | ALB, from CloudFront | **None** — Service Connect | The only MCP client is the backend task in the same VPC. The browser requests same-origin MVT routes from the backend and never receives S3 credentials or object URLs. Saves the ALB's ~$20/month and leaves no public path to geosearch |
 | Scale | desired 1, raisable | desired 1, **`MaxValue: 1`** | `result_id` handles live in the `ResultCache` inside one process ([`geosearch/results.py`](../geosearch/results.py)). A second task answers `compute` with "unknown result_id" for half the handles it just issued |
 | Deploy | 100/200 rolling, zero downtime | **0/100** — old task stops first | Same reason. The cost is a gap of a minute or two per deploy, during which the backend's tool calls fail. Raising either needs a shared result store or sticky routing first |
 
@@ -1241,7 +1279,7 @@ thrown once geosearch is actually running.
 | Variable | Source | Meaning |
 | --- | --- | --- |
 | `PORT` | parameter (8790) | Must match the security group rule and the DNS record |
-| `GEOSEARCH_S3_BUCKET` | backend foundation stack | Where published layers go. **Setting it is what switches the server from the local moto stand-in to real S3** (`geosearch/server.py:_artifact_store`), so it must always be present here |
+| `GEOSEARCH_S3_BUCKET` | backend foundation stack | Private destination for `source.parquet` plus its manifest. Tests inject an S3-compatible client; a deployed task must always receive the real shared bucket |
 | `GEOSEARCH_S3_REGION` | stack region | — |
 | `BEDROCK_SECONDARY_MODEL_ID` | parameter (`mistral.ministral-3-14b-instruct`) | Reranks the FAISS candidates. Small on purpose — a filter, not a writer, and it runs on every search |
 | `BEDROCK_SECONDARY_REGION` | parameter (`eu-west-1`) | In-region on-demand is the one path the organization SCP does not block ([`llm.md`](./llm.md)) |
@@ -1254,7 +1292,7 @@ a public endpoint without adding one.
 
 #### Deploy the code
 
-Pushing changes under `geosearch/` to `main` runs
+Pushing changes under `geosearch/` or the shared `tile_server/` package to `main` runs
 [`.github/workflows/geosearch.yml`](../.github/workflows/geosearch.yml): ruff and the
 geosearch tests always, then (if `GEOSEARCH_INDEX_URI` is set, and never on a pull request,
 which must not reach the AWS role) fetch the index, build, smoke-test `/health` in a
@@ -1454,7 +1492,7 @@ CachingDisabled `4135ea2d-6df8-44a3-9df3-4b5a84be39ad`, AllViewer origin-request
         "PathPattern": "/data/*",
         "TargetOriginId": "ec2-agent",
         "ViewerProtocolPolicy": "redirect-to-https",
-        "AllowedMethods": { "Quantity": 3, "Items": ["GET","HEAD","OPTIONS"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
+        "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
         "Compress": true,
         "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
         "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"

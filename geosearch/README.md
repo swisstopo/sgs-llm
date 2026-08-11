@@ -5,9 +5,11 @@ Semantic search over the swisstopo catalogue, and the MCP server that serves it.
 ```bash
 python -m geosearch.build      # once: fetch, embed, index (~12 min; needs AWS credentials)
 python -m geosearch.build --reuse-layer-vectors   # divisions only; saves ~100 s of embedding
-python -m geosearch.server     # http://127.0.0.1:8790/mcp
 python -m pytest geosearch/test_geosearch.py -q
 ```
+
+The MCP server publishes generated layers, so it needs either the deployed private bucket
+or the shared local S3 endpoint documented in `docs/deployment.md#run-the-backend-locally`.
 
 ## Why this exists
 
@@ -222,18 +224,17 @@ search, so the only safe answer to "which model wrote these?" is the recorded on
 Two different things get called "storage" here, and separating them is what makes the
 deployment simple.
 
-**Published layers** — the GeoJSON an answer produces — go to S3 through ordinary boto3,
-to `sgs-llm-data-259789526488` under `layers/`. `S3Store` is used either way: set
-`GEOSEARCH_S3_BUCKET` and the calls go to real S3, leave it unset and
-`GEOSEARCH_S3_ENDPOINT` points the identical calls at an in-process moto server — no
-Docker, no daemon. moto is in `requirements-dev.txt`, not `requirements.txt`, so the
-deployed image ships no test double; `infra/geosearch-foundation.yaml`'s task role is what
-made that possible. It grants `GetObject` as well as `PutObject`, because a presigned URL
-carries the signer's permissions and every map layer would otherwise 403 in the browser.
+**Generated layers** are written as Cloud-Optimized WKB GeoParquet plus a strict manifest
+under `layers/<capability>/` in the private data bucket. The random capability—not an S3
+URL—is returned to the backend and browser as an MVT URL template. The browser never reads
+the GeoParquet. The backend validates its size/checksum/expiry and renders visible tiles
+with DuckDB. One process-local single flight and a bounded memory LRU reuse derived MVT;
+tiles are never stored in S3. Explicit removal tombstones the capability and deletes the
+two source objects; the manifest becomes inaccessible after 24 hours and the 30-day bucket
+lifecycle is the physical cleanup fallback.
 
-`ensure_bucket` (create + open CORS) is a deliberate no-op against real S3: that bucket is
-managed by CloudFormation with public access blocked on all four settings, and an
-application quietly rewriting its CORS policy is how a private bucket becomes a public one.
+Set `GEOSEARCH_S3_BUCKET` in ECS. Local tests inject moto or another S3-compatible endpoint;
+the deployed image contains no test double and never changes bucket policy or CORS.
 
 **Division boundaries** are not that. They are build output — 6272 polygons that change
 when `build` runs and at no other time — so they are read off disk by `BoundaryStore` and
@@ -321,8 +322,8 @@ aws s3 sync index/ s3://sgs-llm-index-<account>/index/ --delete   # publish
 PROFILE=swisstopo ./scripts/deploy-geosearch.sh                   # fetch, build, push, roll
 ```
 
-`.github/workflows/geosearch.yml` does the same automatically on any change under
-`geosearch/`: ruff and the tests always, then build, smoke-test and deploy once the
+`.github/workflows/geosearch.yml` does the same automatically on changes under
+`geosearch/` or `tile_server/`: ruff and the tests always, then build, smoke-test and deploy once the
 repository variable `GEOSEARCH_INDEX_URI` names the published prefix (the foundation
 stack's `IndexUri` output). Until it is set the deploy job skips loudly rather than passing
 on an image it never built — `index/` is gitignored, and CI cannot reproduce it.
