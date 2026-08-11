@@ -17,13 +17,43 @@
 #
 # CI runs on amd64 so its build is native. From an Apple Silicon machine, add
 # --platform linux/amd64 for anything headed to ECS.
-FROM python:3.12-slim
+FROM mambaorg/micromamba:debian12-slim
 
+USER root
 WORKDIR /srv
 
-# Dependencies first so a code change does not reinstall them.
+# Dependencies first so a code change does not reinstall them. Conda owns one
+# compiled geospatial stack, including the separately packaged Parquet driver;
+# pip retains FAISS and every pure-Python SGS pin.
 COPY geosearch/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsqlite3-0 libstdc++6 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN micromamba create -y -p /venv -c conda-forge \
+        python=3.12 \
+        pip \
+        'libgdal-core=3.10.*' \
+        'libgdal-arrow-parquet=3.10.*' \
+        'gdal=3.10.*' \
+        'pyarrow=18.1.*' \
+        'numpy=2.3.5' \
+        'shapely=2.1.*' \
+        'pyproj=3.7.*' \
+    && micromamba clean --all --yes
+
+ENV PATH="/venv/bin:$PATH" \
+    VIRTUAL_ENV="/venv" \
+    LD_LIBRARY_PATH="/venv/lib" \
+    GDAL_DATA="/venv/share/gdal" \
+    PROJ_DATA="/venv/share/proj" \
+    PROJ_LIB="/venv/share/proj"
+
+RUN grep -Ev "^(numpy|shapely|pyproj|pyarrow)==" requirements.txt > requirements-pip.txt \
+    && pip install --no-cache-dir -r requirements-pip.txt \
+    && rm requirements-pip.txt \
+    && python -c "import numpy,pyarrow,pyproj,shapely; assert numpy.__version__ == '2.3.5'; assert pyarrow.__version__ == '18.1.0'; assert shapely.__version__.startswith('2.1.'); assert pyproj.__version__.startswith('3.7.')" \
+    && ogrinfo --format Parquet >/dev/null
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -31,6 +61,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN useradd --create-home --uid 10001 sgs
 
+COPY tile_server ./tile_server
 COPY geosearch ./geosearch
 # The build output: DuckDB rows, three .faiss files, and index/s3 with the 6272 division
 # boundaries. They belong to the code that was built against them - row `rid` in DuckDB is

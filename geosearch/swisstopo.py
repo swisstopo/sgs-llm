@@ -20,10 +20,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+from .limits import MAX_FEATURES, FeatureBudget, FetchResult
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,11 @@ MAX_PAGES = 40
 # national commune fetch under a minute without upsetting anyone.
 CONCURRENCY = 8
 
+# A cell that still carries 8,000 rows is quartered and retried. Four levels turn one
+# original grid cell into at most 256 much smaller queries without allowing an upstream
+# endpoint that ignores pagination to recurse forever.
+MAX_SUBDIVISION_DEPTH = 4
+
 CH_BBOX = (5.9, 45.8, 10.6, 47.9)
 
 _TAGS = re.compile(r"<[^>]+>")
@@ -58,7 +66,16 @@ _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 # localities, `bez` for countries). `label` stays last because it is not always a name:
 # on the locality register it holds the postcode as an integer, and on the country layer
 # it is "Schweiz 2" rather than "Schweiz".
-_NAME_KEYS = ("gemname", "bezname", "langtext", "bez", "name", "label", "gemeinde", "kanton")
+_NAME_KEYS = (
+    "gemname",
+    "bezname",
+    "langtext",
+    "bez",
+    "name",
+    "label",
+    "gemeinde",
+    "kanton",
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +84,12 @@ class DivisionLayer:
     layer_id: str
     # Names to keep, when the layer carries more than the level it is named for.
     only: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CellResult:
+    features: list[dict[str, Any]]
+    capped: bool = False
 
 
 # The administrative hierarchy, coarsest first. All are `tooltip: true` in layersConfig,
@@ -78,7 +101,9 @@ DIVISIONS = (
     # publishing them under those names would resolve "Deutschland" to a village-sized
     # polygon. Liechtenstein is genuinely the whole principality, but it is not
     # Switzerland and its 11 municipalities are already in the commune layer.
-    DivisionLayer("land", "ch.swisstopo.swissboundaries3d-land-flaeche.fill", only=("Schweiz",)),
+    DivisionLayer(
+        "land", "ch.swisstopo.swissboundaries3d-land-flaeche.fill", only=("Schweiz",)
+    ),
     DivisionLayer("kanton", "ch.swisstopo.swissboundaries3d-kanton-flaeche.fill"),
     DivisionLayer("bezirk", "ch.swisstopo.swissboundaries3d-bezirk-flaeche.fill"),
     DivisionLayer("gemeinde", "ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"),
@@ -133,8 +158,25 @@ def to_2d(geometry: dict[str, Any]) -> dict[str, Any]:
     if "coordinates" in geometry:
         return {**geometry, "coordinates": strip(geometry["coordinates"])}
     if geometry.get("type") == "GeometryCollection":
-        return {**geometry, "geometries": [to_2d(g) for g in geometry.get("geometries", [])]}
+        return {
+            **geometry,
+            "geometries": [to_2d(g) for g in geometry.get("geometries", [])],
+        }
     return geometry
+
+
+def _split_cell(
+    cell: tuple[float, float, float, float],
+) -> tuple[tuple[float, float, float, float], ...]:
+    minx, miny, maxx, maxy = cell
+    midx = (minx + maxx) / 2
+    midy = (miny + maxy) / 2
+    return (
+        (minx, miny, midx, midy),
+        (midx, miny, maxx, midy),
+        (minx, midy, midx, maxy),
+        (midx, midy, maxx, maxy),
+    )
 
 
 class Swisstopo:
@@ -228,7 +270,7 @@ class Swisstopo:
         grid: int = 8,
         time_instant: str | None = None,
         max_features: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> FetchResult:
         """Every *current* feature of one layer inside a WGS84 bbox.
 
         The bbox is split into `grid` x `grid` cells queried concurrently, each
@@ -246,39 +288,106 @@ class Swisstopo:
         dx = (maxx - minx) / grid
         dy = (maxy - miny) / grid
         cells = [
-            (minx + col * dx, miny + row * dy, minx + (col + 1) * dx, miny + (row + 1) * dy)
+            (
+                minx + col * dx,
+                miny + row * dy,
+                minx + (col + 1) * dx,
+                miny + (row + 1) * dy,
+            )
             for row in range(grid)
             for col in range(grid)
         ]
 
-        results = await asyncio.gather(
-            *(self._fetch_cell(layer_id, cell, lang, time_instant) for cell in cells),
-            return_exceptions=True,
-        )
-
         features: list[dict[str, Any]] = []
         seen: set[Any] = set()
+        budget = FeatureBudget(
+            max_features=min(max_features or MAX_FEATURES, MAX_FEATURES)
+        )
+        queued = deque((cell, 0) for cell in cells)
+        pending: dict[
+            asyncio.Task[CellResult], tuple[tuple[float, float, float, float], int]
+        ] = {}
         failed = 0
-        for outcome in results:
-            if isinstance(outcome, LayerNotQueryable):
-                raise outcome
-            if isinstance(outcome, BaseException):
-                failed += 1
-                continue
-            for feature in outcome:
-                key = feature.get("id")
-                if key is None:
-                    features.append(feature)
-                elif key not in seen:
-                    seen.add(key)
-                    features.append(feature)
+        capped = 0
+        complete = True
+        limit_reason: str | None = None
+        stop = False
+
+        try:
+            while (queued or pending) and not stop:
+                while queued and len(pending) < CONCURRENCY:
+                    cell, depth = queued.popleft()
+                    task = asyncio.create_task(
+                        self._fetch_cell(layer_id, cell, lang, time_instant)
+                    )
+                    pending[task] = (cell, depth)
+
+                done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    cell, depth = pending.pop(task)
+                    try:
+                        outcome = task.result()
+                    except LayerNotQueryable:
+                        raise
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        failed += 1
+                        complete = False
+                        limit_reason = limit_reason or "upstream_cell_failure"
+                        continue
+
+                    if outcome.capped:
+                        capped += 1
+                        if depth < MAX_SUBDIVISION_DEPTH:
+                            queued.extend((child, depth + 1) for child in _split_cell(cell))
+                            # The parent is an incomplete sample of the same space. Keeping it
+                            # would double count whatever the complete children return.
+                            continue
+                        complete = False
+                        limit_reason = limit_reason or "page_cap"
+
+                    for feature in outcome.features:
+                        key = feature.get("id")
+                        if key is not None and key in seen:
+                            continue
+                        if not budget.add(feature):
+                            complete = False
+                            limit_reason = budget.reason
+                            stop = True
+                            break
+                        if key is not None:
+                            seen.add(key)
+                        features.append(feature)
+
+                    if stop:
+                        break
+        finally:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
         if failed:
             # Never silent: a dropped cell is a hole in the map, and the count derived
             # from it would otherwise be reported as a total.
-            logger.warning("%s: %d/%d grid cells failed", layer_id, failed, len(cells))
-        logger.info("%s: %d unique features from %d cells", layer_id, len(features), len(cells))
-        return features[:max_features] if max_features else features
+            logger.warning("%s: %d grid cells failed", layer_id, failed)
+        logger.info(
+            "%s: %d unique features from %d initial cells (complete=%s capped=%d failed=%d)",
+            layer_id,
+            len(features),
+            len(cells),
+            complete,
+            capped,
+            failed,
+        )
+        return FetchResult(
+            features=features,
+            complete=complete,
+            limit_reason=limit_reason,
+            capped_cells=capped,
+            failed_cells=failed,
+        )
 
     async def _newest_timestamp(self, layer_id: str, lang: str) -> str | None:
         """The instant a time-enabled layer should be pinned to, or None if it is not one.
@@ -304,7 +413,7 @@ class Swisstopo:
         cell: tuple[float, float, float, float],
         lang: str,
         time_instant: str | None,
-    ) -> list[dict[str, Any]]:
+    ) -> CellResult:
         envelope = ",".join(str(v) for v in cell)
         params: dict[str, Any] = {
             "geometry": envelope,
@@ -325,10 +434,13 @@ class Swisstopo:
             params["timeInstant"] = time_instant
 
         out: list[dict[str, Any]] = []
+        capped = False
         async with self._semaphore:
             for page in range(MAX_PAGES):
                 try:
-                    payload = await self._get(IDENTIFY, {**params, "offset": page * PAGE})
+                    payload = await self._get(
+                        IDENTIFY, {**params, "offset": page * PAGE}
+                    )
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 400:
                         raise LayerNotQueryable(layer_id) from exc
@@ -357,8 +469,9 @@ class Swisstopo:
                 if len(rows) < PAGE:
                     break
             else:
+                capped = True
                 logger.warning("%s: cell hit the %d-page cap", layer_id, MAX_PAGES)
-        return out
+        return CellResult(out, capped=capped)
 
     async def fetch_divisions(
         self, division: DivisionLayer, lang: str = "de"
@@ -375,7 +488,8 @@ class Swisstopo:
         is then spent entirely on the 19th century. fetch_features pins the newest
         published timestamp for us, which is what makes this a current-boundaries fetch.
         """
-        features = await self.fetch_features(division.layer_id, CH_BBOX, lang=lang)
+        fetched = await self.fetch_features(division.layer_id, CH_BBOX, lang=lang)
+        features = fetched.features
 
         # Grouped by name, with `objektart_lookup` in the key because the commune layer
         # also carries 13 non-communes - the large lakes and Staatswald Galm, filed as
@@ -391,7 +505,11 @@ class Swisstopo:
                 continue
             if division.only and name not in division.only:
                 continue
-            groups.setdefault((name, properties.get("objektart_lookup")), []).append(feature)
+            groups.setdefault((name, properties.get("objektart_lookup")), []).append(
+                feature
+            )
         if unnamed:
-            logger.warning("%s: %d features had no recognisable name", division.kind, unnamed)
+            logger.warning(
+                "%s: %d features had no recognisable name", division.kind, unnamed
+            )
         return list(groups.values())

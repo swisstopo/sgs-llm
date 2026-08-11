@@ -24,6 +24,8 @@ class FeatureSet:
     title: str
     features: list[dict[str, Any]] = field(default_factory=list)
     bbox: list[float] | None = None
+    complete: bool = True
+    limit_reason: str | None = None
 
 
 class ResultCache:
@@ -31,9 +33,24 @@ class ResultCache:
         self._limit = limit
         self._items: OrderedDict[str, FeatureSet] = OrderedDict()
 
-    def put(self, layer_id: str, title: str, features: list[dict[str, Any]]) -> FeatureSet:
+    def put(
+        self,
+        layer_id: str,
+        title: str,
+        features: list[dict[str, Any]],
+        *,
+        complete: bool = True,
+        limit_reason: str | None = None,
+    ) -> FeatureSet:
         result_id = f"fs_{uuid.uuid4().hex[:12]}"
-        entry = FeatureSet(result_id=result_id, layer_id=layer_id, title=title, features=features)
+        entry = FeatureSet(
+            result_id=result_id,
+            layer_id=layer_id,
+            title=title,
+            features=features,
+            complete=complete,
+            limit_reason=limit_reason,
+        )
         self._items[result_id] = entry
         self._items.move_to_end(result_id)
         while len(self._items) > self._limit:

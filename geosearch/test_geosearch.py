@@ -14,12 +14,15 @@ from __future__ import annotations
 import asyncio
 import json
 import zlib
+from datetime import UTC, datetime
 
 import numpy as np
 import pytest
 
 from .build import _kind, _s3_key, _slug
 from .index import GeoIndex, build, confidence
+from .layer_publisher import PublishedLayer
+from .limits import FetchResult
 from .rerank import _parse
 from .swisstopo import DivisionLayer, Swisstopo, feature_name, to_2d
 
@@ -64,13 +67,20 @@ class StubEmbedder:
 def test_to_2d_strips_z_at_every_nesting_depth():
     # swissBOUNDARIES3D is 3D; OpenLayers reads the third ordinate as data and
     # reprojects nonsense rather than failing, so a missed case is invisible on the map.
-    assert to_2d({"type": "Point", "coordinates": [8.5, 47.4, 430.0]})["coordinates"] == [8.5, 47.4]
+    assert to_2d({"type": "Point", "coordinates": [8.5, 47.4, 430.0]})[
+        "coordinates"
+    ] == [8.5, 47.4]
 
-    line = to_2d({"type": "LineString", "coordinates": [[8.5, 47.4, 1.0], [8.6, 47.5, 2.0]]})
+    line = to_2d(
+        {"type": "LineString", "coordinates": [[8.5, 47.4, 1.0], [8.6, 47.5, 2.0]]}
+    )
     assert line["coordinates"] == [[8.5, 47.4], [8.6, 47.5]]
 
     multi = to_2d(
-        {"type": "MultiPolygon", "coordinates": [[[[8.5, 47.4, 1.0], [8.6, 47.5, 2.0]]]]}
+        {
+            "type": "MultiPolygon",
+            "coordinates": [[[[8.5, 47.4, 1.0], [8.6, 47.5, 2.0]]]],
+        }
     )
     assert multi["coordinates"] == [[[[8.5, 47.4], [8.6, 47.5]]]]
 
@@ -89,8 +99,15 @@ def test_feature_name_prefers_the_specific_key():
     assert feature_name({"gemname": "   "}) is None
     # `label` is last because it is not always a name: on the locality register it is the
     # postcode as an integer, and on the country layer it is "Schweiz 2".
-    assert feature_name({"langtext": "Oerlikon", "plz": 8050, "label": 8050}) == "Oerlikon"
-    assert feature_name({"bez": "Schweiz", "displayname": "Schweiz 2", "label": "Schweiz 2"}) == "Schweiz"
+    assert (
+        feature_name({"langtext": "Oerlikon", "plz": 8050, "label": 8050}) == "Oerlikon"
+    )
+    assert (
+        feature_name(
+            {"bez": "Schweiz", "displayname": "Schweiz 2", "label": "Schweiz 2"}
+        )
+        == "Schweiz"
+    )
 
 
 def test_lake_and_commune_of_the_same_name_both_survive():
@@ -139,7 +156,7 @@ def test_divisions_are_grouped_by_name_not_deduped_to_one():
         {"properties": {"langtext": "Zürich", "plz": 8002}, "geometry": None},
         {"properties": {"langtext": "Adliswil", "plz": 8134}, "geometry": None},
     ]
-    api.fetch_features = lambda *a, **kw: _returns(parts)  # type: ignore[method-assign]
+    api.fetch_features = lambda *a, **kw: _returns(FetchResult(parts))  # type: ignore[method-assign]
 
     groups = asyncio.run(api.fetch_divisions(spec))
     assert [len(g) for g in groups] == [2, 1]
@@ -152,7 +169,12 @@ def test_only_filter_keeps_switzerland_and_drops_the_enclaves():
     api = Swisstopo.__new__(Swisstopo)
     spec = DivisionLayer("land", "ch.y", only=("Schweiz",))
     api.fetch_features = lambda *a, **kw: _returns(  # type: ignore[method-assign]
-        [{"properties": {"bez": n}} for n in ("Schweiz", "Italia", "Liechtenstein", "Deutschland")]
+        FetchResult(
+            [
+                {"properties": {"bez": n}}
+                for n in ("Schweiz", "Italia", "Liechtenstein", "Deutschland")
+            ]
+        )
     )
 
     groups = asyncio.run(api.fetch_divisions(spec))
@@ -215,16 +237,34 @@ def tiny_index(tmp_path_factory) -> GeoIndex:
     directory = tmp_path_factory.mktemp("index")
     layers = [
         _layer("ch.a.wald", "Waldareal", "Flächen mit Waldbedeckung in der Schweiz."),
-        _layer("ch.b.flug", "SIL Anhörung", "Sachplan Infrastruktur Luftfahrt, Anhörung."),
-        _layer("ch.c.solar", "Solarenergie Dächer", "Eignung von Dachflächen für Photovoltaik."),
+        _layer(
+            "ch.b.flug", "SIL Anhörung", "Sachplan Infrastruktur Luftfahrt, Anhörung."
+        ),
+        _layer(
+            "ch.c.solar",
+            "Solarenergie Dächer",
+            "Eignung von Dachflächen für Photovoltaik.",
+        ),
         # No abstract: must stay findable via the title-embedding fallback.
         _layer("ch.d.nodesc", "Gletscher", ""),
     ]
     divisions = [
-        {"name": "Zürich", "kind": "kanton", "canton": "ZH", "bbox": [8.3, 47.2, 8.8, 47.7],
-         "layer_id": "ch.x", "s3_key": "layers/divisions/kanton/zuerich.geojson"},
-        {"name": "Baar", "kind": "gemeinde", "canton": "ZG", "bbox": [8.4, 47.1, 8.6, 47.3],
-         "layer_id": "ch.y", "s3_key": "layers/divisions/gemeinde/baar.geojson"},
+        {
+            "name": "Zürich",
+            "kind": "kanton",
+            "canton": "ZH",
+            "bbox": [8.3, 47.2, 8.8, 47.7],
+            "layer_id": "ch.x",
+            "s3_key": "layers/divisions/kanton/zuerich.geojson",
+        },
+        {
+            "name": "Baar",
+            "kind": "gemeinde",
+            "canton": "ZG",
+            "bbox": [8.4, 47.1, 8.6, 47.3],
+            "layer_id": "ch.y",
+            "s3_key": "layers/divisions/gemeinde/baar.geojson",
+        },
     ]
     build(directory, layers, divisions, StubEmbedder())
     return GeoIndex(directory, StubEmbedder())
@@ -235,9 +275,15 @@ def tiny_index_with_levels(tmp_path_factory) -> GeoIndex:
     directory = tmp_path_factory.mktemp("levels")
     # Insertion order is the hierarchy, coarsest first, exactly as build.py writes it.
     divisions = [
-        {"name": "Zürich", "kind": kind, "canton": "ZH", "bbox": [8.3, 47.2, 8.8, 47.7],
-         "layer_id": "ch.x", "s3_key": f"layers/divisions/{kind}/zuerich.geojson",
-         "feature_count": 24 if kind == "ortschaft" else 1}
+        {
+            "name": "Zürich",
+            "kind": kind,
+            "canton": "ZH",
+            "bbox": [8.3, 47.2, 8.8, 47.7],
+            "layer_id": "ch.x",
+            "s3_key": f"layers/divisions/{kind}/zuerich.geojson",
+            "feature_count": 24 if kind == "ortschaft" else 1,
+        }
         for kind in ("kanton", "bezirk", "gemeinde", "ortschaft")
     ]
     build(directory, [_layer("ch.a", "Waldareal", "Wald.")], divisions, StubEmbedder())
@@ -246,9 +292,16 @@ def tiny_index_with_levels(tmp_path_factory) -> GeoIndex:
 
 def _layer(layer_id: str, title: str, description: str) -> dict:
     return {
-        "layer_id": layer_id, "title": title, "description": description,
-        "layer_type": "wmts", "topics": "api", "attribution": "swisstopo",
-        "data_owner": "BAFU", "details_url": "", "queryable": True, "displayable": True,
+        "layer_id": layer_id,
+        "title": title,
+        "description": description,
+        "layer_type": "wmts",
+        "topics": "api",
+        "attribution": "swisstopo",
+        "data_owner": "BAFU",
+        "details_url": "",
+        "queryable": True,
+        "displayable": True,
     }
 
 
@@ -293,14 +346,24 @@ def test_identical_names_rank_coarsest_first(tiny_index_with_levels):
     # ties. An agent that takes the top bbox at face value must get the canton, not a
     # postcode area - so the tie-break is rid, which build.py writes coarsest first.
     hits = tiny_index_with_levels.search_divisions("Zürich", limit=10)
-    assert [h.row["kind"] for h in hits] == ["kanton", "bezirk", "gemeinde", "ortschaft"]
+    assert [h.row["kind"] for h in hits] == [
+        "kanton",
+        "bezirk",
+        "gemeinde",
+        "ortschaft",
+    ]
 
 
 def test_an_unqualified_name_resolves_to_the_coarsest_division(tiny_index_with_levels):
     # Zürich is a canton, a district, a commune and a locality. Unqualified, the largest
     # of them is the safe answer; a locality would put one postcode area on the map.
     assert tiny_index_with_levels.division_by_name("Zürich")["kind"] == "kanton"
-    assert tiny_index_with_levels.division_by_name("Zürich", kind="ortschaft")["feature_count"] == 24
+    assert (
+        tiny_index_with_levels.division_by_name("Zürich", kind="ortschaft")[
+            "feature_count"
+        ]
+        == 24
+    )
 
 
 def test_reused_layer_vectors_are_checked_against_the_catalogue(tmp_path):
@@ -308,13 +371,26 @@ def test_reused_layer_vectors_are_checked_against_the_catalogue(tmp_path):
     # vector is not an error downstream - it is a search that ranks the wrong layer first
     # and looks like it worked. The guard is the only thing standing between the two.
     embedder = StubEmbedder()
-    layers = [_layer("ch.a.wald", "Waldareal", "Wald."), _layer("ch.b.flug", "SIL", "Luftfahrt.")]
-    divisions = [{"name": "Baar", "kind": "gemeinde", "canton": "ZG", "bbox": None,
-                  "layer_id": "ch.y", "s3_key": "k"}]
+    layers = [
+        _layer("ch.a.wald", "Waldareal", "Wald."),
+        _layer("ch.b.flug", "SIL", "Luftfahrt."),
+    ]
+    divisions = [
+        {
+            "name": "Baar",
+            "kind": "gemeinde",
+            "canton": "ZG",
+            "bbox": None,
+            "layer_id": "ch.y",
+            "s3_key": "k",
+        }
+    ]
     build(tmp_path, layers, divisions, embedder)
 
     # Same catalogue: reuse, and the reported dim still comes from the stored vectors.
-    stats = build(tmp_path, layers, divisions + divisions, embedder, reuse_layer_vectors=True)
+    stats = build(
+        tmp_path, layers, divisions + divisions, embedder, reuse_layer_vectors=True
+    )
     assert stats == {"layers": 2, "divisions": 2, "dim": StubEmbedder.dim}
 
     renamed = [_layer("ch.a.wald", "Gletscher", "Wald."), layers[1]]
@@ -322,7 +398,13 @@ def test_reused_layer_vectors_are_checked_against_the_catalogue(tmp_path):
         build(tmp_path, renamed, divisions, embedder, reuse_layer_vectors=True)
 
     with pytest.raises(ValueError, match="holds 2 vectors"):
-        build(tmp_path, layers + [layers[0]], divisions, embedder, reuse_layer_vectors=True)
+        build(
+            tmp_path,
+            layers + [layers[0]],
+            divisions,
+            embedder,
+            reuse_layer_vectors=True,
+        )
 
     with pytest.raises(ValueError, match="does not exist"):
         build(tmp_path / "empty", layers, divisions, embedder, reuse_layer_vectors=True)
@@ -372,47 +454,187 @@ def test_index_refuses_a_faiss_file_that_lost_rows(tiny_index, tmp_path):
         GeoIndex(tmp_path / "short", StubEmbedder())
 
 
-# ----------------------------------------------------------------------- s3
+# ---------------------------------------------------------- boundaries and display
 
 
-def test_s3_roundtrip_and_seeding(tmp_path):
-    from .s3 import start_local_s3, stop_local_s3
+def test_boundary_store_reads_image_shipped_geojson(tmp_path):
+    from .boundaries import BoundaryStore
 
-    mirror = tmp_path / "s3" / "layers"
-    mirror.mkdir(parents=True)
+    path = tmp_path / "layers" / "divisions" / "baar.geojson"
+    path.parent.mkdir(parents=True)
     collection = {"type": "FeatureCollection", "features": []}
-    (mirror / "seeded.geojson").write_text(json.dumps(collection))
+    path.write_text(json.dumps(collection), encoding="utf-8")
 
-    try:
-        store = start_local_s3(seed_dir=tmp_path / "s3")
-        # moto is in-memory: without the replay a restart silently empties the bucket
-        # and every division lookup 404s.
-        assert store.get_geojson("layers/seeded.geojson") == collection
+    store = BoundaryStore(tmp_path)
 
-        url = store.put_geojson("layers/new.geojson", collection)
-        assert "X-Amz-Signature" in url
-        assert store.get_geojson("layers/new.geojson") == collection
-    finally:
-        stop_local_s3()
+    assert store.get_geojson("layers/divisions/baar.geojson") == collection
 
 
-def test_ensure_bucket_never_touches_real_s3(monkeypatch):
-    # A stray CORS write against the production bucket would loosen a bucket that
-    # CloudFormation deliberately locks down.
-    from .s3 import S3Store
+class _ToolIndex:
+    def division_by_name(self, name, kind=None):
+        if name != "Baar" or kind not in (None, "gemeinde"):
+            return None
+        return {
+            "name": "Baar",
+            "kind": "gemeinde",
+            "s3_key": "layers/divisions/baar.geojson",
+            "feature_count": 1,
+            "bbox": [8.4, 47.1, 8.6, 47.3],
+        }
 
-    monkeypatch.delenv("GEOSEARCH_S3_ENDPOINT", raising=False)
-    store = S3Store(endpoint_url=None)
-    called = []
-    store.client.put_bucket_cors = lambda **kw: called.append(kw)
-    store.client.create_bucket = lambda **kw: called.append(kw)
-    store.ensure_bucket()
-    assert called == []
+
+class _ToolSwisstopo:
+    def __init__(self, *, complete=True):
+        self.complete = complete
+
+    async def fetch_features(self, *_args, **_kwargs):
+        return FetchResult(
+            [_square(8.45, 47.15, 8.55, 47.25, name="Baar")],
+            complete=self.complete,
+            limit_reason=None if self.complete else "feature_limit",
+        )
+
+
+class _ToolPublisher:
+    def __init__(self):
+        self.calls = []
+
+    async def publish_layer(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return PublishedLayer(
+            capability="A" * 43,
+            url="https://tiles.test/tiles/" + "A" * 43 + "/{z}/{x}/{y}.mvt",
+            dispose_url="/data/layers/" + "A" * 43,
+            expires_at=datetime(2026, 8, 11, 12, 5, tzinfo=UTC),
+            byte_count=1234,
+            min_zoom=0,
+            max_zoom=18,
+        )
+
+
+class _ToolBoundaries:
+    def get_geojson(self, _key):
+        return {
+            "type": "FeatureCollection",
+            "features": [_square(8.4, 47.1, 8.6, 47.3, name="Baar")],
+        }
+
+
+def _server_for_display_tests(*, complete=True):
+    from .server import build_server
+
+    publisher = _ToolPublisher()
+    server = build_server(
+        _ToolIndex(),
+        _ToolSwisstopo(complete=complete),
+        artifacts=publisher,
+        store=_ToolBoundaries(),
+    )
+    return server, publisher
+
+
+def _assert_mvt_layer(layer):
+    assert layer["format"] == "mvt"
+    assert layer["url"].startswith("https://tiles.test/tiles/")
+    assert layer["url"].endswith("/{z}/{x}/{y}.mvt")
+    assert "fallback_url" not in layer
+    assert layer["dispose_url"].startswith("/data/layers/")
+    assert layer["url_expires_at"].endswith("Z")
+    assert layer["min_zoom"] == 0
+    assert layer["max_zoom"] == 18
+    assert not any("parquet" in str(value).lower() for value in layer.values())
+    assert not {"source_url", "source_key", "canonical_url"} & layer.keys()
+
+
+def test_display_division_returns_only_the_mvt_protocol_and_publishes_complete():
+    async def exercise():
+        server, publisher = _server_for_display_tests()
+        result = await server.call_tool(
+            "display_division", {"name": "Baar", "kind": "gemeinde"}
+        )
+        return result.structured_content["layer"], publisher
+
+    layer, publisher = asyncio.run(exercise())
+    _assert_mvt_layer(layer)
+    assert publisher.calls[0][1] == {"complete": True}
+    assert layer["id"] == "division-gemeinde-Baar"
+    assert layer["name"] == "Baar"
+    assert layer["geometry_type"] == "polygon"
+    assert layer["feature_count"] == 1
+    assert layer["bbox"] == [8.4, 47.1, 8.6, 47.3]
+    assert layer["attribution"].endswith("swissBOUNDARIES3D")
+
+
+def test_display_layer_returns_only_mvt_and_passes_cached_completeness():
+    async def exercise():
+        server, publisher = _server_for_display_tests(complete=False)
+        filtered = await server.call_tool(
+            "filter_features",
+            {"layer_id": "ch.test", "bbox": [8.4, 47.1, 8.6, 47.3]},
+        )
+        result = await server.call_tool(
+            "display_layer",
+            {
+                "result_id": filtered.structured_content["result_id"],
+                "name": "Baar",
+                "fill_color": "#4a7c59",
+                "opacity": 0.7,
+            },
+        )
+        return result.structured_content["layer"], publisher
+
+    layer, publisher = asyncio.run(exercise())
+    _assert_mvt_layer(layer)
+    assert layer["truncated"] is True
+    assert publisher.calls[0][1] == {"complete": False}
+    assert layer["id"].startswith("fs_")
+    assert layer["name"] == "Baar"
+    assert layer["geometry_type"] == "polygon"
+    assert layer["feature_count"] == 1
+    assert layer["bbox"] == [8.45, 47.15, 8.55, 47.25]
+    assert layer["attribution"] == "swisstopo / geo.admin.ch · ch.test"
+    assert layer["style_hint"] == {"fill_color": "#4a7c59", "opacity": 0.7}
+
+
+def test_layer_publisher_constructs_only_the_private_s3_client(monkeypatch):
+    import boto3
+
+    from .server import _layer_publisher
+
+    calls = []
+
+    def client(service, **kwargs):
+        calls.append((service, kwargs))
+        return object()
+
+    monkeypatch.setattr(boto3, "client", client)
+    monkeypatch.setenv("GEOSEARCH_S3_BUCKET", "layers")
+    monkeypatch.setenv("GEOSEARCH_S3_REGION", "eu-central-1")
+    monkeypatch.setenv("GEOSEARCH_S3_ENDPOINT", "http://s3.test")
+    monkeypatch.setenv("GEOSEARCH_TILE_QUEUE_URL", "https://sqs.test/queue")
+
+    _layer_publisher()
+
+    assert calls == [
+        (
+            "s3",
+            {
+                "region_name": "eu-central-1",
+                "endpoint_url": "http://s3.test",
+                "aws_access_key_id": "local",
+                "aws_secret_access_key": "local",
+            },
+        )
+    ]
 
 
 def _square(x0, y0, x1, y1, **props):
     ring = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]
-    return {"type": "Feature", "properties": props, "geometry": {"type": "Polygon", "coordinates": [ring]}}
+    return {
+        "type": "Feature",
+        "properties": props,
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+    }
 
 
 def test_clip_cuts_to_the_boundary_and_drops_the_neighbours():
@@ -432,7 +654,10 @@ def test_clip_cuts_to_the_boundary_and_drops_the_neighbours():
 
     assert [f["properties"]["name"] for f in kept] == ["inside", "straddles"]
     # Cut, not merely kept: the straddling square contributes a quarter of itself.
-    assert kept[1]["geometry"]["coordinates"][0] != features[1]["geometry"]["coordinates"][0]
+    assert (
+        kept[1]["geometry"]["coordinates"][0]
+        != features[1]["geometry"]["coordinates"][0]
+    )
     assert measure(kept)["area_km2"] < measure(features[:2])["area_km2"]
 
 
@@ -441,8 +666,16 @@ def test_clip_keeps_points_that_fall_inside():
 
     boundary = [_square(0, 0, 1, 1)]
     points = [
-        {"type": "Feature", "properties": {"name": "in"}, "geometry": {"type": "Point", "coordinates": [0.5, 0.5]}},
-        {"type": "Feature", "properties": {"name": "out"}, "geometry": {"type": "Point", "coordinates": [5, 5]}},
+        {
+            "type": "Feature",
+            "properties": {"name": "in"},
+            "geometry": {"type": "Point", "coordinates": [0.5, 0.5]},
+        },
+        {
+            "type": "Feature",
+            "properties": {"name": "out"},
+            "geometry": {"type": "Point", "coordinates": [5, 5]},
+        },
     ]
     assert [f["properties"]["name"] for f in clip(points, boundary)] == ["in"]
 
@@ -458,7 +691,9 @@ def test_clip_drops_the_slivers_two_datasets_leave_at_their_shared_edge():
         _square(0.5, 0.5, 1.5, 1.5, name="real overlap"),
         _square(0.999999, 0, 2, 1, name="misalignment"),
     ]
-    assert [f["properties"]["name"] for f in clip(features, boundary)] == ["real overlap"]
+    assert [f["properties"]["name"] for f in clip(features, boundary)] == [
+        "real overlap"
+    ]
 
 
 def test_mcp_answers_the_host_the_backend_dials_and_refuses_the_rest(monkeypatch):
@@ -478,10 +713,14 @@ def test_mcp_answers_the_host_the_backend_dials_and_refuses_the_rest(monkeypatch
     guard = TransportSecurityMiddleware(_transport_security(8790))
 
     assert guard._validate_host("sgs-llm-geosearch:8790")
-    assert guard._validate_host("127.0.0.1:8790"), "the container health check must keep working"
+    assert guard._validate_host("127.0.0.1:8790"), (
+        "the container health check must keep working"
+    )
     assert not guard._validate_host("evil.example.com")
 
     # Unset is a workstation, where the guard is the only thing standing between a browser
     # and a local server - it must not fall open just because the deployment var is absent.
     monkeypatch.delenv("GEOSEARCH_ALLOWED_HOSTS")
-    assert not TransportSecurityMiddleware(_transport_security(8790))._validate_host("sgs-llm-geosearch:8790")
+    assert not TransportSecurityMiddleware(_transport_security(8790))._validate_host(
+        "sgs-llm-geosearch:8790"
+    )

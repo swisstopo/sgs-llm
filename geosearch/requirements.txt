@@ -19,18 +19,15 @@ httpx==0.28.1
 # and row `rid` is vector `rid` - they are written together and only correct together.
 duckdb==1.5.5
 faiss-cpu==1.15.0
-numpy==2.5.1
+numpy==2.3.5
 
-# Bedrock (embeddings and the rerank stage) and S3. Embedding is a Bedrock call now, not
+# Bedrock clients for embeddings and the rerank stage. Embedding is a Bedrock call now, not
 # a local model: fastembed and onnxruntime used to sit here to run multilingual-e5-large
 # on CPU, and between the wheels and the baked weights they were ~4.3 GB of the image.
 boto3==1.43.59
 
-# `compute`. GeoJSON only - the frontend cannot render GeoParquet
-# (docs/architecture.md#data-layers-from-chat), so pyarrow is deliberately absent.
+# `compute` and the durable private MVT source. PyArrow writes the preliminary WKB
+# GeoParquet; the image's pinned OGR rewrites it with covering metadata and spatial sort.
 shapely==2.1.2
 pyproj==3.7.2
-
-# moto is NOT here: it stands in for S3 during local development only, and the task role
-# in infra/geosearch-foundation.yaml now covers the real bucket. It lives in
-# requirements-dev.txt, so the deployed image ships no test double.
+pyarrow==18.1.0

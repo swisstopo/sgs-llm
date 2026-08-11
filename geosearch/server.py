@@ -23,12 +23,14 @@ from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.routing import Route
 
+from .boundaries import BoundaryStore
 from .geometry import bounding_box, clip, geometry_type, measure, summarise_properties
 from .index import INDEX_DIR, GeoIndex, confidence
+from .layer_publisher import S3LayerPublisher
 from .rerank import Reranker
 from .results import ResultCache
-from .s3 import BoundaryStore, S3Store, start_local_s3
 from .swisstopo import LayerNotQueryable, Swisstopo
 
 logger = logging.getLogger(__name__)
@@ -53,15 +55,14 @@ def build_server(
     index: GeoIndex,
     swisstopo: Swisstopo,
     artifacts: Any,
-    store: S3Store | BoundaryStore,
+    store: BoundaryStore,
     reranker: Reranker | None = None,
 ) -> MCPServer:
-    """`artifacts` needs one method: `async publish_geojson(name, collection) -> url | None`.
+    """`artifacts` needs `async publish_layer(result_id, features) -> PublishedLayer | None`.
 
     `store` is where the pre-built division boundaries live, and is separate from
-    `artifacts` on purpose: artifacts is wherever this deployment publishes new layers
-    (the backend swaps its own in), whereas the boundaries are build output that ships
-    with the image. Only `get_geojson(key)` is used, which is why either store fits.
+    `artifacts` on purpose: generated layers are private expiring S3 sources, whereas
+    the boundaries are read-only build output that ships with the image.
 
     Everything is injected rather than constructed here so the eval harness can swap
     those in, and so the HTTP client always has an owner that can close it.
@@ -71,7 +72,9 @@ def build_server(
     judge = reranker or Reranker()
 
     @server.tool()
-    async def search_layers(query: str, lang: str = "de", top_n: int = 8) -> dict[str, Any]:
+    async def search_layers(
+        query: str, lang: str = "de", top_n: int = 8
+    ) -> dict[str, Any]:
         """Find official Swiss geodata datasets by topic.
 
         Use this first for any question about what data exists. Search is semantic, so
@@ -126,7 +129,9 @@ def build_server(
         return result
 
     @server.tool()
-    async def search_locations(query: str, lang: str = "de", top_n: int = 10) -> dict[str, Any]:
+    async def search_locations(
+        query: str, lang: str = "de", top_n: int = 10
+    ) -> dict[str, Any]:
         """Resolve a Swiss place name to a bounding box.
 
         Covers Switzerland itself and every canton, district, commune and locality -
@@ -171,24 +176,33 @@ def build_server(
         """
         row = index.division_by_name(name, kind)
         if row is None:
-            return {"error": f"No division named '{name}'. Call search_locations first."}
+            return {
+                "error": f"No division named '{name}'. Call search_locations first."
+            }
 
         collection = store.get_geojson(row["s3_key"])
-        url = await artifacts.publish_geojson(f"division-{row['kind']}-{name}.geojson", collection)
-        if url is None:
+        published = await artifacts.publish_layer(
+            f"division-{row['kind']}-{name}", collection["features"], complete=True
+        )
+        if published is None:
             return {"error": "Could not publish the boundary."}
-        return {
+        result = {
             "layer": {
                 "id": f"division-{row['kind']}-{name}",
                 "name": row["name"],
-                "format": "geojson",
-                "url": url,
-                "geometry_type": "Polygon",
+                "format": "mvt",
+                "url": published.url,
+                "url_expires_at": published.url_expires_at,
+                "dispose_url": published.dispose_url,
+                "geometry_type": "polygon",
                 "feature_count": row["feature_count"],
                 "bbox": row["bbox"],
+                "min_zoom": published.min_zoom,
+                "max_zoom": published.max_zoom,
                 "attribution": f"{ATTRIBUTION} · {_SOURCES.get(row['kind'], 'swissBOUNDARIES3D')}",
             }
         }
+        return result
 
     @server.tool()
     async def filter_features(
@@ -224,7 +238,9 @@ def build_server(
         if place:
             row = index.division_by_name(place, place_kind)
             if row is None:
-                return {"error": f"No Swiss place named '{place}'. Call search_locations first."}
+                return {
+                    "error": f"No Swiss place named '{place}'. Call search_locations first."
+                }
             boundary = store.get_geojson(row["s3_key"]).get("features") or []
             clipped_to = f"{row['kind']} {row['name']}"
             # The boundary decides what is inside; its box is only how much to ask for.
@@ -236,7 +252,7 @@ def build_server(
             }
 
         try:
-            features = await swisstopo.fetch_features(layer_id, bbox, lang=lang)
+            fetched = await swisstopo.fetch_features(layer_id, bbox, lang=lang)
         except LayerNotQueryable:
             # An answerable fact, not a failure. Reported as one so the model picks a
             # different dataset instead of retrying this one until it runs out of turns.
@@ -249,13 +265,17 @@ def build_server(
                     "vector-based dataset; do not retry this layer_id."
                 ),
             }
+        features = fetched.features
 
         if contains:
             needle = contains.lower()
             features = [
                 f
                 for f in features
-                if any(needle in str(v).lower() for v in (f.get("properties") or {}).values())
+                if any(
+                    needle in str(v).lower()
+                    for v in (f.get("properties") or {}).values()
+                )
             ]
         # Cut after `contains` rather than before: the text filter is free and the
         # intersection is not, so it runs on the smaller set.
@@ -270,7 +290,13 @@ def build_server(
                 ),
             }
 
-        entry = cache.put(layer_id, layer_id, features)
+        entry = cache.put(
+            layer_id,
+            layer_id,
+            features,
+            complete=fetched.complete,
+            limit_reason=fetched.limit_reason,
+        )
         result = {
             "result_id": entry.result_id,
             "layer_id": layer_id,
@@ -278,7 +304,15 @@ def build_server(
             "geometry_type": geometry_type(features),
             "bbox": bounding_box(features),
             "attributes": summarise_properties(features),
+            "complete": entry.complete,
+            "truncated": not entry.complete,
         }
+        if not entry.complete:
+            reason = (entry.limit_reason or "upstream_limit").replace("_", " ")
+            result["note"] = (
+                f"Result stopped at {len(features)} features because of {reason}; "
+                "the count is not a total. Narrow the place or dataset for a complete answer."
+            )
         if clipped_to:
             result["clipped_to"] = clipped_to
         return result
@@ -306,7 +340,9 @@ def build_server(
         caps = await swisstopo.layers_config(lang)
         entry = caps.get(layer_id)
         if not isinstance(entry, dict):
-            return {"error": f"'{layer_id}' is not an official layer id. Use search_layers first."}
+            return {
+                "error": f"'{layer_id}' is not an official layer id. Use search_layers first."
+            }
         if entry.get("type") not in ("wmts", "wms", "geojson"):
             return {"error": f"'{layer_id}' cannot be rendered as a map layer."}
 
@@ -317,7 +353,10 @@ def build_server(
         }
         if opacity is not None:
             layer["opacity"] = opacity
-        result: dict[str, Any] = {"catalog_layer": layer, "layer_type": entry.get("type")}
+        result: dict[str, Any] = {
+            "catalog_layer": layer,
+            "layer_type": entry.get("type"),
+        }
         if focus_bbox and len(focus_bbox) == 4:
             result["focus_bbox"] = focus_bbox
         return result
@@ -332,7 +371,9 @@ def build_server(
         """
         entry = cache.get(result_id)
         if entry is None:
-            return {"error": f"Unknown result_id '{result_id}'. Call filter_features first."}
+            return {
+                "error": f"Unknown result_id '{result_id}'. Call filter_features first."
+            }
 
         wanted = operation.strip().lower()
         result: dict[str, Any] = {"result_id": result_id, "count": len(entry.features)}
@@ -356,22 +397,30 @@ def build_server(
         """
         entry = cache.get(result_id)
         if entry is None:
-            return {"error": f"Unknown result_id '{result_id}'. Call filter_features first."}
+            return {
+                "error": f"Unknown result_id '{result_id}'. Call filter_features first."
+            }
 
-        collection = {"type": "FeatureCollection", "features": entry.features}
-        url = await artifacts.publish_geojson(f"{result_id}.geojson", collection)
-        if url is None:
+        published = await artifacts.publish_layer(
+            result_id, entry.features, complete=entry.complete
+        )
+        if published is None:
             return {"error": "Could not publish the layer."}
 
         layer: dict[str, Any] = {
             "id": result_id,
             "name": name or entry.layer_id,
-            "format": "geojson",
-            "url": url,
+            "format": "mvt",
+            "url": published.url,
+            "url_expires_at": published.url_expires_at,
+            "dispose_url": published.dispose_url,
             "geometry_type": geometry_type(entry.features),
             "feature_count": len(entry.features),
             "bbox": bounding_box(entry.features),
+            "min_zoom": published.min_zoom,
+            "max_zoom": published.max_zoom,
             "attribution": f"{ATTRIBUTION} · {entry.layer_id}",
+            "truncated": not entry.complete,
         }
         style = {
             key: value
@@ -385,27 +434,33 @@ def build_server(
     return server
 
 
-def _artifact_store() -> S3Store:
-    """Where published layers go: the real bucket if one is named, moto if not.
+def _layer_publisher() -> S3LayerPublisher:
+    """Build the durable source publisher from validated deployment configuration."""
+    import boto3
 
-    `GEOSEARCH_S3_BUCKET` is the switch because it is the one thing that has to be set for
-    real S3 to work at all. A task definition that names the bucket is a deployment;
-    anything else is a workstation with no credentials for it.
-    """
-    if os.environ.get("GEOSEARCH_S3_BUCKET"):
-        return S3Store()
-    try:
-        return start_local_s3()
-    except ModuleNotFoundError as exc:
-        # moto is in requirements-dev.txt, not requirements.txt, so the deployed image
-        # does not carry a test double. Reaching here means it was started without being
-        # told where to publish - say that, rather than naming a package nobody installed
-        # on purpose.
+    bucket = os.environ.get("GEOSEARCH_S3_BUCKET", "")
+    if not bucket:
         raise SystemExit(
-            "No GEOSEARCH_S3_BUCKET set, and the local S3 stand-in is unavailable "
-            f"({exc}). Set GEOSEARCH_S3_BUCKET to publish to real S3, or install "
-            "geosearch/requirements-dev.txt for local development."
-        ) from exc
+            "GEOSEARCH_S3_BUCKET is required for generated MVT sources. "
+            "For local development, point GEOSEARCH_S3_ENDPOINT and "
+            "GENERATED_DATA_ENDPOINT_URL at the same S3-compatible server."
+        )
+    region = os.environ.get("GEOSEARCH_S3_REGION", "eu-central-1")
+    endpoint = os.environ.get("GEOSEARCH_S3_ENDPOINT") or None
+    client_options: dict[str, Any] = {"region_name": region}
+    if endpoint is not None:
+        client_options.update(
+            endpoint_url=endpoint,
+            aws_access_key_id="local",
+            aws_secret_access_key="local",
+        )
+    s3 = boto3.client("s3", **client_options)
+    return S3LayerPublisher(
+        s3,
+        bucket,
+        tile_base_url=os.environ.get("GEOSEARCH_TILE_BASE_URL", "/data/tiles"),
+        ttl_seconds=int(os.environ.get("GEOSEARCH_LAYER_TTL_SECONDS", "86400")),
+    )
 
 
 def _transport_security(port: int) -> TransportSecuritySettings:
@@ -421,7 +476,11 @@ def _transport_security(port: int) -> TransportSecuritySettings:
     reach this server except the backend's security group, but a browser can reach a laptop.
     """
     hosts = [f"127.0.0.1:{port}", f"localhost:{port}"]
-    hosts += [h.strip() for h in os.environ.get("GEOSEARCH_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    hosts += [
+        h.strip()
+        for h in os.environ.get("GEOSEARCH_ALLOWED_HOSTS", "").split(",")
+        if h.strip()
+    ]
     return TransportSecuritySettings(allowed_hosts=hosts)
 
 
@@ -432,20 +491,21 @@ def main() -> None:
     parser.add_argument("--index", default=str(INDEX_DIR))
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
 
     import uvicorn
     from starlette.responses import JSONResponse
-    from starlette.routing import Route
 
     directory = Path(args.index)
     index = GeoIndex(directory)
     api = Swisstopo()
-    # Two stores, because they hold two different things: `store` is the build's own
-    # boundaries, read-only and shipped with the image, `artifacts` is where answers get
-    # published for the browser. They were one object only while both were moto.
+    publisher = _layer_publisher()
+    # Boundaries are immutable build output; generated answers are private, expiring
+    # source objects committed by their manifest and rendered as MVT by the backend.
     server = build_server(
-        index, api, artifacts=_artifact_store(), store=BoundaryStore(directory / "s3")
+        index, api, artifacts=publisher, store=BoundaryStore(directory / "s3")
     )
 
     counts = index.counts()

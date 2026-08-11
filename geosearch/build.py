@@ -12,7 +12,7 @@ Needs AWS credentials, because embedding is now a Bedrock call (geosearch/index.
 Output:
     index/geosearch.duckdb      records + the model the vectors came from
     index/*.faiss               title, description and division-name indexes
-    index/s3/layers/divisions/  the division layers, as the simulated bucket's contents
+    index/s3/layers/divisions/  read-only division GeoJSON shipped in the image
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ from .swisstopo import DIVISIONS, Swisstopo, feature_name
 
 logger = logging.getLogger(__name__)
 
-# Where the build writes the division layers. start_local_s3() replays this into moto,
-# and it is exactly the prefix a real bucket would hold.
+# Historical directory name retained so existing indexes remain compatible. These
+# boundaries now ship in the image and are never copied to the generated-layer bucket.
 S3_MIRROR = "s3"
 
 # Given every feature of one division, the abbreviation of the canton it lies in.

@@ -2,13 +2,11 @@
 # Install this to develop; the Dockerfile installs requirements.txt alone.
 -r requirements.txt
 
-# Stands in for S3 when GEOSEARCH_S3_BUCKET is unset, so `python -m geosearch.server` runs
-# with no AWS credentials and no second container. Never reached in the deployed image,
-# which always names the real bucket.
-moto[server]==5.2.2
-
 # Same pins as backend/requirements-dev.txt. Two ruff versions in one repository disagree
 # about formatting, and whichever ran last looks like the bug. No pytest-asyncio: these
 # tests drive the async API through asyncio.run rather than as async test functions.
 pytest==9.0.1
 ruff==0.15.1
+# Shared local S3 endpoint for the separate geosearch and backend processes.
+# Production installs requirements.txt only and does not contain moto.
+moto[server]==5.2.2
