@@ -37,9 +37,9 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: ruff check app tests ../mcp_dummy ../evals
-      - run: ruff format --check app tests ../mcp_dummy ../evals
-      # Scope comes from pyproject's `files`: app, mcp_dummy and evals.
+      - run: ruff check app tests ../mcp_dummy ../evals ../tile_server
+      - run: ruff format --check app tests ../mcp_dummy ../evals ../tile_server
+      # Scope comes from pyproject's `files`: app, mcp_dummy, evals, geosearch and tile_server.
       - run: mypy
       # The suite stubs AWS and the MCP server, so no credentials are needed.
       - run: pytest

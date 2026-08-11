@@ -19,7 +19,7 @@ Metadata:
       - Label: { default: Task sizing }
         Parameters: [TaskCpu, TaskMemory, DesiredCount, ImageTag, ContainerPort]
       - Label: { default: Server configuration }
-        Parameters: [RerankModelId, RerankModelRegion, LogLevel]
+        Parameters: [RerankModelId, RerankModelRegion, McpRequestTimeoutSeconds, LogLevel]
 
 Parameters:
   GeosearchFoundationStackName:
@@ -80,6 +80,10 @@ Parameters:
     Type: Number
     Default: 8790
     Description: Must match the foundation stack's security group rule and DNS record.
+  McpRequestTimeoutSeconds:
+    Type: Number
+    Default: 240
+    Description: Service Connect request budget for large retrieval and artifact generation.
   RerankModelId:
     Type: String
     Default: mistral.ministral-3-14b-instruct
@@ -154,9 +158,8 @@ Resources:
             - { Name: PORT, Value: !Ref ContainerPort }
             - { Name: LOG_LEVEL, Value: !Ref LogLevel }
             - { Name: AWS_REGION, Value: !Ref AWS::Region }
-            # Setting this is what switches S3Store from the moto stand-in to the
-            # real bucket (geosearch/server.py:_artifact_store). Unset means local
-            # development, so it must always be present here.
+            # Generated layers always need a shared private source bucket. Local
+            # development points this at a shared S3-compatible endpoint instead.
             - Name: GEOSEARCH_S3_BUCKET
               Value: !ImportValue
                 Fn::Sub: '${BackendFoundationStackName}-DataLayerBucketName'
@@ -217,6 +220,8 @@ Resources:
         Services:
           - PortName: mcp
             DiscoveryName: !Ref GeosearchName
+            Timeout:
+              PerRequestTimeoutSeconds: !Ref McpRequestTimeoutSeconds
             ClientAliases:
               - Port: !Ref ContainerPort
                 DnsName: !Ref GeosearchName

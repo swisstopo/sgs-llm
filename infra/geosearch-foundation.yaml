@@ -258,22 +258,20 @@ Resources:
               - Effect: Allow
                 Action: [bedrock:ListInferenceProfiles, bedrock:GetInferenceProfile]
                 Resource: '*'
-        # display_layer and display_division publish GeoJSON and hand back a
-        # presigned URL. GetObject is needed as well as PutObject: a presigned URL
-        # carries the signer's permissions, so without it every map layer 403s in
-        # the browser. This policy is what retires the moto stand-in.
+        # display_layer and display_division publish private GeoParquet plus a strict
+        # manifest. DeleteObject is rollback-only; the backend owns public disposal.
         - PolicyName: publish-data-layers
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: [s3:PutObject, s3:GetObject]
+                Action: [s3:PutObject, s3:DeleteObject, s3:AbortMultipartUpload]
                 Resource: !Sub
                   - 'arn:${AWS::Partition}:s3:::${Bucket}/layers/*'
                   - Bucket: !ImportValue
                       Fn::Sub: '${BackendFoundationStackName}-DataLayerBucketName'
               - Effect: Allow
-                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Action: s3:GetBucketLocation
                 Resource: !Sub
                   - 'arn:${AWS::Partition}:s3:::${Bucket}'
                   - Bucket: !ImportValue

@@ -9,12 +9,14 @@ on:
     branches: [main]
     paths:
       - 'geosearch/**'
+      - 'tile_server/**'
       - '.dockerignore'
       - 'scripts/deploy-geosearch.sh'
       - '.github/workflows/geosearch.yml'
   pull_request:
     paths:
       - 'geosearch/**'
+      - 'tile_server/**'
       - '.github/workflows/geosearch.yml'
   workflow_dispatch:
 
@@ -35,6 +37,9 @@ jobs:
           cache-dependency-path: geosearch/requirements-dev.txt
       - run: pip install -r geosearch/requirements-dev.txt
       - run: ruff check geosearch
+      - run: ruff check --config backend/pyproject.toml tile_server
+      # tile_server is shared with the backend, whose 100-column config is canonical.
+      - run: ruff format --check --config backend/pyproject.toml tile_server
       # The index fixtures embed with a deterministic trigram stub, so this job needs no
       # model download and no AWS role - it could not assume one anyway. Nothing here
       # touches geo.admin.ch or Bedrock.
@@ -101,7 +106,7 @@ jobs:
               missing=1
             fi
           done
-          # The division boundaries are read from the image at runtime (geosearch/s3.py,
+          # The division boundaries are read from the image at runtime (geosearch/boundaries.py,
           # BoundaryStore), so an index without them deploys and then 500s on every
           # display_division call.
           boundaries=$(find index/s3 -name '*.geojson' 2>/dev/null | wc -l)
@@ -121,10 +126,13 @@ jobs:
       # container that started but loaded nothing fails this check.
       - name: Smoke-test the image
         run: |
+          docker run --rm --entrypoint ogr2ogr sgs-llm-geosearch:ci --version
+          docker run --rm --entrypoint python sgs-llm-geosearch:ci \
+            -m geosearch.large_layer_smoke --features 1000 --output-dir /tmp/large-layer-smoke
           # GEOSEARCH_S3_BUCKET must be set to *something*: unset means local development,
           # and the image carries no moto to stand in for S3, so the process exits before
-          # it serves anything. The name is never dialled here - S3Store only builds a
-          # boto3 client at startup, and nothing in this check publishes a layer.
+          # it serves anything. The name is never dialled here: publication is lazy, and
+          # this check does not invoke a display tool.
           docker run -d --name smoke -p 8790:8790 \
             -e GEOSEARCH_S3_BUCKET=smoke-never-written-to \
             -e GEOSEARCH_ALLOWED_HOSTS=sgs-llm-geosearch:8790 sgs-llm-geosearch:ci

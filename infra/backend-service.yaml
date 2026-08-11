@@ -22,7 +22,7 @@ Metadata:
           - PublicBaseUrl
           - McpServerUrl
           - ServiceConnectNamespace
-          - DataLayerPresignTtl
+          - McpReadTimeoutSeconds
           - LogLevel
       - Label: { default: Limits and optional key }
         Parameters:
@@ -144,8 +144,12 @@ Parameters:
       and is NOT a security boundary - the rate limits are what protect the service.
   TurnTimeoutSeconds:
     Type: Number
-    Default: 90
+    Default: 300
     Description: Wall-clock budget for one chat turn before it fails with `timeout`.
+  McpReadTimeoutSeconds:
+    Type: Number
+    Default: 240
+    Description: Read budget for one MCP request, including large artifact generation.
   RateLimitMessagesPerMinute:
     Type: Number
     Default: 20
@@ -154,10 +158,6 @@ Parameters:
     Type: Number
     Default: 8
     Description: Concurrent WebSocket connections allowed from one client address.
-  DataLayerPresignTtl:
-    Type: Number
-    Default: 3600
-    Description: Lifetime in seconds of presigned data-layer URLs handed to the browser.
   LogLevel:
     Type: String
     Default: info
@@ -246,11 +246,11 @@ Resources:
             - Name: DATA_LAYER_BUCKET
               Value: !ImportValue
                 Fn::Sub: '${FoundationStackName}-DataLayerBucketName'
-            - { Name: DATA_LAYER_PRESIGN_TTL, Value: !Ref DataLayerPresignTtl }
             - { Name: PUBLIC_BASE_URL, Value: !Ref PublicBaseUrl }
             - { Name: ALLOWED_ORIGINS, Value: !Ref PublicBaseUrl }
             - Name: MCP_SERVER_URL
               Value: !If [HasMcpServer, !Ref McpServerUrl, '']
+            - { Name: MCP_READ_TIMEOUT_SECONDS, Value: !Ref McpReadTimeoutSeconds }
             - { Name: API_KEY, Value: !Ref ApiKey }
             - { Name: TURN_TIMEOUT_SECONDS, Value: !Ref TurnTimeoutSeconds }
             - { Name: RATE_LIMIT_MESSAGES_PER_MINUTE, Value: !Ref RateLimitMessagesPerMinute }

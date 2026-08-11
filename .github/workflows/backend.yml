@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'tile_server/**'
       - 'mock-agent/**'
       - '.dockerignore'
       - 'scripts/deploy-backend.sh'
@@ -38,8 +39,8 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: ruff check app tests ../mcp_dummy ../evals
-      - run: ruff format --check app tests ../mcp_dummy ../evals
+      - run: ruff check app tests ../mcp_dummy ../evals ../tile_server
+      - run: ruff format --check app tests ../mcp_dummy ../evals ../tile_server
       - run: mypy
       - run: pytest
 

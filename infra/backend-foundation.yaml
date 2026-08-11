@@ -14,8 +14,6 @@ Metadata:
         Parameters: [ProjectTag, BackendName]
       - Label: { default: Networking }
         Parameters: [VpcId, SubnetIds, ContainerPort, AlbIdleTimeoutSeconds, CloudFrontPrefixListId]
-      - Label: { default: Frontend integration }
-        Parameters: [FrontendOrigin]
       - Label: { default: Data retention }
         Parameters: [FeedbackTtlDays, ConversationTtlDays, DataLayerExpiryDays]
       - Label: { default: CI/CD and developer access }
@@ -64,12 +62,6 @@ Parameters:
       aws ec2 describe-managed-prefix-lists --filters
       Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing
       --query 'PrefixLists[0].PrefixListId' --output text
-  FrontendOrigin:
-    Type: String
-    Default: https://denpw8uo5zpkl.cloudfront.net
-    Description: >-
-      Browser origin allowed to fetch data-layer artifacts from S3 via presigned
-      URLs (the CloudFront distribution serving the frontend).
   FeedbackTtlDays:
     Type: Number
     Default: 365
@@ -86,7 +78,10 @@ Parameters:
     Type: Number
     Default: 30
     MinValue: 1
-    Description: Lifecycle expiry for MCP-produced GeoJSON/GeoParquet artifacts.
+    Description: >-
+      Physical lifecycle backstop for generated GeoParquet sources and tombstones.
+      Capabilities expire logically after 24 hours and DELETE removes sources
+      sooner when the browser disposes a layer.
   OidcProviderArn:
     Type: String
     Default: ''
@@ -327,8 +322,8 @@ Resources:
       Tags:
         - { Key: project, Value: !Ref ProjectTag }
 
-  # MCP-produced GeoJSON/GeoParquet. The browser fetches these cross-origin from
-  # presigned URLs, so CORS must allow the frontend origin.
+  # Private generated GeoParquet sources. Rendered MVT exists only in bounded backend
+  # memory and browser caches; it is never persisted to S3.
   DataLayerBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -343,13 +338,6 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
-      CorsConfiguration:
-        CorsRules:
-          - AllowedMethods: [GET, HEAD]
-            AllowedOrigins: [!Ref FrontendOrigin]
-            AllowedHeaders: ['*']
-            ExposedHeaders: [ETag, Content-Length]
-            MaxAge: 3000
       LifecycleConfiguration:
         Rules:
           - Id: expire-data-layers
@@ -477,10 +465,18 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
-                Resource: !Sub '${DataLayerBucket.Arn}/*'
+                Action: s3:GetObject
+                Resource:
+                  - !Sub '${DataLayerBucket.Arn}/layers/*'
+                  - !Sub '${DataLayerBucket.Arn}/tombstones/*'
               - Effect: Allow
-                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Action: s3:DeleteObject
+                Resource: !Sub '${DataLayerBucket.Arn}/layers/*'
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${DataLayerBucket.Arn}/tombstones/*'
+              - Effect: Allow
+                Action: s3:GetBucketLocation
                 Resource: !GetAtt DataLayerBucket.Arn
         - PolicyName: runtime-support
           PolicyDocument:
