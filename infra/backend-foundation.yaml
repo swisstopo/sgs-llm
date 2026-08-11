@@ -469,6 +469,15 @@ Resources:
                 Resource:
                   - !Sub '${DataLayerBucket.Arn}/layers/*'
                   - !Sub '${DataLayerBucket.Arn}/tombstones/*'
+              # S3 returns 403, rather than 404, for a missing object unless the
+              # caller may list its prefix. A missing tombstone is the normal active-
+              # layer state, so allow only that existence check—not bucket-wide listing.
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataLayerBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: 'tombstones/*'
               - Effect: Allow
                 Action: s3:DeleteObject
                 Resource: !Sub '${DataLayerBucket.Arn}/layers/*'
