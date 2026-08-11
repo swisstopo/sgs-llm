@@ -55,11 +55,19 @@ export interface StyleHint {
 export interface LayerSpec {
   id: string;
   name: string;
-  format: 'geojson' | 'parquet';
+  format: 'geojson' | 'mvt';
   url: string;
+  /** Best-effort map-only disposal endpoint. */
+  dispose_url?: string;
+  /** When the transfer URL expires, as an ISO date-time string. */
+  url_expires_at?: string;
   geometry_type: 'point' | 'line' | 'polygon';
   feature_count?: number;
+  /** True when a server-side safety budget stopped retrieval before exhaustion. */
+  truncated?: boolean;
   bbox?: ProtocolBBox;
+  min_zoom?: number;
+  max_zoom?: number;
   attribution?: string;
   style_hint?: StyleHint;
 }
@@ -113,18 +121,51 @@ export function isLayerSpec(value: unknown): value is LayerSpec {
   if (!isRecord(value)) {
     return false;
   }
-  return (
+  const hasRemovedRenderField =
+    'render_format' in value ||
+    'render_url' in value ||
+    'render_expires_at' in value ||
+    value.format === 'parquet';
+  const expiryIsValid =
+    value.url_expires_at === undefined ||
+    (typeof value.url_expires_at === 'string' && Number.isFinite(Date.parse(value.url_expires_at)));
+  const common =
     typeof value.id === 'string' &&
     typeof value.name === 'string' &&
-    (value.format === 'geojson' || value.format === 'parquet') &&
+    (value.format === 'geojson' || value.format === 'mvt') &&
     typeof value.url === 'string' &&
+    !hasRemovedRenderField &&
+    expiryIsValid &&
     (value.geometry_type === 'point' ||
       value.geometry_type === 'line' ||
       value.geometry_type === 'polygon') &&
     (value.feature_count === undefined || typeof value.feature_count === 'number') &&
+    (value.truncated === undefined || typeof value.truncated === 'boolean') &&
     (value.bbox === undefined || isBBox(value.bbox)) &&
     (value.attribution === undefined || typeof value.attribution === 'string') &&
-    (value.style_hint === undefined || isStyleHint(value.style_hint))
+    (value.style_hint === undefined || isStyleHint(value.style_hint));
+  if (!common) {
+    return false;
+  }
+  const mvtOnlyFields = ['dispose_url', 'min_zoom', 'max_zoom'];
+  if (value.format === 'geojson') {
+    return mvtOnlyFields.every((field) => !(field in value));
+  }
+  const hasTemplate = (candidate: unknown): candidate is string =>
+    typeof candidate === 'string' &&
+    candidate.includes('{z}') &&
+    candidate.includes('{x}') &&
+    candidate.includes('{y}');
+  return (
+    hasTemplate(value.url) &&
+    !('fallback_url' in value) &&
+    (value.dispose_url === undefined ||
+      (typeof value.dispose_url === 'string' && value.dispose_url.length > 0)) &&
+    Number.isInteger(value.min_zoom) &&
+    Number.isInteger(value.max_zoom) &&
+    (value.min_zoom as number) >= 0 &&
+    (value.max_zoom as number) <= 24 &&
+    (value.min_zoom as number) <= (value.max_zoom as number)
   );
 }
 

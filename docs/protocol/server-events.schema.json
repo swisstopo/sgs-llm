@@ -55,10 +55,13 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "format": { "enum": ["geojson", "parquet"] },
+        "format": { "enum": ["geojson", "mvt"] },
         "url": { "type": "string", "format": "uri" },
+        "dispose_url": { "type": "string", "format": "uri" },
+        "url_expires_at": { "type": "string", "format": "date-time" },
         "geometry_type": { "enum": ["point", "line", "polygon"] },
-        "feature_count": { "type": "number" },
+        "feature_count": { "type": "number", "minimum": 0 },
+        "truncated": { "type": "boolean" },
         "bbox": {
           "type": "array",
           "items": { "type": "number" },
@@ -66,6 +69,8 @@
           "maxItems": 4,
           "description": "[minLon, minLat, maxLon, maxLat] in WGS84"
         },
+        "min_zoom": { "type": "integer", "minimum": 0, "maximum": 24 },
+        "max_zoom": { "type": "integer", "minimum": 0, "maximum": 24 },
         "attribution": { "type": "string" },
         "style_hint": {
           "type": "object",
@@ -77,7 +82,48 @@
             "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "format": { "const": "mvt" } } },
+          "then": {
+            "required": ["min_zoom", "max_zoom"],
+            "properties": {
+              "url": {
+                "pattern": "(?=.*\\{z\\})(?=.*\\{x\\})(?=.*\\{y\\})"
+              }
+            },
+            "anyOf": [
+              { "properties": { "min_zoom": { "const": 0 } } },
+              { "properties": { "min_zoom": { "const": 1 }, "max_zoom": { "minimum": 1 } } },
+              { "properties": { "min_zoom": { "const": 2 }, "max_zoom": { "minimum": 2 } } },
+              { "properties": { "min_zoom": { "const": 3 }, "max_zoom": { "minimum": 3 } } },
+              { "properties": { "min_zoom": { "const": 4 }, "max_zoom": { "minimum": 4 } } },
+              { "properties": { "min_zoom": { "const": 5 }, "max_zoom": { "minimum": 5 } } },
+              { "properties": { "min_zoom": { "const": 6 }, "max_zoom": { "minimum": 6 } } },
+              { "properties": { "min_zoom": { "const": 7 }, "max_zoom": { "minimum": 7 } } },
+              { "properties": { "min_zoom": { "const": 8 }, "max_zoom": { "minimum": 8 } } },
+              { "properties": { "min_zoom": { "const": 9 }, "max_zoom": { "minimum": 9 } } },
+              { "properties": { "min_zoom": { "const": 10 }, "max_zoom": { "minimum": 10 } } },
+              { "properties": { "min_zoom": { "const": 11 }, "max_zoom": { "minimum": 11 } } },
+              { "properties": { "min_zoom": { "const": 12 }, "max_zoom": { "minimum": 12 } } },
+              { "properties": { "min_zoom": { "const": 13 }, "max_zoom": { "minimum": 13 } } },
+              { "properties": { "min_zoom": { "const": 14 }, "max_zoom": { "minimum": 14 } } },
+              { "properties": { "min_zoom": { "const": 15 }, "max_zoom": { "minimum": 15 } } },
+              { "properties": { "min_zoom": { "const": 16 }, "max_zoom": { "minimum": 16 } } },
+              { "properties": { "min_zoom": { "const": 17 }, "max_zoom": { "minimum": 17 } } },
+              { "properties": { "min_zoom": { "const": 18 }, "max_zoom": { "minimum": 18 } } },
+              { "properties": { "min_zoom": { "const": 19 }, "max_zoom": { "minimum": 19 } } },
+              { "properties": { "min_zoom": { "const": 20 }, "max_zoom": { "minimum": 20 } } },
+              { "properties": { "min_zoom": { "const": 21 }, "max_zoom": { "minimum": 21 } } },
+              { "properties": { "min_zoom": { "const": 22 }, "max_zoom": { "minimum": 22 } } },
+              { "properties": { "min_zoom": { "const": 23 }, "max_zoom": { "minimum": 23 } } },
+              { "properties": { "min_zoom": { "const": 24 }, "max_zoom": { "minimum": 24 } } }
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
     }
   }
 }

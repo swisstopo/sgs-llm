@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 import pytest
+from jsonschema.exceptions import ValidationError as SchemaValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from app.protocol import (
     Done,
@@ -94,6 +96,8 @@ def test_frames_validate_against_the_published_schema(server_event_validator) ->
         name="Hochwasser",
         format="geojson",
         url="https://example.test/a.geojson",
+        url_expires_at="2026-08-11T01:00:00Z",  # type: ignore[arg-type]
+        truncated=True,
         geometry_type="polygon",
         feature_count=5,
         bbox=(7.0, 46.0, 8.0, 46.5),
@@ -108,6 +112,122 @@ def test_frames_validate_against_the_published_schema(server_event_validator) ->
     ]
     for event in frames:
         server_event_validator.validate(json.loads(event.frame()))
+
+
+def test_mvt_layer_spec_carries_tile_templates_and_zoom_range(server_event_validator) -> None:
+    layer = LayerSpec(
+        id="roads",
+        name="Roads",
+        format="mvt",
+        url="https://tiles.test/tiles/token/{z}/{x}/{y}.mvt",
+        dispose_url="/data/layers/token",
+        url_expires_at="2026-08-11T10:00:00Z",  # type: ignore[arg-type]
+        geometry_type="line",
+        min_zoom=0,
+        max_zoom=16,
+    )
+    frame = json.loads(Final(message_id="m", content_markdown="ok", layers=[layer]).frame())
+    server_event_validator.validate(frame)
+    assert frame["layers"][0]["url"].endswith("/{z}/{x}/{y}.mvt")
+    assert "fallback_url" not in frame["layers"][0]
+
+
+def test_mvt_layer_rejects_a_template_without_xyz() -> None:
+    candidate = {
+        "id": "roads",
+        "name": "Roads",
+        "format": "mvt",
+        "url": "/data/tiles/token/{z}/{x}/{y}.mvt",
+        "geometry_type": "line",
+        "min_zoom": 0,
+        "max_zoom": 16,
+    }
+    candidate["url"] = "/data/tiles/token/all.mvt"
+    with pytest.raises(
+        PydanticValidationError, match=r"MVT URLs must contain \{z\}, \{x\}, and \{y\}"
+    ):
+        LayerSpec.model_validate(candidate)
+
+
+def test_mvt_layer_rejects_removed_fallback_plumbing() -> None:
+    with pytest.raises(PydanticValidationError):
+        LayerSpec.model_validate(
+            {
+                "id": "roads",
+                "name": "Roads",
+                "format": "mvt",
+                "url": "/data/tiles/token/{z}/{x}/{y}.mvt",
+                "fallback_url": "https://unused.test/tile.mvt",
+                "geometry_type": "line",
+                "min_zoom": 0,
+                "max_zoom": 16,
+            }
+        )
+
+
+def test_published_schema_rejects_removed_fallback_plumbing(server_event_validator) -> None:
+    frame = {
+        "type": "final",
+        "message_id": "m",
+        "content_markdown": "ok",
+        "layers": [
+            {
+                "id": "roads",
+                "name": "Roads",
+                "format": "mvt",
+                "url": "/data/tiles/token/{z}/{x}/{y}.mvt",
+                "fallback_url": "https://unused.test/{z}/{x}/{y}.mvt",
+                "geometry_type": "line",
+                "min_zoom": 0,
+                "max_zoom": 16,
+            }
+        ],
+    }
+    with pytest.raises(SchemaValidationError):
+        server_event_validator.validate(frame)
+
+
+@pytest.mark.parametrize(
+    ("min_zoom", "max_zoom"),
+    [(None, 16), (0, None), (16, 0)],
+)
+def test_mvt_layer_rejects_missing_or_inverted_zoom_bounds(
+    min_zoom: int | None, max_zoom: int | None
+) -> None:
+    candidate = {
+        "id": "roads",
+        "name": "Roads",
+        "format": "mvt",
+        "url": "/data/tiles/token/{z}/{x}/{y}.mvt",
+        "geometry_type": "line",
+        "min_zoom": min_zoom,
+        "max_zoom": max_zoom,
+    }
+
+    with pytest.raises(PydanticValidationError, match="MVT layers require an ordered zoom range"):
+        LayerSpec.model_validate(candidate)
+
+
+def test_published_schema_rejects_an_inverted_mvt_zoom_range(server_event_validator) -> None:
+    frame = {
+        "type": "final",
+        "message_id": "m",
+        "content_markdown": "ok",
+        "layers": [
+            {
+                "id": "roads",
+                "name": "Roads",
+                "format": "mvt",
+                "url": "https://tiles.test/tiles/token/{z}/{x}/{y}.mvt",
+                "geometry_type": "line",
+                "min_zoom": 16,
+                "max_zoom": 0,
+            }
+        ],
+    }
+
+    with pytest.raises(SchemaValidationError):
+        server_event_validator.validate(frame)
 
 
 def test_coerce_layer_spec_rejects_what_the_frontend_would_discard() -> None:

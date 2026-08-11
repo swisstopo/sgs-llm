@@ -1,6 +1,6 @@
 """Turning tool output into protocol `LayerSpec`s.
 
-Matches the documented shape (fetchable GeoJSON/GeoParquet URL plus WGS84 bbox) anywhere
+Matches the documented shape (fetchable GeoJSON/MVT URL plus WGS84 bbox) anywhere
 in a tool result rather than the bundled server's exact schema, so swisstopo's server
 should need no code change here.
 
@@ -23,7 +23,6 @@ _URL_KEYS = ("url", "href", "layer_url", "data_url")
 _NAME_KEYS = ("name", "title", "label", "layer_name")
 _GEOMETRY_KEYS = ("geometry_type", "geometryType", "geometry")
 _BBOX_KEYS = ("bbox", "bounds", "extent")
-
 _GEOMETRY_ALIASES = {
     "point": "point",
     "multipoint": "point",
@@ -34,9 +33,8 @@ _GEOMETRY_ALIASES = {
     "multipolygon": "polygon",
 }
 
-# Only formats the protocol declares. `parquet` stays recognised because it is stable
-# in the contract, even though the frontend shows it as not yet displayable.
-_EXTENSION_FORMATS = {".geojson": "geojson", ".json": "geojson", ".parquet": "parquet"}
+# Only formats the protocol declares.
+_EXTENSION_FORMATS = {".geojson": "geojson", ".json": "geojson", ".mvt": "mvt"}
 
 MAX_LAYERS_PER_ANSWER = 6
 
@@ -96,7 +94,7 @@ def _clamp01(value: Any) -> float | None:
 
 def _normalise_format(candidate: dict[str, Any], url: str) -> str | None:
     declared = candidate.get("format")
-    if isinstance(declared, str) and declared.lower() in {"geojson", "parquet"}:
+    if isinstance(declared, str) and declared.lower() in {"geojson", "mvt"}:
         return declared.lower()
     lowered = url.split("?", 1)[0].lower()
     for extension, fmt in _EXTENSION_FORMATS.items():
@@ -120,8 +118,8 @@ def _build(candidate: dict[str, Any], *, base_url: str, index: int) -> LayerSpec
     raw_url = str(_first(candidate, _URL_KEYS) or "").strip()
     if not raw_url:
         return None
-    # The in-memory artifact fallback returns "/data/<name>"; presigned S3 URLs are
-    # already absolute and pass through untouched.
+    # Legacy in-memory GeoJSON returns "/data/<name>"; generated MVT templates are
+    # already backend-relative or absolute and pass through unchanged.
     url = urljoin(base_url, raw_url) if base_url else raw_url
 
     fmt = _normalise_format(candidate, url)
@@ -146,6 +144,13 @@ def _build(candidate: dict[str, Any], *, base_url: str, index: int) -> LayerSpec
         "geometry_type": geometry,
     }
 
+    if candidate.get("url_expires_at") is not None:
+        payload["url_expires_at"] = candidate["url_expires_at"]
+
+    for field in ("dispose_url", "min_zoom", "max_zoom"):
+        if candidate.get(field) is not None:
+            payload[field] = candidate[field]
+
     bbox = _normalise_bbox(_first(candidate, _BBOX_KEYS))
     if bbox is not None:
         payload["bbox"] = bbox
@@ -153,6 +158,10 @@ def _build(candidate: dict[str, Any], *, base_url: str, index: int) -> LayerSpec
     count = candidate.get("feature_count", candidate.get("count"))
     if isinstance(count, int):
         payload["feature_count"] = count
+
+    truncated = candidate.get("truncated")
+    if isinstance(truncated, bool):
+        payload["truncated"] = truncated
 
     attribution = candidate.get("attribution")
     if isinstance(attribution, str) and attribution.strip():

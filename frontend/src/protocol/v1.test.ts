@@ -70,16 +70,70 @@ describe('parseServerEvent', () => {
 });
 
 describe('isLayerSpec', () => {
-  it('accepts a minimal valid spec', () => {
+  const validMvt = {
+    id: 'roads',
+    name: 'Roads',
+    format: 'mvt',
+    url: '/data/tiles/token/{z}/{x}/{y}.mvt',
+    dispose_url: '/data/layers/token',
+    url_expires_at: '2026-08-11T10:00:00Z',
+    geometry_type: 'line',
+    min_zoom: 0,
+    max_zoom: 16,
+  } as const;
+
+  it('accepts GeoJSON without generated-tile metadata', () => {
     expect(
       isLayerSpec({
         id: 'l1',
         name: 'n',
-        format: 'parquet',
-        url: 'https://example.com/x.parquet',
+        format: 'geojson',
+        url: 'https://example.com/x.geojson',
         geometry_type: 'point',
       }),
     ).toBe(true);
+  });
+
+  it('accepts MVT with disposal, expiry, and zoom metadata', () => {
+    expect(isLayerSpec(validMvt)).toBe(true);
+  });
+
+  it.each([
+    { min_zoom: 17, max_zoom: 16 },
+    { min_zoom: -1 },
+    { max_zoom: 25 },
+    { url: '/data/tiles/token/all.mvt' },
+    { fallback_url: '/data/tiles/token/{z}/{x}/{y}.mvt' },
+    { url_expires_at: 'not-a-date' },
+  ])('rejects invalid MVT cross-fields: $url', (override) => {
+    expect(isLayerSpec({ ...validMvt, ...override })).toBe(false);
+  });
+
+  it.each(['render_format', 'render_url', 'render_expires_at', 'parquet'])(
+    'rejects the removed %s field',
+    (removedField) => {
+      const value =
+        removedField === 'parquet'
+          ? { ...validMvt, format: 'parquet' }
+          : {
+              ...validMvt,
+              [removedField]: undefined,
+            };
+      expect(isLayerSpec(value)).toBe(false);
+    },
+  );
+
+  it('rejects MVT-only fields on GeoJSON', () => {
+    expect(
+      isLayerSpec({
+        id: 'l1',
+        name: 'GeoJSON',
+        format: 'geojson',
+        url: '/data/layer.geojson',
+        dispose_url: '/data/layers/token',
+        geometry_type: 'polygon',
+      }),
+    ).toBe(false);
   });
 
   it('rejects wrong formats and geometry types', () => {

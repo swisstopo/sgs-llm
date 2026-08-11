@@ -121,11 +121,20 @@ with one or more failed steps in it. Note that this differs from the wording in
 
 - `content_markdown` — GitHub-flavored markdown. The client sanitizes it;
   raw HTML is stripped.
-- `layers` — optional data layers. The client fetches `url` itself (the URL
-  must be CORS-accessible, e.g. a presigned object URL).
-  - `format` — `geojson | parquet` (GeoParquet). Clients that do not
-    support a format show the layer as not displayable.
+- `layers` — optional data layers. The client fetches `url` itself. Generated MVT uses
+  the backend's same-origin capability route; cross-origin GeoJSON must allow CORS.
+  - `format` — `geojson | mvt`. Clients that do not support a format show the
+    layer as not displayable.
+  - MVT `url` is a `{z}/{x}/{y}` tile template and must contain all three
+    placeholders. MVT layers require ordered
+    `min_zoom` and `max_zoom` values from 0 through 24. `dispose_url` is an
+    optional endpoint the client calls when it releases a tiled layer.
+  - `url_expires_at` — optional ISO 8601 date-time recording when the transfer
+    URL expires.
   - `geometry_type` — `point | line | polygon`.
+  - `truncated` — true when a safety budget stopped retrieval before the source
+    query was exhausted. The layer remains valid, but the UI must disclose that it
+    is incomplete.
   - `bbox` — WGS84, for zoom-to-layer.
   - `style_hint` — optional rendering hints: `fill_color`, `stroke_color`,
     `stroke_width`, `point_radius`, `opacity`.

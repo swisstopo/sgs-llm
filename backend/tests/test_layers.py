@@ -48,9 +48,56 @@ def test_leaves_a_presigned_absolute_url_alone() -> None:
     assert layers[0].url == url
 
 
+def test_extracts_mvt_tile_templates_and_zoom_range() -> None:
+    layers = extract_layers(
+        {
+            "id": "roads",
+            "name": "Roads",
+            "format": "mvt",
+            "url": "/data/tiles/token/{z}/{x}/{y}.mvt",
+            "dispose_url": "/data/layers/token",
+            "url_expires_at": "2026-08-11T10:00:00Z",
+            "geometry_type": "line",
+            "min_zoom": 0,
+            "max_zoom": 16,
+        },
+        base_url="https://example.test",
+    )
+
+    assert len(layers) == 1
+    layer = layers[0]
+    assert layer.url == "https://example.test/data/tiles/token/{z}/{x}/{y}.mvt"
+    assert layer.dispose_url == "/data/layers/token"
+    assert (layer.min_zoom, layer.max_zoom) == (0, 16)
+
+
+def test_extraction_still_ignores_unrelated_tool_result_fields() -> None:
+    layers = extract_layers(
+        {
+            "id": "roads",
+            "name": "Roads",
+            "format": "geojson",
+            "url": "/data/roads.geojson",
+            "geometry_type": "line",
+            "provider_metadata": {"request_id": "req-1"},
+        },
+        base_url="https://example.test",
+    )
+
+    assert len(layers) == 1
+    assert layers[0].url == "https://example.test/data/roads.geojson"
+
+
 def test_infers_the_format_from_the_extension() -> None:
     assert extract_layers({"url": "https://x.test/a.geojson", "geometry_type": "point"})
-    assert extract_layers({"url": "https://x.test/a.parquet", "geometry_type": "point"})
+    assert extract_layers(
+        {
+            "url": "https://x.test/a/{z}/{x}/{y}.mvt",
+            "geometry_type": "point",
+            "min_zoom": 0,
+            "max_zoom": 16,
+        }
+    )
 
 
 def test_ignores_a_url_with_no_recognisable_format() -> None:
