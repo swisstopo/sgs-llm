@@ -1,4 +1,4 @@
-"""What lands in DynamoDB and S3.
+"""What lands in DynamoDB and the memory-only legacy artifact store.
 
 The item shapes are a contract with docs/deployment.md#what-gets-stored and with
 scripts/read-db.sh, which is how anyone inspects the pilot's data.
@@ -156,9 +156,8 @@ class TestConversationTurns:
 
 
 class TestArtifacts:
-    async def test_without_a_bucket_it_serves_from_memory(self) -> None:
+    async def test_it_serves_from_memory(self) -> None:
         store = ArtifactStore(Settings())
-        assert store.uses_bucket is False
 
         url = await store.publish_geojson(
             "a.geojson", {"type": "FeatureCollection", "features": []}
@@ -188,39 +187,11 @@ class TestArtifacts:
         assert body is not None
         assert "Zürich" in json.loads(body)["features"][0]["properties"]["name"]
 
-    async def test_with_a_bucket_it_presigns(self) -> None:
-        class FakeS3:
-            def __init__(self) -> None:
-                self.puts: list[dict[str, Any]] = []
-
-            def put_object(self, **kwargs: Any) -> None:
-                self.puts.append(kwargs)
-
-            def generate_presigned_url(self, operation: str, Params: Any, ExpiresIn: int) -> str:
-                return f"https://bucket.s3.test/{Params['Key']}?X-Amz-Expires={ExpiresIn}"
-
-        settings = Settings(
-            data_layer_bucket="sgs-llm-data-259789526488", data_layer_presign_ttl=900
-        )
-        store = ArtifactStore(settings)
-        fake = FakeS3()
-        store._s3 = fake
-        store._s3_resolved = True
+    async def test_a_legacy_bucket_setting_cannot_enable_persistence(self) -> None:
+        """An old deployment variable is ignored instead of restoring S3 writes."""
+        store = ArtifactStore(Settings(data_layer_bucket="retired-bucket"))
 
         url = await store.publish_geojson("a.geojson", {"type": "FeatureCollection"})
-        assert url is not None
-        assert url.startswith("https://bucket.s3.test/a.geojson")
-        assert "X-Amz-Expires=900" in url
-        assert fake.puts[0]["ContentType"] == "application/geo+json"
-        assert fake.puts[0]["Bucket"] == "sgs-llm-data-259789526488"
 
-    async def test_a_publish_failure_returns_none_rather_than_raising(self) -> None:
-        class BrokenS3:
-            def put_object(self, **kwargs: Any) -> None:
-                raise RuntimeError("AccessDenied")
-
-        store = ArtifactStore(Settings(data_layer_bucket="b"))
-        store._s3 = BrokenS3()
-        store._s3_resolved = True
-
-        assert await store.publish_geojson("a.geojson", {"type": "FeatureCollection"}) is None
+        assert url == "/data/a.geojson"
+        assert store.read_local("a.geojson") is not None

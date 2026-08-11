@@ -20,11 +20,11 @@ python_version = "3.12"
 # mcp_dummy is what the integration tests run against, so both are checked too.
 # geosearch is the production MCP server; it deploys separately but is checked here so
 # there is one type-checking command for the repo.
-files = ["app", "../mcp_dummy", "../evals", "../geosearch"]
+files = ["app", "../mcp_dummy", "../evals", "../geosearch", "../tile_server"]
 strict = true
 # Tests are not type-checked anywhere in this repo (backend/tests is absent from `files`
-# too); annotating pytest fixtures to strict standards buys nothing.
-exclude = "test_geosearch\\.py$"
+# too); keep every geosearch test module out rather than naming only its original test.
+exclude = "(^|/)test_.*\\.py$"
 # All live at the repo root, next to backend/.
 mypy_path = ".."
 # boto3 ships no bundled stubs; the AWS surface is exercised by tests instead.

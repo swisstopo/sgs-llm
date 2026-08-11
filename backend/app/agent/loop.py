@@ -7,6 +7,8 @@ two terminal events.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -40,6 +42,7 @@ from .prompts import NO_RASTER_DISPLAY_NOTE, NO_TOOLS_NOTE, system_prompt
 logger = logging.getLogger(__name__)
 
 THINKING_STEP = "s0"
+TOOL_KEEPALIVE_SECONDS = 20.0
 
 RETRY_TOOL_CALL_NUDGE = (
     "That tool call was incomplete - it named no tool. Either call one of the available "
@@ -231,7 +234,28 @@ async def run_turn(
                     label=i18n.tool_running(use.name, lang),
                 )
 
-                outcome = await tools.call(use.name, use.arguments)
+                call_task = asyncio.create_task(tools.call(use.name, use.arguments))
+                try:
+                    while not call_task.done():
+                        done, _pending = await asyncio.wait(
+                            {call_task}, timeout=TOOL_KEEPALIVE_SECONDS
+                        )
+                        if call_task in done:
+                            break
+                        # Reuse the step id: ChatService replaces this row instead of
+                        # inventing another progress item for the same operation.
+                        yield Intermediate(
+                            message_id=message_id,
+                            step_id=step_id,
+                            status="started",
+                            label=i18n.tool_running(use.name, lang),
+                        )
+                    outcome = await call_task
+                finally:
+                    if not call_task.done():
+                        call_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await call_task
                 stats.tool_calls.append(use.name)
                 blocks.append(
                     tool_result_block(use.tool_use_id, outcome.text, is_error=outcome.is_error)

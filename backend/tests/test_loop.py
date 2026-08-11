@@ -6,6 +6,7 @@ one `final` or `error` - never both, never neither.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from itertools import pairwise
 
@@ -106,6 +107,31 @@ async def test_tool_call_streams_progress_and_attaches_the_layer(settings) -> No
     assert final.layers[0].url == "https://example.test/data/fs_1.geojson"
     assert stats.tool_calls == ["display_layer"]
     assert stats.layer_count == 1
+
+
+async def test_slow_tool_repeats_started_keepalive_on_the_same_step(settings, monkeypatch) -> None:
+    import app.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "TOOL_KEEPALIVE_SECONDS", 0.01)
+
+    class SlowTools(FakeToolSession):
+        async def call(self, name, arguments):
+            await asyncio.sleep(0.035)
+            return await super().call(name, arguments)
+
+    tools = SlowTools(
+        {"search_layers": ToolOutcome(text="{}", data={}, is_error=False)},
+        specs=["search_layers"],
+    )
+    models = FakeModels([tool_result("search_layers", {"query": "roads"}), text_result("Done")])
+
+    events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
+
+    tool_steps = [
+        event for event in events if event.type == "intermediate" and event.step_id == "t1"
+    ]
+    assert len([event for event in tool_steps if event.status == "started"]) >= 2
+    assert len([event for event in tool_steps if event.status == "finished"]) == 1
 
 
 async def test_failed_tool_is_reported_and_the_turn_still_answers(settings) -> None:

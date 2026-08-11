@@ -127,7 +127,7 @@ async def tool_gateway(inject: bool) -> AsyncIterator[ToolGateway]:
     try:
         # Explicitly bucketless: an exported DATA_LAYER_BUCKET would otherwise write
         # benchmark GeoJSON to the real bucket.
-        artifacts = ArtifactStore(Settings(data_layer_bucket=""))
+        artifacts = ArtifactStore(Settings(generated_data_bucket=""))
         yield ToolGateway(server=build_server(artifacts, swisstopo=api))
     finally:
         await api.aclose()

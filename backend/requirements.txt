@@ -6,6 +6,9 @@ uvicorn[standard]==0.52.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
 boto3==1.43.59
+# Pure, bounded GeoParquet -> MVT rendering in the shared tile_server package.
+# Spatial extensions are baked into each runtime image; application code only LOADs them.
+duckdb==1.5.5
 # Imported directly by app/mcp/client.py for the Streamable HTTP transport, so it is
 # pinned here rather than left to arrive transitively via mcp.
 httpx2==2.9.1

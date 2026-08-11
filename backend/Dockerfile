@@ -13,12 +13,19 @@ WORKDIR /srv
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# PublicForge's renderer loads extensions but never downloads them at request time.
+# Bake the exact DuckDB extensions into a read-only image directory during the build.
+RUN mkdir -p /opt/duckdb/extensions \
+    && python -c "import duckdb; c=duckdb.connect(); c.execute(\"SET extension_directory='/opt/duckdb/extensions'\"); [c.execute('INSTALL '+e) for e in ('spatial','httpfs','aws')]; c.close()"
+
 COPY backend/app ./app
+COPY tile_server ./tile_server
 # mcp_dummy/ is deliberately NOT copied: the stand-in geodata server is a development and
 # evaluation tool and must not ship to production.
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    TILE_DUCKDB_EXTENSION_DIRECTORY=/opt/duckdb/extensions \
     PORT=8787
 
 RUN useradd --create-home --uid 10001 sgs

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,14 +31,46 @@ class Settings(BaseSettings):
     feedback_ttl_days: int = 365
     conversation_ttl_days: int = 90
 
-    data_layer_bucket: str = ""
-    data_layer_presign_ttl: int = 3600
+    # Private generated GeoParquet/MVT storage. An empty bucket keeps the backend
+    # startup-safe in the unconfigured CI smoke image.
+    generated_data_bucket: str = Field(
+        default="",
+        validation_alias=AliasChoices("GENERATED_DATA_BUCKET", "DATA_LAYER_BUCKET"),
+    )
+    generated_data_region: str = Field(
+        default="eu-central-1",
+        validation_alias=AliasChoices("GENERATED_DATA_REGION", "AWS_REGION"),
+    )
+    generated_data_endpoint_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("GENERATED_DATA_ENDPOINT_URL", "GEOSEARCH_S3_ENDPOINT"),
+    )
+
+    tile_render_capacity: int = 2
+    tile_io_capacity: int = 8
+    tile_io_queue_timeout_seconds: float = 2.0
+    tile_queue_timeout_seconds: float = 2.0
+    tile_render_timeout_seconds: float = 30.0
+    tile_total_timeout_seconds: float = 35.0
+    tile_cache_max_entries: int = 256
+    tile_cache_max_bytes: int = 256 * 1024 * 1024
+
+    tile_duckdb_threads: int = 1
+    tile_duckdb_memory_bytes: int = 512 * 1024 * 1024
+    tile_duckdb_max_spill_bytes: int = 512 * 1024 * 1024
+    tile_duckdb_timeout_seconds: float = 30.0
+    tile_duckdb_max_rows_examined: int = 100_000
+    tile_duckdb_max_features_encoded: int = 20_000
+    tile_duckdb_max_mvt_bytes: int = 1024 * 1024
+    tile_duckdb_spill_directory: str = ""
+    tile_duckdb_extension_directory: str = ""
 
     public_base_url: str = ""
     allowed_origins: str = ""
 
     mcp_server_url: str = ""
     mcp_server_token: str = ""
+    mcp_read_timeout_seconds: float = 240.0
 
     # `catalog_layers` / `focus_bbox` are proposed protocol additions, not yet implemented
     # client-side (docs/protocol.md). Until they are, the frontend drops both fields, so
@@ -53,7 +86,7 @@ class Settings(BaseSettings):
     max_message_chars: int = 4000
     max_history_entries: int = 40
     max_frame_bytes: int = 262_144
-    turn_timeout_seconds: float = 90.0
+    turn_timeout_seconds: float = 300.0
     max_tool_iterations: int = 8
     rate_limit_messages_per_minute: int = 20
     max_connections_per_ip: int = 8

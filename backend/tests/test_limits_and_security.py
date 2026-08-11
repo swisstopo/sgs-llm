@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.config import Settings
 from app.limits import ConnectionRegistry, RateLimiter, TooManyConnections
 from app.security import (
     client_key,
@@ -11,6 +12,13 @@ from app.security import (
     key_matches,
     origin_allowed,
 )
+
+
+def test_large_layer_time_budgets_are_coherent() -> None:
+    settings = Settings()
+    assert settings.mcp_read_timeout_seconds == 240
+    assert settings.turn_timeout_seconds == 300
+    assert settings.turn_timeout_seconds > settings.mcp_read_timeout_seconds
 
 
 class FakeClock:
