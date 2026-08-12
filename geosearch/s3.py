@@ -13,12 +13,16 @@ HTTP, but nothing about that requires a second process to babysit.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import socket
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
+
+from .artifacts import write_geoparquet
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +52,15 @@ def _free_port(preferred: int = 5000) -> int:
 
 
 class S3Store:
-    """Publishes GeoJSON and hands back a URL the browser can fetch."""
+    """Publishes browser layers and reads image-baked GeoJSON boundaries."""
 
     def __init__(self, endpoint_url: str | None = None, bucket: str = BUCKET) -> None:
-        import boto3
+        import boto3  # type: ignore[import-untyped]
 
         self.bucket = bucket
-        self.endpoint_url = endpoint_url or os.environ.get("GEOSEARCH_S3_ENDPOINT") or None
+        self.endpoint_url = (
+            endpoint_url or os.environ.get("GEOSEARCH_S3_ENDPOINT") or None
+        )
         kwargs: dict[str, Any] = {"region_name": REGION}
         if self.endpoint_url:
             # moto accepts anything, but boto3 refuses to sign without credentials, and
@@ -139,14 +145,44 @@ class S3Store:
                 ContentType="application/geo+json",
             )
             count += 1
-        logger.info("seeded %d objects into s3://%s from %s", count, self.bucket, directory)
+        logger.info(
+            "seeded %d objects into s3://%s from %s", count, self.bucket, directory
+        )
         return count
 
-    async def publish_geojson(self, name: str, feature_collection: dict[str, Any]) -> str | None:
+    async def publish_geojson(
+        self, name: str, feature_collection: dict[str, Any]
+    ) -> str | None:
         """The interface mcp_dummy's `artifacts` object exposes, so the eval harness and
         the backend's own ArtifactStore stay drop-in replacements for this."""
         try:
             return self.put_geojson(f"layers/{name}", feature_collection)
+        except Exception:
+            logger.exception("could not publish %s", name)
+            return None
+
+    async def publish_geoparquet(
+        self, name: str, features: list[dict[str, Any]]
+    ) -> str | None:
+        """Serialize and publish one GeoParquet layer without blocking the MCP loop."""
+        key = f"layers/{name}"
+
+        def publish() -> str:
+            with TemporaryDirectory(prefix="sgs-geoparquet-") as temporary:
+                path = Path(temporary) / "layer.parquet"
+                write_geoparquet(features, path)
+                body = path.read_bytes()
+                self.client.put_object(
+                    Bucket=self.bucket,
+                    Key=key,
+                    Body=body,
+                    ContentType="application/vnd.apache.parquet",
+                )
+                logger.info("s3://%s/%s (%d bytes)", self.bucket, key, len(body))
+            return self.url(key)
+
+        try:
+            return await asyncio.to_thread(publish)
         except Exception:
             logger.exception("could not publish %s", name)
             return None
