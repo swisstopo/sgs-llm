@@ -122,7 +122,12 @@ async def test_failed_tool_is_reported_and_the_turn_still_answers(settings) -> N
     )
 
     events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
-    assert any(e.type == "intermediate" and e.status == "failed" for e in events)
+    failed = [e for e in events if e.type == "intermediate" and e.status == "failed"]
+    assert len(failed) == 1
+    assert failed[0].detail == "upstream 503"
+    tool_result_message = models.calls[1]["messages"][-1]
+    assert tool_result_message["content"][0]["toolResult"]["status"] == "error"
+    assert tool_result_message["content"][0]["toolResult"]["content"] == [{"text": "upstream 503"}]
     assert events[-1].type == "final"
 
 

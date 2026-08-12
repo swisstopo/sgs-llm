@@ -41,6 +41,17 @@ def _has_cancellation(exc: BaseException) -> bool:
     return False
 
 
+def _semantic_error(data: Any) -> str | None:
+    """Return a tool-declared failure without treating nested data fields as errors."""
+    if not isinstance(data, dict):
+        return None
+    error = data.get("error")
+    if not isinstance(error, str):
+        return None
+    cleaned = error.strip()
+    return cleaned or None
+
+
 @dataclass
 class ToolOutcome:
     """One tool call's result, in the two shapes the caller needs."""
@@ -96,10 +107,12 @@ class ToolSession:
             except ValueError:
                 data = None
 
+        semantic_error = _semantic_error(data)
+
         return ToolOutcome(
-            text=payload[:MAX_TOOL_RESULT_CHARS] or "(no output)",
+            text=(semantic_error or payload)[:MAX_TOOL_RESULT_CHARS] or "(no output)",
             data=data,
-            is_error=bool(getattr(result, "is_error", False)),
+            is_error=bool(getattr(result, "is_error", False)) or semantic_error is not None,
         )
 
 

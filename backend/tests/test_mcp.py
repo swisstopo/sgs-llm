@@ -114,6 +114,43 @@ class TestToolSession:
         )
         assert (await session.call("t", {})).data == {"a": 1}
 
+    @pytest.mark.parametrize("structured", [None, {"error": ""}, {"error": 500}])
+    async def test_only_a_non_empty_top_level_string_is_a_semantic_error(
+        self, structured: Any
+    ) -> None:
+        data = structured if structured is not None else {"items": [{"error": "row value"}]}
+        session = ToolSession(
+            FakeSession(FakeResult([FakeBlock(json.dumps(data))], structured=data)), []
+        )
+
+        outcome = await session.call("filter_features", {})
+
+        assert outcome.is_error is False
+        assert outcome.data == data
+
+    async def test_a_top_level_tool_error_becomes_a_failed_outcome(self) -> None:
+        reason = "Result contains more than 100,000 features. Narrow the place, area, or dataset."
+        payload = {"error": reason, "feature_count": 100_001, "limit": 100_000}
+        session = ToolSession(
+            FakeSession(FakeResult([FakeBlock("ignored")], structured=payload)), []
+        )
+
+        outcome = await session.call("filter_features", {})
+
+        assert outcome.is_error is True
+        assert outcome.text == reason
+        assert outcome.data == payload
+
+    async def test_a_json_text_tool_error_becomes_a_failed_outcome(self) -> None:
+        payload = {"error": "Could not publish the layer."}
+        session = ToolSession(FakeSession(FakeResult([FakeBlock(json.dumps(payload))])), [])
+
+        outcome = await session.call("display_layer", {})
+
+        assert outcome.is_error is True
+        assert outcome.text == payload["error"]
+        assert outcome.data == payload
+
     async def test_a_tool_error_is_reported_not_raised(self) -> None:
         session = ToolSession(FakeSession(FakeResult([FakeBlock("boom")], is_error=True)), [])
         outcome = await session.call("t", {})
@@ -121,10 +158,14 @@ class TestToolSession:
 
     async def test_a_transport_failure_becomes_a_failed_tool(self) -> None:
         """The model can then try something else or explain the gap."""
-        session = ToolSession(FakeSession(RuntimeError("connection reset")), [])
-        outcome = await session.call("filter_features", {})
+        secret = "https://bucket.test/layer?X-Amz-Signature=do-not-leak"
+        session = ToolSession(FakeSession(RuntimeError(secret)), [])
+        outcome = await session.call("filter_features", {"token": "also-secret"})
         assert outcome.is_error is True
-        assert "filter_features" in outcome.text
+        assert outcome.text == "Tool filter_features failed: RuntimeError"
+        assert secret not in outcome.text
+        assert "also-secret" not in outcome.text
+        assert outcome.data is None
 
     async def test_an_exception_group_is_handled(self) -> None:
         """anyio reports transport failures as groups."""
