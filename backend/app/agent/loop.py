@@ -14,7 +14,7 @@ from typing import Any
 
 from .. import i18n
 from ..config import Settings
-from ..mcp.client import ToolGateway
+from ..mcp.client import ToolGateway, ToolOutcome
 from ..protocol import (
     BBox,
     CatalogLayerRef,
@@ -52,6 +52,8 @@ FINAL_ANSWER_NUDGE = (
     "determine."
 )
 
+_NamedFilterScope = tuple[str, str | None]
+
 
 def _append_user_text(messages: list[dict[str, Any]], text: str) -> None:
     """Adds user-role text, merging into the previous turn if it is also user-role.
@@ -63,6 +65,75 @@ def _append_user_text(messages: list[dict[str, Any]], text: str) -> None:
         messages[-1]["content"].append({"text": text})
     else:
         messages.append({"role": "user", "content": [{"text": text}]})
+
+
+def _string_argument(arguments: dict[str, Any], name: str) -> str | None:
+    value = arguments.get(name)
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _named_filter_scope(name: str, arguments: dict[str, Any]) -> _NamedFilterScope | None:
+    if name != "filter_features":
+        return None
+    place = _string_argument(arguments, "place")
+    if place is None:
+        return None
+    return place, _string_argument(arguments, "place_kind")
+
+
+def _restore_failed_named_scope(
+    name: str,
+    arguments: dict[str, Any],
+    failed_scopes: dict[str, _NamedFilterScope],
+) -> dict[str, Any]:
+    """Keep a named filter retry semantic even if the model falls back to its bbox."""
+    if name != "filter_features" or _string_argument(arguments, "place") is not None:
+        return arguments
+    layer_id = _string_argument(arguments, "layer_id")
+    scope = failed_scopes.get(layer_id or "")
+    if scope is None:
+        return arguments
+
+    place, place_kind = scope
+    restored = {
+        key: value for key, value in arguments.items() if key not in {"bbox", "place", "place_kind"}
+    }
+    restored["place"] = place
+    if place_kind is not None:
+        restored["place_kind"] = place_kind
+    return restored
+
+
+def _clipping_confirmed(data: Any) -> bool:
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("clipped_to"), str)
+        and bool(data["clipped_to"].strip())
+    )
+
+
+def _verify_named_filter(name: str, arguments: dict[str, Any], outcome: ToolOutcome) -> ToolOutcome:
+    if outcome.is_error or _named_filter_scope(name, arguments) is None:
+        return outcome
+    # No handle means there is no reusable feature set to display or compute from. Keep
+    # informative results such as "not queryable" and "zero features" intact; the prompt
+    # still forbids claiming named-area coverage without `clipped_to`.
+    if not isinstance(outcome.data, dict) or not isinstance(outcome.data.get("result_id"), str):
+        return outcome
+    if _clipping_confirmed(outcome.data):
+        return outcome
+    return ToolOutcome(
+        text=(
+            "Tool filter_features did not confirm clipping to the requested named place; "
+            "do not describe the result as covering that named area. Retry with the same "
+            "place and place_kind."
+        ),
+        data=None,
+        is_error=True,
+    )
 
 
 @dataclass
@@ -125,6 +196,7 @@ async def run_turn(
     layer_index = 0
     catalog_layers: list[CatalogLayerRef] = []
     focus_bbox: BBox | None = None
+    failed_named_filters: dict[str, _NamedFilterScope] = {}
 
     yield Intermediate(
         message_id=message_id, step_id=THINKING_STEP, status="started", label=i18n.thinking(lang)
@@ -231,13 +303,24 @@ async def run_turn(
                     label=i18n.tool_running(use.name, lang),
                 )
 
-                outcome = await tools.call(use.name, use.arguments)
+                arguments = _restore_failed_named_scope(
+                    use.name, use.arguments, failed_named_filters
+                )
+                outcome = _verify_named_filter(
+                    use.name,
+                    arguments,
+                    await tools.call(use.name, arguments),
+                )
                 stats.tool_calls.append(use.name)
                 blocks.append(
                     tool_result_block(use.tool_use_id, outcome.text, is_error=outcome.is_error)
                 )
 
                 if outcome.is_error:
+                    scope = _named_filter_scope(use.name, arguments)
+                    layer_id = _string_argument(arguments, "layer_id")
+                    if scope is not None and layer_id is not None:
+                        failed_named_filters[layer_id] = scope
                     yield Intermediate(
                         message_id=message_id,
                         step_id=step_id,
@@ -246,6 +329,10 @@ async def run_turn(
                         detail=outcome.text[:400],
                     )
                     continue
+
+                layer_id = _string_argument(arguments, "layer_id")
+                if _named_filter_scope(use.name, arguments) is not None and layer_id is not None:
+                    failed_named_filters.pop(layer_id, None)
 
                 found = extract_layers(outcome.data, base_url=base_url, start_index=layer_index)
                 layer_index += len(found)

@@ -26,8 +26,10 @@ Answer in {language}. Use that language for the whole answer, including headings
 How to handle a geodata request - work through these steps in order:
 
 1. **Place.** If the request names a place, call `search_locations` for it and keep the \
-`name` and `kind` of the hit you chose. If a map view is given at the end of these \
-instructions, that bounding box already *is* the place - use it and skip this step.
+`name` and `kind` of the hit you chose. A named place in the request takes priority over \
+the current map view. Only when the request refers to the view itself (for example \
+"here" or "in this area") does that bounding box *become* the place and let you skip \
+this step.
 2. **Dataset.** Call `search_layers` with the *subject only* - "Hochwasser", "solar \
 potential", "Lärm". Never put a place name in that query. Choose one `layer_id` from the \
 results.
@@ -35,7 +37,11 @@ results.
 scoped by `place` and `place_kind` from step 1 - only pass a `bbox` when the area came \
 from the map view and has no name. This is the step that actually retrieves data, and it \
 is what makes counts, names and figures possible. Finding a dataset is not the same as \
-answering: do not stop before this step, and do not substitute a picture for it.
+answering: do not stop before this step, and do not substitute a picture for it. If the \
+connection closes before this call returns a complete response, retry with the same \
+`place` and `place_kind`; never replace a named place with its bounding box. Only describe \
+a feature result from `filter_features` as covering a named place when it returns a \
+non-empty `clipped_to` value for that place.
 4. **Figures.** If the request asks how many, how much or how large, call `compute` on the \
 result. Never estimate a number yourself.
 5. **Show.** If the user asked to see, show, display or map anything, put it on the map. \
@@ -51,8 +57,10 @@ Never say a raster layer cannot be shown - this is how it is shown.
 6. **Answer.** Write the answer, naming the dataset you used and what is now visible.
 
 While doing that:
-- Do not call the same tool twice with the same arguments. If a result was not useful, \
-change the arguments or move to the next step.
+- Do not call the same tool twice with the same arguments, except for one retry when a \
+connection closed before `filter_features` returned a complete response. That retry must \
+keep the same named-place scope. For other failures, change the arguments or move to the \
+next step.
 - Do not call `filter_features` on a layer reported as `queryable: false` - show it with \
 `display_catalog_layer` instead. If `filter_features` does report that a dataset cannot be \
 queried feature-by-feature, either show it with `display_catalog_layer` or choose a \

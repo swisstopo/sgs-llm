@@ -167,6 +167,30 @@ class TestToolSession:
         assert "also-secret" not in outcome.text
         assert outcome.data is None
 
+    async def test_an_incomplete_mcp_response_gives_a_safe_actionable_retry(self) -> None:
+        secret = "https://internal.test/mcp?token=do-not-leak"
+        failure = RuntimeError(f"SSE stream ended without a response: {secret}")
+        session = ToolSession(FakeSession(failure), [])
+
+        outcome = await session.call(
+            "filter_features",
+            {"layer_id": "ch.test", "place": "Genève", "place_kind": "kanton"},
+        )
+
+        assert outcome.is_error is True
+        assert "connection closed before a complete response" in outcome.text
+        assert "same place and place_kind" in outcome.text
+        assert secret not in outcome.text
+        assert "Genève" not in outcome.text
+
+    async def test_an_unrelated_incomplete_tool_does_not_get_place_advice(self) -> None:
+        session = ToolSession(FakeSession(RuntimeError("SSE stream ended without a response")), [])
+
+        outcome = await session.call("search_layers", {"query": "buildings"})
+
+        assert "Retry the same tool once" in outcome.text
+        assert "place_kind" not in outcome.text
+
     async def test_an_exception_group_is_handled(self) -> None:
         """anyio reports transport failures as groups."""
         group = BaseExceptionGroup("transport", [RuntimeError("closed")])

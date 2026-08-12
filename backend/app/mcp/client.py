@@ -26,6 +26,11 @@ MAX_TOOL_RESULT_CHARS = 24_000
 # A cursor loop needs a bound; a real catalogue is a handful of tools.
 MAX_TOOL_PAGES = 20
 
+_INCOMPLETE_RESPONSE_MARKERS = (
+    "sse stream ended without a response",
+    "timed out",
+)
+
 
 def _has_cancellation(exc: BaseException) -> bool:
     """Whether a failure is (or wraps) a cancellation.
@@ -39,6 +44,28 @@ def _has_cancellation(exc: BaseException) -> bool:
     if isinstance(exc, BaseExceptionGroup):
         return any(_has_cancellation(inner) for inner in exc.exceptions)
     return False
+
+
+def _response_ended_early(exc: BaseException) -> bool:
+    """Recognise incomplete transport responses without exposing their details."""
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_response_ended_early(inner) for inner in exc.exceptions)
+    if isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower():
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in _INCOMPLETE_RESPONSE_MARKERS)
+
+
+def _transport_failure(name: str, exc: BaseException) -> str:
+    if _response_ended_early(exc):
+        message = f"Tool {name} connection closed before a complete response."
+        if name == "filter_features":
+            return (
+                message + " Retry once with the same place and place_kind for a named area; "
+                "do not replace them with bbox."
+            )
+        return message + " Retry the same tool once."
+    return f"Tool {name} failed: {type(exc).__name__}"
 
 
 def _semantic_error(data: Any) -> str | None:
@@ -89,9 +116,7 @@ class ToolSession:
             logger.warning("tool %s failed", name, exc_info=True)
             # Reported as a failed tool rather than raised, so the model can try another
             # or explain the gap.
-            return ToolOutcome(
-                text=f"Tool {name} failed: {type(exc).__name__}", data=None, is_error=True
-            )
+            return ToolOutcome(text=_transport_failure(name, exc), data=None, is_error=True)
 
         texts: list[str] = []
         for block in result.content or []:
