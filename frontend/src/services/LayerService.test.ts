@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ImageLayer from 'ol/layer/Image';
+import Point from 'ol/geom/Point';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
 import ImageWMS from 'ol/source/ImageWMS';
@@ -11,6 +12,7 @@ import type { CatalogService } from './CatalogService';
 import type { MapService } from './MapService';
 import type { LayerConfig } from '../swisstopo/layersConfigApi';
 import { registerProjections } from '../lib/projection';
+import type { DecodedFeature } from '../map/geoparquet';
 
 // GeoJSON features are reprojected to the EPSG:2056 map projection.
 registerProjections();
@@ -225,5 +227,113 @@ describe('LayerService official layers', () => {
     expect(service.canZoomTo('chat-1')).toBe(true);
     service.zoomToLayer('chat-1');
     expect(mapService.fitBBox).toHaveBeenCalledWith([7, 46, 8, 47]);
+  });
+
+  it('loads parquet chunks as reprojected vector features before inserting once', async () => {
+    const loader = vi.fn(async (_url: string, onChunk: (features: DecodedFeature[]) => void) => {
+      onChunk([
+        {
+          type: 'Feature',
+          id: 'bern',
+          geometry: { type: 'Point', coordinates: [7.44, 46.95] },
+          properties: { name: 'Bern' },
+        },
+      ]);
+    });
+    service = new LayerService(
+      mapService as unknown as MapService,
+      new FakeCatalogService() as unknown as CatalogService,
+      loader,
+    );
+
+    const result = await service.addDataLayer({
+      id: 'parquet-1',
+      name: 'Cities',
+      format: 'parquet',
+      url: 'https://data.test/cities.parquet',
+      geometry_type: 'point',
+      attribution: 'source',
+    });
+
+    expect(result).toBe('added');
+    expect(loader).toHaveBeenCalledWith(
+      'https://data.test/cities.parquet',
+      expect.any(Function),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    const layer = addedLayer() as VectorLayer;
+    const features = (layer.getSource() as VectorSource).getFeatures();
+    expect(features).toHaveLength(1);
+    expect(features[0]?.getId()).toBe('bern');
+    expect(features[0]?.get('name')).toBe('Bern');
+    expect((features[0]?.getGeometry() as Point).getCoordinates()).not.toEqual([7.44, 46.95]);
+    expect(mapService.map.addLayer).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not insert a partial parquet layer when decoding fails', async () => {
+    const loader = vi.fn(async (_url: string, onChunk: (features: DecodedFeature[]) => void) => {
+      onChunk([
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [7.44, 46.95] },
+          properties: {},
+        },
+      ]);
+      throw new Error('invalid parquet');
+    });
+    service = new LayerService(
+      mapService as unknown as MapService,
+      new FakeCatalogService() as unknown as CatalogService,
+      loader,
+    );
+
+    expect(
+      await service.addDataLayer({
+        id: 'broken',
+        name: 'Broken',
+        format: 'parquet',
+        url: 'https://data.test/broken.parquet',
+        geometry_type: 'point',
+      }),
+    ).toBe('failed');
+    expect(mapService.map.addLayer).not.toHaveBeenCalled();
+    expect(service.layers).toHaveLength(0);
+  });
+
+  it('suppresses duplicate parquet loads and removal aborts a pending load', async () => {
+    let release!: () => void;
+    const loader = vi.fn(
+      (
+        _url: string,
+        _onChunk: (features: DecodedFeature[]) => void,
+        options?: { signal?: AbortSignal },
+      ) =>
+        new Promise<void>((resolve, reject) => {
+          release = resolve;
+          options?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    );
+    service = new LayerService(
+      mapService as unknown as MapService,
+      new FakeCatalogService() as unknown as CatalogService,
+      loader,
+    );
+    const spec = {
+      id: 'pending',
+      name: 'Pending',
+      format: 'parquet' as const,
+      url: 'https://data.test/pending.parquet',
+      geometry_type: 'point' as const,
+    };
+
+    const first = service.addDataLayer(spec);
+    await vi.waitFor(() => expect(loader).toHaveBeenCalledTimes(1));
+    await expect(service.addDataLayer(spec)).resolves.toBe('exists');
+    service.removeLayer('pending');
+    await expect(first).resolves.toBe('failed');
+    expect(mapService.map.addLayer).not.toHaveBeenCalled();
+    release();
   });
 });
