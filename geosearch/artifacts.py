@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pyarrow as pa  # type: ignore[import-untyped]
-import pyarrow.parquet as pq  # type: ignore[import-untyped]
+import pyarrow as pa
+import pyarrow.parquet as pq
 from pyproj import CRS
-from shapely.geometry import shape  # type: ignore[import-untyped]
+from shapely.geometry import shape
 
 GEOPARQUET_VERSION = "1.1.0"
 ROW_GROUP_SIZE = 64_000

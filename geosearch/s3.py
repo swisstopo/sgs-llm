@@ -55,7 +55,7 @@ class S3Store:
     """Publishes browser layers and reads image-baked GeoJSON boundaries."""
 
     def __init__(self, endpoint_url: str | None = None, bucket: str = BUCKET) -> None:
-        import boto3  # type: ignore[import-untyped]
+        import boto3
 
         self.bucket = bucket
         self.endpoint_url = (

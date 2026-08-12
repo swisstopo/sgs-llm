@@ -39,7 +39,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check app tests ../mcp_dummy ../evals
       - run: ruff format --check app tests ../mcp_dummy ../evals
-      # Scope comes from pyproject's `files`: app, mcp_dummy and evals.
+      # Scope comes from pyproject's `files`: app, mcp_dummy, evals, and geosearch
+      # production modules. Test modules are excluded there.
       - run: mypy
       # The suite stubs AWS and the MCP server, so no credentials are needed.
       - run: pytest
