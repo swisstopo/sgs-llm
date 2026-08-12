@@ -7,11 +7,6 @@ lifts that cap. The original ran the cells on a ThreadPoolExecutor because it wa
 sync; here they are asyncio tasks behind a semaphore, so we stay on one event loop and
 never open 64 sockets to geo.admin.ch at once.
 
-The original's geoforge_* imports (S3Service, LayerUploader, TypeConverter,
-LayersIntersection) do not exist in this repo. Uploading is geosearch/s3.py's job; the
-2D-coercion the original did in shapely is done here on raw coordinate lists, which is
-all it ever amounted to.
-
 Response shapes verified against the live API 2026-08-07.
 """
 
