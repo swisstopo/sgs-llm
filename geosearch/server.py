@@ -48,6 +48,13 @@ CANDIDATES = 30
 # in one call, not a page of it.
 MAX_DIVISIONS = 500
 
+# Complete feature layers only. A partial first-N layer would make the displayed map,
+# count, and later compute calls disagree with the real result.
+MAX_LAYER_FEATURES = 100_000
+LAYER_LIMIT_ERROR = (
+    "Result contains more than 100,000 features. Narrow the place, area, or dataset."
+)
+
 
 def build_server(
     index: GeoIndex,
@@ -56,7 +63,7 @@ def build_server(
     store: S3Store | BoundaryStore,
     reranker: Reranker | None = None,
 ) -> MCPServer:
-    """`artifacts` needs one method: `async publish_geojson(name, collection) -> url | None`.
+    """`artifacts` publishes browser-facing GeoParquet feature layers.
 
     `store` is where the pre-built division boundaries live, and is separate from
     `artifacts` on purpose: artifacts is wherever this deployment publishes new layers
@@ -71,7 +78,9 @@ def build_server(
     judge = reranker or Reranker()
 
     @server.tool()
-    async def search_layers(query: str, lang: str = "de", top_n: int = 8) -> dict[str, Any]:
+    async def search_layers(
+        query: str, lang: str = "de", top_n: int = 8
+    ) -> dict[str, Any]:
         """Find official Swiss geodata datasets by topic.
 
         Use this first for any question about what data exists. Search is semantic, so
@@ -126,7 +135,9 @@ def build_server(
         return result
 
     @server.tool()
-    async def search_locations(query: str, lang: str = "de", top_n: int = 10) -> dict[str, Any]:
+    async def search_locations(
+        query: str, lang: str = "de", top_n: int = 10
+    ) -> dict[str, Any]:
         """Resolve a Swiss place name to a bounding box.
 
         Covers Switzerland itself and every canton, district, commune and locality -
@@ -171,17 +182,22 @@ def build_server(
         """
         row = index.division_by_name(name, kind)
         if row is None:
-            return {"error": f"No division named '{name}'. Call search_locations first."}
+            return {
+                "error": f"No division named '{name}'. Call search_locations first."
+            }
 
         collection = store.get_geojson(row["s3_key"])
-        url = await artifacts.publish_geojson(f"division-{row['kind']}-{name}.geojson", collection)
+        features = collection.get("features") or []
+        url = await artifacts.publish_geoparquet(
+            f"division-{row['kind']}-{name}.parquet", features
+        )
         if url is None:
-            return {"error": "Could not publish the boundary."}
+            return {"error": "Could not publish the layer."}
         return {
             "layer": {
                 "id": f"division-{row['kind']}-{name}",
                 "name": row["name"],
-                "format": "geojson",
+                "format": "parquet",
                 "url": url,
                 "geometry_type": "Polygon",
                 "feature_count": row["feature_count"],
@@ -224,7 +240,9 @@ def build_server(
         if place:
             row = index.division_by_name(place, place_kind)
             if row is None:
-                return {"error": f"No Swiss place named '{place}'. Call search_locations first."}
+                return {
+                    "error": f"No Swiss place named '{place}'. Call search_locations first."
+                }
             boundary = store.get_geojson(row["s3_key"]).get("features") or []
             clipped_to = f"{row['kind']} {row['name']}"
             # The boundary decides what is inside; its box is only how much to ask for.
@@ -255,7 +273,10 @@ def build_server(
             features = [
                 f
                 for f in features
-                if any(needle in str(v).lower() for v in (f.get("properties") or {}).values())
+                if any(
+                    needle in str(v).lower()
+                    for v in (f.get("properties") or {}).values()
+                )
             ]
         # Cut after `contains` rather than before: the text filter is free and the
         # intersection is not, so it runs on the smaller set.
@@ -268,6 +289,13 @@ def build_server(
                 "note": (
                     f"Dataset '{layer_id}' returned no features {where}. It may not cover it."
                 ),
+            }
+
+        if len(features) > MAX_LAYER_FEATURES:
+            return {
+                "error": LAYER_LIMIT_ERROR,
+                "feature_count": len(features),
+                "limit": MAX_LAYER_FEATURES,
             }
 
         entry = cache.put(layer_id, layer_id, features)
@@ -306,7 +334,9 @@ def build_server(
         caps = await swisstopo.layers_config(lang)
         entry = caps.get(layer_id)
         if not isinstance(entry, dict):
-            return {"error": f"'{layer_id}' is not an official layer id. Use search_layers first."}
+            return {
+                "error": f"'{layer_id}' is not an official layer id. Use search_layers first."
+            }
         if entry.get("type") not in ("wmts", "wms", "geojson"):
             return {"error": f"'{layer_id}' cannot be rendered as a map layer."}
 
@@ -317,7 +347,10 @@ def build_server(
         }
         if opacity is not None:
             layer["opacity"] = opacity
-        result: dict[str, Any] = {"catalog_layer": layer, "layer_type": entry.get("type")}
+        result: dict[str, Any] = {
+            "catalog_layer": layer,
+            "layer_type": entry.get("type"),
+        }
         if focus_bbox and len(focus_bbox) == 4:
             result["focus_bbox"] = focus_bbox
         return result
@@ -332,7 +365,9 @@ def build_server(
         """
         entry = cache.get(result_id)
         if entry is None:
-            return {"error": f"Unknown result_id '{result_id}'. Call filter_features first."}
+            return {
+                "error": f"Unknown result_id '{result_id}'. Call filter_features first."
+            }
 
         wanted = operation.strip().lower()
         result: dict[str, Any] = {"result_id": result_id, "count": len(entry.features)}
@@ -356,17 +391,18 @@ def build_server(
         """
         entry = cache.get(result_id)
         if entry is None:
-            return {"error": f"Unknown result_id '{result_id}'. Call filter_features first."}
+            return {
+                "error": f"Unknown result_id '{result_id}'. Call filter_features first."
+            }
 
-        collection = {"type": "FeatureCollection", "features": entry.features}
-        url = await artifacts.publish_geojson(f"{result_id}.geojson", collection)
+        url = await artifacts.publish_geoparquet(f"{result_id}.parquet", entry.features)
         if url is None:
             return {"error": "Could not publish the layer."}
 
         layer: dict[str, Any] = {
             "id": result_id,
             "name": name or entry.layer_id,
-            "format": "geojson",
+            "format": "parquet",
             "url": url,
             "geometry_type": geometry_type(entry.features),
             "feature_count": len(entry.features),
@@ -421,7 +457,11 @@ def _transport_security(port: int) -> TransportSecuritySettings:
     reach this server except the backend's security group, but a browser can reach a laptop.
     """
     hosts = [f"127.0.0.1:{port}", f"localhost:{port}"]
-    hosts += [h.strip() for h in os.environ.get("GEOSEARCH_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    hosts += [
+        h.strip()
+        for h in os.environ.get("GEOSEARCH_ALLOWED_HOSTS", "").split(",")
+        if h.strip()
+    ]
     return TransportSecuritySettings(allowed_hosts=hosts)
 
 
@@ -432,7 +472,9 @@ def main() -> None:
     parser.add_argument("--index", default=str(INDEX_DIR))
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
 
     import uvicorn
     from starlette.responses import JSONResponse
