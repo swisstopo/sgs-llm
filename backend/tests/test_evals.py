@@ -37,12 +37,16 @@ KNOWN_EXPECT_KEYS = {
     "no_layer",
     "judge",
 }
+# The union of both servers' tool sets. `display_division` is geosearch's alone, so a
+# question naming it only runs with --mcp-url pointed at one.
 KNOWN_TOOLS = {
     "search_layers",
     "search_locations",
     "filter_features",
     "compute",
     "display_layer",
+    "display_catalog_layer",
+    "display_division",
 }
 
 

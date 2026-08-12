@@ -20,6 +20,9 @@ prompt variant that produced it, so two runs can be compared only when both matc
     # one category while iterating
     python evals/run.py --only place_scoped --model ...
 
+    # against a running geosearch instead of the bundled stand-in
+    python evals/run.py --mcp-url http://127.0.0.1:8790/mcp --only geosearch_tools --model ...
+
 Credentials come from the normal boto3 chain, so AWS_BEARER_TOKEN_BEDROCK works exactly
 as it does for scripts/ask-llm.py (VPN required).
 """
@@ -117,12 +120,28 @@ def load_questions(only: str | None, ids: list[str] | None) -> list[dict[str, An
 
 
 @contextlib.asynccontextmanager
-async def tool_gateway(inject: bool) -> AsyncIterator[ToolGateway]:
+async def tool_gateway(inject: bool, url: str = "") -> AsyncIterator[ToolGateway]:
     """A gateway onto the dummy MCP server, hitting the real geo.admin.ch APIs.
 
     In-process transport rather than loopback HTTP: a benchmark must not be skewed by a
     server-startup race silently leaving a question with no tools.
+
+    `url` points the run at a server that is already running - geosearch, or whatever
+    `MCP_SERVER_URL` names in a deployment. That is the only way to measure the tools the
+    stand-in does not implement, and the only configuration whose numbers describe
+    production. The injection fixture is a subclass of the stand-in's client, so it cannot
+    apply to a remote server: asking for both is refused rather than silently ignored.
     """
+    if url:
+        if inject:
+            raise ValueError(
+                "The prompt-injection fixture patches the bundled stand-in, so it cannot "
+                "be applied to a server reached over HTTP. Run injection questions "
+                "without --mcp-url."
+            )
+        yield ToolGateway(url=url)
+        return
+
     api = InjectingSwisstopo() if inject else Swisstopo()
     try:
         # Explicitly bucketless: an exported DATA_LAYER_BUCKET would otherwise write
@@ -259,6 +278,7 @@ async def run_model(
     use_judge: bool,
     judge_handle: ModelHandle | None,
     sink: Callable[[dict[str, Any]], None] | None = None,
+    mcp_url: str = "",
 ) -> list[dict[str, Any]]:
     models = BedrockModels(settings)
     rows: list[dict[str, Any]] = []
@@ -269,7 +289,7 @@ async def run_model(
         batch = [q for q in questions if bool(q.get("fixture") == "injected_features") is inject]
         if not batch:
             continue
-        async with tool_gateway(inject) as gateway:
+        async with tool_gateway(inject, mcp_url) as gateway:
             for index, question in enumerate(batch, start=1):
                 print(f"  [{index}/{len(batch)}] {question['id']} … ", end="", flush=True)
                 observed = await ask(
@@ -293,6 +313,10 @@ async def run_model(
                     "question_set": QUESTION_SET,
                     "prompt_variant": prompt_variant_for(handle.model_id),
                     "catalog_layers": settings.enable_catalog_layers,
+                    # Which server answered. The stand-in and geosearch return different
+                    # results for the same question, so rows from the two are not a
+                    # controlled comparison and the report says so.
+                    "mcp": mcp_url or "mcp_dummy",
                     "question": question["id"],
                     "category": question.get("category", "uncategorised"),
                     "lang": question.get("lang", "de"),
@@ -317,12 +341,14 @@ def summarise(rows: list[dict[str, Any]]) -> str:
     lines.append(f"{len(rows)} runs · {len(models)} model(s) · {len(categories)} categories")
     sets = sorted({row.get("question_set", "?") for row in rows})
     variants = sorted({f"{row['model']}={row.get('prompt_variant', '?')}" for row in rows})
+    servers = sorted({row.get("mcp", "mcp_dummy") for row in rows})
     lines.append(f"question set `{', '.join(sets)}` · prompt {', '.join(variants)}")
-    if len(sets) > 1:
+    lines.append(f"MCP server `{', '.join(servers)}`")
+    if len(sets) > 1 or len(servers) > 1:
         lines.append("")
         lines.append(
-            "> These rows come from more than one question set, so the columns are not a "
-            "controlled comparison."
+            "> These rows come from more than one question set or MCP server, so the "
+            "columns are not a controlled comparison."
         )
     lines.append("")
     lines.append("## Pass rate by category")
@@ -438,6 +464,13 @@ async def main() -> None:
     parser.add_argument("--id", action="append", dest="ids", help="Run specific question ids")
     parser.add_argument("--judge", action="store_true", help="Also model-grade the judge questions")
     parser.add_argument("--list", action="store_true", help="List the question set and exit")
+    parser.add_argument(
+        "--mcp-url",
+        default="",
+        help="Run against an MCP server already listening there (e.g. a local geosearch "
+        "on http://127.0.0.1:8790/mcp) instead of the bundled stand-in. Required for the "
+        "questions covering tools the stand-in does not implement.",
+    )
     parser.add_argument("--timeout", type=float, default=120.0, help="Per-question budget")
     parser.add_argument(
         "--catalog-layers",
@@ -498,6 +531,7 @@ async def main() -> None:
                     use_judge=args.judge,
                     judge_handle=judge_handle,
                     sink=sink,
+                    mcp_url=args.mcp_url,
                 )
             )
 
