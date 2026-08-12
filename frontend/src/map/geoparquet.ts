@@ -1,6 +1,8 @@
 import { parquetMetadataAsync, parquetReadObjects } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
 
+const MAX_FEATURES = 100_000n;
+
 export interface GeoJsonGeometry {
   type: string;
   coordinates?: unknown;
@@ -87,6 +89,9 @@ export async function decodeGeoParquet(buffer: ArrayBuffer): Promise<DecodedFeat
     metadata = await parquetMetadataAsync(buffer);
   } catch (error) {
     throw new Error('Could not read Parquet metadata', { cause: error });
+  }
+  if (metadata.num_rows > MAX_FEATURES) {
+    throw new Error('GeoParquet contains more than 100,000 features');
   }
   const geometryColumn = validateGeoMetadata(parseObject(metadataValue(metadata, 'geo'), 'geo'));
   const propertyColumns = parseObject(

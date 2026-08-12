@@ -2,12 +2,24 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import * as hyparquet from 'hyparquet';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decodeGeoParquet } from './geoparquet';
+
+vi.mock('hyparquet', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('hyparquet')>();
+  return {
+    ...actual,
+    parquetMetadataAsync: vi.fn(actual.parquetMetadataAsync),
+    parquetReadObjects: vi.fn(actual.parquetReadObjects),
+  };
+});
 
 const fixture = fileURLToPath(new URL('../../test-data/chat-layer.parquet', import.meta.url));
 
 describe('decodeGeoParquet', () => {
+  afterEach(() => vi.clearAllMocks());
+
   it('decodes real GeoParquet geometry, ids, types, nulls, and reserved properties', async () => {
     const bytes = await readFile(fixture);
     const features = await decodeGeoParquet(
@@ -44,6 +56,22 @@ describe('decodeGeoParquet', () => {
   it('rejects a file without GeoParquet metadata', async () => {
     const bytes = new TextEncoder().encode('not parquet').buffer;
     await expect(decodeGeoParquet(bytes)).rejects.toThrow(/GeoParquet|Parquet/i);
+  });
+
+  it('rejects more than 100,000 rows before decoding them', async () => {
+    const bytes = await readFile(fixture);
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const metadata = await hyparquet.parquetMetadataAsync(buffer);
+    vi.mocked(hyparquet.parquetMetadataAsync).mockResolvedValueOnce({
+      ...metadata,
+      num_rows: 100_001n,
+    });
+    const reader = vi.mocked(hyparquet.parquetReadObjects);
+
+    await expect(decodeGeoParquet(buffer)).rejects.toThrow(
+      'GeoParquet contains more than 100,000 features',
+    );
+    expect(reader).not.toHaveBeenCalled();
   });
 
   it.each([
