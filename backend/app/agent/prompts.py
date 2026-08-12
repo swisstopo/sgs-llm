@@ -153,8 +153,12 @@ NO_RASTER_DISPLAY_NOTE = (
     "this deployment, and `display_catalog_layer` will not work. When the only suitable "
     "dataset is raster, do not call it and do not say the layer is displayed. Name the "
     "dataset and its official layer id instead, and tell the user they can add it "
-    "themselves from the map's data catalogue. Vector data you fetched with "
-    "`filter_features` can still be shown with `display_layer` as described."
+    "themselves from the data catalogue in this application, which is the panel beside "
+    "the map they are already looking at. Never send them to map.geo.admin.ch or any "
+    "other external viewer, and never link to one: the user is already in an application "
+    "that carries the layer, so directing them elsewhere reads as this one being unable "
+    "to help. Vector data you fetched with `filter_features` can still be shown with "
+    "`display_layer` as described."
 )
 
 # Appended only when the connected server offers `display_division`. The stand-in does

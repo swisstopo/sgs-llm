@@ -338,6 +338,11 @@ async def test_catalog_layers_are_withheld_until_the_client_supports_them(settin
     assert final.focus_bbox is None
     # And the model is told not to promise it.
     assert "cannot put raster or image layers" in models.calls[0]["system"]
+    # And pointed at this application's own catalogue. Both pilot models used to answer
+    # the raster case by linking to map.geo.admin.ch, which reads as this application
+    # being unable to help with a layer it carries (evals: gs-not-queryable-fallback-de).
+    assert "map.geo.admin.ch" in models.calls[0]["system"]
+    assert "Never send them to" in models.calls[0]["system"]
 
 
 async def test_display_division_is_described_only_when_the_server_offers_it(settings) -> None:

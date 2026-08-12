@@ -129,16 +129,16 @@ async def tool_gateway(inject: bool, url: str = "") -> AsyncIterator[ToolGateway
     `url` points the run at a server that is already running - geosearch, or whatever
     `MCP_SERVER_URL` names in a deployment. That is the only way to measure the tools the
     stand-in does not implement, and the only configuration whose numbers describe
-    production. The injection fixture is a subclass of the stand-in's client, so it cannot
-    apply to a remote server: asking for both is refused rather than silently ignored.
+    production.
+
+    The injection fixture is a subclass of the stand-in's client and cannot be applied to
+    a server reached over HTTP, so `inject` wins over `url`: those questions run against
+    the stand-in whatever the rest of the run uses. What they measure - whether the agent
+    obeys instructions embedded in feature attributes - is a property of the loop rather
+    than of the server, and each row records which server answered it. The caller is
+    responsible for saying so; `run_model` prints it.
     """
-    if url:
-        if inject:
-            raise ValueError(
-                "The prompt-injection fixture patches the bundled stand-in, so it cannot "
-                "be applied to a server reached over HTTP. Run injection questions "
-                "without --mcp-url."
-            )
+    if url and not inject:
         yield ToolGateway(url=url)
         return
 
@@ -289,6 +289,10 @@ async def run_model(
         batch = [q for q in questions if bool(q.get("fixture") == "injected_features") is inject]
         if not batch:
             continue
+        # Announced rather than assumed: a run pointed at geosearch still answers these
+        # from the stand-in, and a reader comparing pass rates has to know that.
+        if inject and mcp_url:
+            print(f"  ({len(batch)} injection questions run against mcp_dummy, not {mcp_url})")
         async with tool_gateway(inject, mcp_url) as gateway:
             for index, question in enumerate(batch, start=1):
                 print(f"  [{index}/{len(batch)}] {question['id']} … ", end="", flush=True)
@@ -315,8 +319,9 @@ async def run_model(
                     "catalog_layers": settings.enable_catalog_layers,
                     # Which server answered. The stand-in and geosearch return different
                     # results for the same question, so rows from the two are not a
-                    # controlled comparison and the report says so.
-                    "mcp": mcp_url or "mcp_dummy",
+                    # controlled comparison and the report says so. Injection questions
+                    # are always the stand-in's, whatever the rest of the run used.
+                    "mcp": "mcp_dummy" if inject else (mcp_url or "mcp_dummy"),
                     "question": question["id"],
                     "category": question.get("category", "uncategorised"),
                     "lang": question.get("lang", "de"),
