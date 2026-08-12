@@ -164,6 +164,37 @@ async def test_limit_is_checked_after_boundary_clipping(
 
     assert data["feature_count"] == 2
     assert "result_id" in data
+    assert data["clipped_to"] == "kanton Bern"
+
+
+async def test_empty_named_result_still_confirms_the_boundary_scope() -> None:
+    data = await _call(
+        [],
+        "filter_features",
+        {"layer_id": "ch.test", "place": "Bern", "place_kind": "kanton"},
+    )
+
+    assert data["feature_count"] == 0
+    assert data["clipped_to"] == "kanton Bern"
+
+
+async def test_named_result_over_the_limit_keeps_its_boundary_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from . import server as module
+
+    features = [_point(index) for index in range(100_001)]
+    monkeypatch.setattr(module, "clip", lambda candidates, boundary: candidates)
+
+    data = await _call(
+        features,
+        "filter_features",
+        {"layer_id": "ch.test", "place": "Bern", "place_kind": "kanton"},
+    )
+
+    assert data["feature_count"] == 100_001
+    assert data["clipped_to"] == "kanton Bern"
+    assert "error" in data
 
 
 async def test_display_layer_publishes_geoparquet() -> None:

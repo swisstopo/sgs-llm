@@ -56,6 +56,15 @@ LAYER_LIMIT_ERROR = (
 )
 
 
+def _with_clipping_scope(
+    result: dict[str, Any], clipped_to: str | None
+) -> dict[str, Any]:
+    """Attach provenance only after the real administrative boundary was applied."""
+    if clipped_to:
+        result["clipped_to"] = clipped_to
+    return result
+
+
 def build_server(
     index: GeoIndex,
     swisstopo: Swisstopo,
@@ -284,19 +293,25 @@ def build_server(
             features = clip(features, boundary)
         if not features:
             where = f"in {place}" if place else "in this area"
-            return {
-                "feature_count": 0,
-                "note": (
-                    f"Dataset '{layer_id}' returned no features {where}. It may not cover it."
-                ),
-            }
+            return _with_clipping_scope(
+                {
+                    "feature_count": 0,
+                    "note": (
+                        f"Dataset '{layer_id}' returned no features {where}. It may not cover it."
+                    ),
+                },
+                clipped_to,
+            )
 
         if len(features) > MAX_LAYER_FEATURES:
-            return {
-                "error": LAYER_LIMIT_ERROR,
-                "feature_count": len(features),
-                "limit": MAX_LAYER_FEATURES,
-            }
+            return _with_clipping_scope(
+                {
+                    "error": LAYER_LIMIT_ERROR,
+                    "feature_count": len(features),
+                    "limit": MAX_LAYER_FEATURES,
+                },
+                clipped_to,
+            )
 
         entry = cache.put(layer_id, layer_id, features)
         result = {
@@ -307,9 +322,7 @@ def build_server(
             "bbox": bounding_box(features),
             "attributes": summarise_properties(features),
         }
-        if clipped_to:
-            result["clipped_to"] = clipped_to
-        return result
+        return _with_clipping_scope(result, clipped_to)
 
     @server.tool()
     async def display_catalog_layer(
