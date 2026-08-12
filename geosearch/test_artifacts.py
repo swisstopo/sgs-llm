@@ -105,6 +105,32 @@ def test_preserves_ids_types_and_reserved_property_names(tmp_path: Any) -> None:
     assert mapping["name"] == "name"
 
 
+def test_reserved_property_fallbacks_cannot_collide(tmp_path: Any) -> None:
+    output = tmp_path / "collisions.parquet"
+    feature = {
+        **FEATURES[0],
+        "properties": {
+            "feature_id": "source id",
+            "property_feature_id": "source fallback",
+            "geometry": "source geometry",
+            "property_geometry": "source geometry fallback",
+        },
+    }
+
+    write_geoparquet([feature], output)
+
+    table = pq.read_table(output)
+    data = table.to_pydict()
+    mapping = json.loads((table.schema.metadata or {})[b"sgs:property_columns"])
+    assert mapping["feature_id"] == "property_feature_id_2"
+    assert mapping["geometry"] == "property_geometry_2"
+    assert data["feature_id"] == ["7"]
+    assert data["property_feature_id"] == ["source fallback"]
+    assert data["property_feature_id_2"] == ["source id"]
+    assert data["property_geometry"] == ["source geometry fallback"]
+    assert data["property_geometry_2"] == ["source geometry"]
+
+
 def test_conflicting_property_types_become_deterministic_strings(tmp_path: Any) -> None:
     output = tmp_path / "mixed.parquet"
     features = [
