@@ -150,7 +150,7 @@ custom properties inherit through.
 | Service | Responsibility |
 | --- | --- |
 | `MapService` | Owns the single `ol/Map`: LV95 view on the official zoom ladder, basemaps (WMTS from layersConfig), camera (fitBBox / fitLV95Extent / zoomBy), click stream, identify highlight layer, geolocation marker |
-| `LayerService` | Active layers (official WMTS/WMS/GeoJSON overlays + chat data layers): add/remove, visibility, opacity, order (buttons and drag-and-drop via `moveLayerToIndex`), zoom-to (data-layer bbox or vector source extent), periodic refresh of live GeoJSON layers |
+| `LayerService` | Active layers (official WMTS/WMS/GeoJSON overlays + GeoJSON/GeoParquet chat layers): add/remove, visibility, opacity, order (buttons and drag-and-drop via `moveLayerToIndex`), zoom-to (data-layer bbox or vector source extent), periodic refresh of live GeoJSON layers |
 | `CatalogService` | layersConfig cache per language, geocatalog topics/trees (CatalogServer) |
 | `UiService` | Shell state: which rail flyout panel is open; the layer-info dialog request |
 | `ChatService` | Chat state machine over `AgentClient` events (progress steps, markdown, layers, errors, cancel) |
@@ -158,12 +158,13 @@ custom properties inherit through.
 
 ## Data layers from chat
 
-`LayerSpec.format` currently supports `geojson` end-to-end. `parquet`
-(GeoParquet via presigned URLs, as planned for the production agent) is
-stable in the protocol but renders as a "format not yet supported" notice.
-Follow-up path: `parquet-wasm` → Arrow → GeoJSON features into the same
-`VectorSource` behind `LayerService.addDataLayer`'s format switch — no
-protocol change required.
+`LayerSpec.format` supports both `geojson` and `parquet`. Geosearch publishes new
+feature layers as GeoParquet 1.1 through the existing presigned-URL artifact path. A
+dedicated browser worker validates and decodes the Parquet/WKB data with `hyparquet`,
+posts feature chunks back to the main thread, and `LayerService` reprojects them into
+the same OpenLayers `VectorSource` used for GeoJSON. Results are complete up to 100,000
+features; larger filtered/clipped results fail with guidance instead of being silently
+truncated. This path uses no MVT, tile server, PMTiles, or generated-tile storage.
 
 ## Backend architecture
 
@@ -202,7 +203,7 @@ interface is in [MCP client interface](#mcp-client-interface); model choice is i
 - **Agent loop → protocol events** - tool and LLM progress stream as `intermediate`, the answer and data layers as `final`, turn completion as `done`, and a client `cancel` aborts the in-flight turn. The transport (`app/ws.py`) owns the exchange lifecycle and emits the terminating `done` for every outcome, so the loop cannot produce two terminal events. The final tool-loop iteration steers the model to answer with an instruction rather than by withdrawing the tool set - once a conversation contains `toolUse`/`toolResult` blocks, Bedrock rejects the whole request with `ValidationException` if no `toolConfig` accompanies them, so withdrawing them failed exactly the multi-step questions the loop exists for.
 - **Degrade rather than drop.** An unreachable MCP server, a failed tool call, or an unavailable DynamoDB table never ends the exchange: the model is told the tools are unavailable, a failed tool is reported as a failed step it can work around, and a storage failure is logged and swallowed. A chat that explains what it could not reach beats a chat that disconnects.
 - **But refuse rather than substitute.** Degrading applies to a geodata server that is *configured and failing*. A server that was never configured is not a degraded state, it is an unfinished deployment, and answering from the bundled stand-in would pass non-production data off as production output - so those turns are refused instead. See [Waiting for the production MCP server](./protocol.md#waiting-for-the-production-mcp-server).
-- **Data layers on S3** - results are written as GeoJSON and returned as presigned URLs in `LayerSpec` (see [Data layers from chat](#data-layers-from-chat)). With no bucket configured - local development, and CI's credential-free smoke test - artifacts are held in memory and served from `/data/<name>`, the same path CloudFront already routes, so the frontend needs no special case.
+- **Data layers on S3** - geosearch results are written as GeoParquet and returned as presigned URLs in `LayerSpec` (see [Data layers from chat](#data-layers-from-chat)); GeoJSON remains a compatible protocol format for other producers. With no bucket configured, artifacts are held in memory and served from `/data/<name>`, the same path CloudFront already routes, so the frontend needs no special case.
 - **Limits instead of a key** - the endpoint is unauthenticated by design; per-client rate limits, an origin allowlist and payload caps are what protect it. See [Limits and the optional key](./protocol.md#limits-and-the-optional-key).
 
 ## MCP client interface
@@ -232,7 +233,7 @@ Client side:
 
 - **Transport** - connect to the server over **Streamable HTTP** (remote MCP), not stdio: `initialize`, cache `tools/list`, invoke with `tools/call`. One session per turn, so several tool calls in one answer share one `initialize` and nothing stale has to be reconnected between turns. The catalogue is paginated to the end via `next_cursor`, and the server's `ttl_ms` bounds how long the cache survives; `cache_scope` is not consulted, since it distinguishes a shared cache from a per-user one and this is the latter. An empty catalogue is never cached, so a server that answers before it is ready does not leave the agent toolless for the life of the task.
 - **In the agent loop** - the server's tools are offered to the model as its tool set; each model `tool_use` becomes a `tools/call`, and the result is fed back until the model produces the final answer. When a model emits several `tool_use` blocks at once, all their results go back in one message, which is what Bedrock requires. Tool JSON Schemas are normalised before being offered (pydantic's presentation keys are stripped - Mistral is less tolerant of unexpected schema keys than Claude).
-- **Mapping to protocol v1** - the client converts tool output into the frontend's events: a fetchable GeoJSON/GeoParquet URL with a WGS84 `bbox` (and optional style hint) becomes a `LayerSpec`; tool progress streams as `intermediate`; a client `cancel` aborts the in-flight `tools/call`; failures surface as `error`. The conversion is deliberately **generic** - it recognises that shape anywhere in a tool result rather than matching the bundled server's schema, so swisstopo's server should work without code changes. Anything that would fail the frontend's `isLayerSpec` guard is dropped rather than emitted, and a `bbox` that is not plausible WGS84 (LV95 metres, say) is discarded rather than sent to move the map. **One clause is implemented differently and is not yet confirmed:** a failed *tool call* surfaces as `intermediate` with `status: "failed"` rather than as `error`, because `error` is terminal and one flaky call would otherwise end the exchange. `error` is reserved for a failed turn. See [`protocol.md`](./protocol.md#intermediate--toolwork-progress).
+- **Mapping to protocol v1** - the client converts tool output into the frontend's events: a fetchable GeoJSON/GeoParquet URL with a WGS84 `bbox` (and optional style hint) becomes a `LayerSpec`; tool progress streams as `intermediate`; a client `cancel` aborts the in-flight `tools/call`. Transport failures and a top-level tool `error` string surface as `intermediate` with `status: "failed"` and a safe detail, because protocol `error` is terminal and one failed tool should not discard the whole answer. The same failure is returned to the model as an error-status tool result so it can explain or recover. The conversion is deliberately **generic** - it recognises layer shapes anywhere in tool output rather than matching one server schema. Anything that would fail the frontend guard is dropped, and a bbox that is not plausible WGS84 is discarded rather than sent to move the map.
 - **Auth & secrets** - the client presents the server's credential (bearer token from Secrets Manager as `Authorization: Bearer`); the server endpoint must be reachable from the Fargate task's egress.
 
 Needed from the server:

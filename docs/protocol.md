@@ -107,8 +107,8 @@ with one or more failed steps in it. Note that this differs from the wording in
     {
       "id": "flood-zones-1",
       "name": "Hochwasser-Gefahrenzonen",
-      "format": "geojson",
-      "url": "https://…/data.geojson",
+      "format": "parquet",
+      "url": "https://…/data.parquet",
       "geometry_type": "polygon",
       "feature_count": 5,
       "bbox": [7.0, 46.05, 8.1, 46.35],
@@ -123,8 +123,8 @@ with one or more failed steps in it. Note that this differs from the wording in
   raw HTML is stripped.
 - `layers` — optional data layers. The client fetches `url` itself (the URL
   must be CORS-accessible, e.g. a presigned object URL).
-  - `format` — `geojson | parquet` (GeoParquet). Clients that do not
-    support a format show the layer as not displayable.
+  - `format` — `geojson | parquet` (GeoParquet). This frontend supports both;
+    geosearch emits GeoParquet for new chat-produced feature layers.
   - `geometry_type` — `point | line | polygon`.
   - `bbox` — WGS84, for zoom-to-layer.
   - `style_hint` — optional rendering hints: `fill_color`, `stroke_color`,
