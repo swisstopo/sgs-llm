@@ -343,6 +343,10 @@ async def test_catalog_layers_are_withheld_until_the_client_supports_them(settin
     # being unable to help with a layer it carries (evals: gs-not-queryable-fallback-de).
     assert "map.geo.admin.ch" in models.calls[0]["system"]
     assert "Never send them to" in models.calls[0]["system"]
+    # Named panel, and the title as the search term: the Geocatalog filter matches
+    # `child.label`, so a layer id typed into it returns "No matches in the geocatalog".
+    assert "Geocatalog" in models.calls[0]["system"]
+    assert "title" in models.calls[0]["system"]
 
 
 async def test_display_division_is_described_only_when_the_server_offers_it(settings) -> None:

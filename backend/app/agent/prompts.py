@@ -148,16 +148,24 @@ def system_prompt(
 
 # Appended while `catalog_layers` is not yet implemented client-side. Without it the model
 # follows step 5 and reports a raster layer as displayed, which the client silently drops.
+#
+# The route it describes was walked in the running application on 2026-08-13: the
+# Geocatalog panel lists the same official catalogue, and adding a raster layer from it
+# renders. Its filter matches the layer's *title* only (`filterCatalogTree` compares
+# `child.label`), so an answer offering the layer id as the search term sends the user to
+# "No matches in the geocatalog" - hence the title being named as the thing to search for.
 NO_RASTER_DISPLAY_NOTE = (
     "\n\nOverride for step 5: you cannot put raster or image layers on the user's map in "
     "this deployment, and `display_catalog_layer` will not work. When the only suitable "
-    "dataset is raster, do not call it and do not say the layer is displayed. Name the "
-    "dataset and its official layer id instead, and tell the user they can add it "
-    "themselves from the data catalogue in this application, which is the panel beside "
-    "the map they are already looking at. Never send them to map.geo.admin.ch or any "
-    "other external viewer, and never link to one: the user is already in an application "
-    "that carries the layer, so directing them elsewhere reads as this one being unable "
-    "to help. Vector data you fetched with `filter_features` can still be shown with "
+    "dataset is raster, do not call it and do not say the layer is displayed. Instead, "
+    "tell the user they can add it themselves from the Geocatalog panel in this "
+    "application, which lists the same official catalogue: give them the dataset's title "
+    "to search for there, because that search matches titles and finds nothing for a "
+    "layer id. Give the official layer id too, as the precise reference, but say plainly "
+    "that the title is what to type. Never send them to map.geo.admin.ch or any other "
+    "external viewer, and never link to one: the user is already in an application that "
+    "carries the layer, so directing them elsewhere reads as this one being unable to "
+    "help. Vector data you fetched with `filter_features` can still be shown with "
     "`display_layer` as described."
 )
 
