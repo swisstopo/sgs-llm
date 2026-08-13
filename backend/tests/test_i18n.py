@@ -6,8 +6,7 @@ import pytest
 
 from app.i18n import TOOL_RUNNING, tool_running
 
-# Romansh is deliberately absent from these tables and falls back to German, so the bar
-# is "the same languages as every other label", not "every supported language".
+# Romansh is absent from these tables by design and falls back to German.
 LABELLED = set(TOOL_RUNNING["search_layers"])
 
 
@@ -17,8 +16,7 @@ def test_every_labelled_tool_covers_every_language(tool: str) -> None:
 
 
 def test_the_geosearch_tools_are_all_labelled() -> None:
-    """The tool set the deployed server serves. A missing entry is not a failure, it
-    renders as "Running tool: display_division" mid-answer."""
+    """A missing entry renders as "Running tool: display_division" mid-answer."""
     for tool in (
         "search_layers",
         "search_locations",

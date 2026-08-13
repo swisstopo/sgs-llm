@@ -148,12 +148,8 @@ def system_prompt(
 
 # Appended while `catalog_layers` is not yet implemented client-side. Without it the model
 # follows step 5 and reports a raster layer as displayed, which the client silently drops.
-#
-# The route it describes was walked in the running application on 2026-08-13: the
-# Geocatalog panel lists the same official catalogue, and adding a raster layer from it
-# renders. Its filter matches the layer's *title* only (`filterCatalogTree` compares
-# `child.label`), so an answer offering the layer id as the search term sends the user to
-# "No matches in the geocatalog" - hence the title being named as the thing to search for.
+# The title is the search term because the Geocatalog filter matches `child.label` only,
+# so a layer id typed into it returns no matches.
 NO_RASTER_DISPLAY_NOTE = (
     "\n\nOverride for step 5: you cannot put raster or image layers on the user's map in "
     "this deployment, and `display_catalog_layer` will not work. When the only suitable "
@@ -169,8 +165,8 @@ NO_RASTER_DISPLAY_NOTE = (
     "`display_layer` as described."
 )
 
-# Appended only when the connected server offers `display_division`. The stand-in does
-# not, and naming a tool that is not in the tool set earns an "unknown tool" round trip.
+# Appended only when the server offers `display_division`: naming a tool that is not in
+# the tool set earns an "unknown tool" round trip.
 DIVISION_NOTE = (
     "\n\nAddition to step 5: when what the user asked to see is the place itself - a "
     "canton, district, commune or locality rather than a dataset - call "

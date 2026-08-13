@@ -338,20 +338,16 @@ async def test_catalog_layers_are_withheld_until_the_client_supports_them(settin
     assert final.focus_bbox is None
     # And the model is told not to promise it.
     assert "cannot put raster or image layers" in models.calls[0]["system"]
-    # And pointed at this application's own catalogue. Both pilot models used to answer
-    # the raster case by linking to map.geo.admin.ch, which reads as this application
-    # being unable to help with a layer it carries (evals: gs-not-queryable-fallback-de).
+    # Both pilot models used to answer this case by linking to map.geo.admin.ch, and to
+    # offer the layer id, which the Geocatalog filter never matches.
     assert "map.geo.admin.ch" in models.calls[0]["system"]
     assert "Never send them to" in models.calls[0]["system"]
-    # Named panel, and the title as the search term: the Geocatalog filter matches
-    # `child.label`, so a layer id typed into it returns "No matches in the geocatalog".
     assert "Geocatalog" in models.calls[0]["system"]
     assert "title" in models.calls[0]["system"]
 
 
 async def test_display_division_is_described_only_when_the_server_offers_it(settings) -> None:
-    """geosearch has the tool and the stand-in does not, so the instruction follows the
-    tool set. Describing a tool that is absent buys an unknown-tool round trip."""
+    """Describing a tool that is absent buys an unknown-tool round trip."""
     session = FakeToolSession({"search_layers": ToolOutcome(text="[]", data=[], is_error=False)})
     models = FakeModels([text_result("Antwort.")])
     await _collect(_message(), models, FakeGateway(session), settings, TurnStats())
@@ -369,8 +365,7 @@ async def test_display_division_is_described_only_when_the_server_offers_it(sett
 
 
 async def test_a_division_boundary_reaches_the_client_as_a_layer(settings) -> None:
-    """`display_division` answers with the same `layer` envelope as `display_layer`, so a
-    boundary is an ordinary data layer to everything downstream."""
+    """`display_division` answers with the same `layer` envelope as `display_layer`."""
     payload = {
         "layer": {
             "id": "division-kanton-Zug",

@@ -966,20 +966,11 @@
     answer_lang: it
     judge: true
 
-# ---------------------------------------------------------------------------------
-# geosearch_tools - the server's own surface and its documented caveats.
-#
-# These need a running geosearch, because the stand-in implements neither
-# `display_division` nor place-clipped `filter_features`:
+# geosearch_tools - the server's own surface and its documented caveats. These need a
+# running geosearch; against mcp_dummy they measure the missing tool, not the model:
 #
 #     python -m geosearch.server &
 #     python evals/run.py --only geosearch_tools --mcp-url http://127.0.0.1:8790/mcp --model ...
-#
-# Run against mcp_dummy they do not measure the model, they measure the missing tool.
-# Every claim asserted here was checked against the built index on 2026-08-12: canton
-# Zug has 11 communes, "Zug" is a canton, a commune and a locality, and
-# ch.bafu.hydroweb-messstationen_grundwasser genuinely raises LayerNotQueryable.
-# ---------------------------------------------------------------------------------
 
 - id: gs-division-boundary-de
   lang: de
@@ -1025,8 +1016,7 @@
     must_not_contain: ['42']
     answer_lang: de
     max_tools: 6
-    # "11" is a substring match, so it would also pass on "2011". The judge is what
-    # confirms the figure is being given as the commune count.
+    # "11" is a substring match and would also pass on "2011".
     judge: true
 
 - id: gs-true-total-beyond-the-cap-de
