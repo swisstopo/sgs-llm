@@ -35,7 +35,7 @@ from .bedrock import (
     tool_results_message,
 )
 from .layers import extract_catalog_layers, extract_focus_bbox, extract_layers
-from .prompts import NO_RASTER_DISPLAY_NOTE, NO_TOOLS_NOTE, system_prompt
+from .prompts import DIVISION_NOTE, NO_RASTER_DISPLAY_NOTE, NO_TOOLS_NOTE, system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,8 @@ async def run_turn(
                 return text + NO_TOOLS_NOTE
             if not settings.enable_catalog_layers:
                 text += NO_RASTER_DISPLAY_NOTE
+            if "display_division" in tools.tool_names:
+                text += DIVISION_NOTE
             return text
 
         pinned: ModelHandle | None = None

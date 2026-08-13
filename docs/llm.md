@@ -149,7 +149,25 @@ would retry Claude.
 Re-confirm the routed regions at any time with `aws bedrock get-inference-profile
 --inference-profile-identifier eu.anthropic.claude-sonnet-4-6`.
 
-### ⚠️ Blocker: Anthropic use-case details form not submitted
+### ✅ Resolved (2026-08-10): the Anthropic use-case gate
+
+> **Status.** The gate below is clear for the Sonnet profiles. Verified on
+> **2026-08-10** from a workstation holding a Bedrock API key
+> (`AWS_BEARER_TOKEN_BEDROCK`), against `eu-central-1`:
+>
+> | model | result |
+> | --- | --- |
+> | `eu.anthropic.claude-sonnet-4-6` | answers |
+> | `eu.anthropic.claude-sonnet-5` | answers |
+> | `eu.mistral.pixtral-large-2502-v1:0` | answers — the re-probe the amended SCP was expected to reopen |
+> | `eu.anthropic.claude-haiku-4-5-20251001-v1:0` | still denied, and on a *different* gate: `AccessDeniedException`, missing `aws-marketplace:ViewSubscriptions`. A per-model subscription, not the use-case form |
+>
+> This was measured with the developer API key, which is a different identity from
+> the deployed task role ([`dev-access`](./deployment.md)). The account-level form
+> clearing applies to both; the IAM half does not, so a deployed task is worth
+> re-checking against its own role before quoting Claude as live in production.
+
+The original diagnosis, kept because it explains the shape of the fallback:
 
 With the SCP amended, the first Claude call reached Anthropic's own gate instead:
 
@@ -171,12 +189,12 @@ propagates within ~15 minutes of submission.
 
 [anthropic-access]: https://repost.aws/knowledge-center/bedrock-access-anthropic-model
 
-**Current state of the deployed backend:** primary
-`eu.anthropic.claude-sonnet-4-6` (**pending the use-case form**), secondary
-`mistral.ministral-3-14b-instruct` in `eu-west-1` (**working**). Claude starts
-working once the form clears **and the service is restarted** — this failure is a
-`ResourceNotFoundException`, which the backend also caches for the life of the
-process (restart note above). No configuration change is needed.
+**Current state:** primary `eu.anthropic.claude-sonnet-4-6` (**answering**, see the
+status box above), secondary `mistral.ministral-3-14b-instruct` in `eu-west-1`
+(**working**). A backend process that was started while the gate was still closed
+keeps serving from the secondary until it is restarted, because an unavailable
+model is cached for the life of the process (restart note above). No configuration
+change is needed.
 
 Note that the secondary model stays on merit, not as a fallback: an in-region
 on-demand call in Ireland never leaves the EU, which is a *better* residency story

@@ -148,13 +148,32 @@ def system_prompt(
 
 # Appended while `catalog_layers` is not yet implemented client-side. Without it the model
 # follows step 5 and reports a raster layer as displayed, which the client silently drops.
+# The title is the search term because the Geocatalog filter matches `child.label` only,
+# so a layer id typed into it returns no matches.
 NO_RASTER_DISPLAY_NOTE = (
     "\n\nOverride for step 5: you cannot put raster or image layers on the user's map in "
     "this deployment, and `display_catalog_layer` will not work. When the only suitable "
-    "dataset is raster, do not call it and do not say the layer is displayed. Name the "
-    "dataset and its official layer id instead, and tell the user they can add it "
-    "themselves from the map's data catalogue. Vector data you fetched with "
-    "`filter_features` can still be shown with `display_layer` as described."
+    "dataset is raster, do not call it and do not say the layer is displayed. Instead, "
+    "tell the user they can add it themselves from the Geocatalog panel in this "
+    "application, which lists the same official catalogue: give them the dataset's title "
+    "to search for there, because that search matches titles and finds nothing for a "
+    "layer id. Give the official layer id too, as the precise reference, but say plainly "
+    "that the title is what to type. Never send them to map.geo.admin.ch or any other "
+    "external viewer, and never link to one: the user is already in an application that "
+    "carries the layer, so directing them elsewhere reads as this one being unable to "
+    "help. Vector data you fetched with `filter_features` can still be shown with "
+    "`display_layer` as described."
+)
+
+# Appended only when the server offers `display_division`: naming a tool that is not in
+# the tool set earns an "unknown tool" round trip.
+DIVISION_NOTE = (
+    "\n\nAddition to step 5: when what the user asked to see is the place itself - a "
+    "canton, district, commune or locality rather than a dataset - call "
+    "`display_division` with the `name` and `kind` you kept from step 1. It draws the "
+    "official boundary from stored data, so it needs no dataset and no `filter_features`. "
+    "Use it as well as `display_layer` when showing where fetched features lie is part of "
+    "the answer."
 )
 
 NO_TOOLS_NOTE = (

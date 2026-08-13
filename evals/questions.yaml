@@ -965,3 +965,191 @@
   expect:
     answer_lang: it
     judge: true
+
+# geosearch_tools - the server's own surface and its documented caveats. These need a
+# running geosearch; against mcp_dummy they measure the missing tool, not the model:
+#
+#     python -m geosearch.server &
+#     python evals/run.py --only geosearch_tools --mcp-url http://127.0.0.1:8790/mcp --model ...
+
+- id: gs-division-boundary-de
+  lang: de
+  category: geosearch_tools
+  question: Zeig mir die Grenze des Kantons Zug auf der Karte
+  user_intent: >-
+    The thing to show is the place itself, not a dataset. `display_division` draws it
+    from stored polygons, so a correct answer needs no search_layers and no
+    filter_features - reaching for a dataset here is the failure.
+  expect:
+    must_call_tool: [display_division]
+    must_produce_layer: true
+    answer_lang: de
+    max_tools: 3
+
+- id: gs-division-with-data-de
+  lang: de
+  category: geosearch_tools
+  question: Zeig mir die Haltestellen des öffentlichen Verkehrs im Kanton Zug, zusammen mit der Kantonsgrenze
+  user_intent: >-
+    Boundary and data in one turn. Tests that `display_division` is used alongside
+    `display_layer` rather than instead of it - the prompt paragraph describing the tool
+    is appended only when the server offers it, so this also covers that gating.
+  expect:
+    must_chain_tools: [filter_features, display_layer]
+    must_call_tool: [display_division]
+    must_produce_layer: true
+    answer_lang: de
+    max_tools: 8
+
+- id: gs-place-clipping-communes-de
+  lang: de
+  category: geosearch_tools
+  question: Wie viele Gemeinden hat der Kanton Zug?
+  user_intent: >-
+    The clipping case geosearch was built for. Asked as a bounding box the commune layer
+    answers with 42 communes across five cantons; cut to the real boundary it is the 11
+    that are actually there. The number is the evidence that `place` was used and not a
+    rectangle, which no tool-name check can see.
+  expect:
+    must_call_tool: [filter_features]
+    must_mention: ['11']
+    must_not_contain: ['42']
+    answer_lang: de
+    max_tools: 6
+    # "11" is a substring match and would also pass on "2011".
+    judge: true
+
+- id: gs-true-total-beyond-the-cap-de
+  lang: de
+  category: geosearch_tools
+  question: Wie viele öffentlichen Haltestellen gibt es im Kanton Zug? Zeig sie auf der Karte
+  user_intent: >-
+    identify caps a response at 200 features and the old tool asked for one page, so a
+    canton-wide count came back as the cap and was reported as a total. Zug holds far
+    more than one page of stops, so any figure at or below the cap is the bug returning.
+    Judged rather than pinned to a number: the count is real data and moves.
+  expect:
+    must_chain_tools: [filter_features, compute]
+    must_produce_layer: true
+    answer_lang: de
+    max_tools: 8
+    judge: true
+
+- id: gs-name-at-several-levels-de
+  lang: de
+  category: geosearch_tools
+  question: Zeig mir Zug auf der Karte
+  user_intent: >-
+    "Zug" is a canton, a commune and a locality. The index ranks coarsest first, so the
+    canton is the defensible default - but naming which Zug was chosen is what makes the
+    answer honest. Guessing silently is the failure, and so is refusing to move.
+  expect:
+    must_produce_layer: true
+    must_not_clarify: true
+    answer_lang: de
+    judge: true
+
+- id: gs-locality-not-commune-de
+  lang: de
+  category: geosearch_tools
+  question: Wo liegt Oberägeri?
+  user_intent: >-
+    A place that exists as both commune and locality, and is small enough that a model
+    working from training data alone will place it vaguely. Tests that places resolve
+    below canton level at all.
+  expect:
+    must_call_tool: [search_locations, display_division]
+    answer_lang: de
+    max_tools: 5
+    judge: true
+
+- id: gs-exonym-zurich-en
+  lang: en
+  category: geosearch_tools
+  question: Show me the boundary of Zurich
+  user_intent: >-
+    Written without the umlaut, in a language the index was not built in. Vector search
+    should still resolve it to Zürich; a lexical match would not. Zürich is also a
+    canton, a district, a commune and a locality, so the answer has to say which.
+  expect:
+    must_call_tool: [display_division]
+    must_produce_layer: true
+    answer_lang: en
+    judge: true
+
+- id: gs-cross-language-recall-fr
+  lang: fr
+  category: geosearch_tools
+  question: Quelles données officielles existent sur la forêt ?
+  user_intent: >-
+    The index is built one language at a time and this one is German. The embedding model
+    is multilingual, so a French subject must still find the forest layers - this is the
+    recall the old lexical SearchServer lost, where "Wald" and "forêt" returned different
+    sets for the same question.
+  expect:
+    must_call_tool: [search_layers]
+    answer_lang: fr
+    max_tools: 3
+
+- id: gs-not-queryable-fallback-de
+  lang: de
+  category: geosearch_tools
+  question: Wie viele Grundwasser-Messstationen der NAQUA gibt es im Kanton Zug?
+  user_intent: >-
+    ch.bafu.hydroweb-messstationen_grundwasser is flagged queryable false and genuinely
+    raises LayerNotQueryable, so no count is available. The answer must say so and name
+    the dataset instead of inventing a figure - and, since this deployment cannot display
+    raster, must point at this application's own catalogue rather than sending the user
+    to map.geo.admin.ch.
+  expect:
+    no_layer: true
+    must_not_contain: ['map.geo.admin.ch']
+    answer_lang: de
+    max_tools: 8
+    judge: true
+
+- id: gs-low-confidence-de
+  lang: de
+  category: geosearch_tools
+  question: Gibt es Daten zu Belastungen?
+  user_intent: >-
+    Deliberately underspecified - noise, contaminated sites, air quality and structural
+    load all match "Belastungen", so the candidates bunch and `low_confidence` is set.
+    The server reports that rather than hiding it, and the answer should name what it is
+    choosing between instead of silently taking the top hit.
+  expect:
+    answer_lang: de
+    no_layer: true
+    judge: true
+
+- id: gs-map-view-has-no-name-de
+  lang: de
+  category: geosearch_tools
+  question: Welche Haltestellen gibt es hier?
+  map_context:
+    bbox: [8.50, 47.15, 8.58, 47.20]
+  user_intent: >-
+    The area is the current map view, which has no name, so this is the one case where a
+    bbox is the right argument and resolving a place would be wrong. Tests that the
+    prompt's "only pass a bbox when the area came from the map view" survives contact
+    with a real map context.
+  expect:
+    must_call_tool: [filter_features]
+    answer_lang: de
+    max_tools: 5
+    judge: true
+
+- id: gs-country-as-a-place-de
+  lang: de
+  category: geosearch_tools
+  question: Zeig mir die Landesgrenze der Schweiz
+  user_intent: >-
+    The country layer carries four territories - Switzerland, Liechtenstein and two
+    enclaves - and the build filters it to Switzerland. Asking for the national boundary
+    should therefore return one polygon, not a set including Liechtenstein.
+  expect:
+    must_call_tool: [display_division]
+    must_produce_layer: true
+    must_not_contain: ['Liechtenstein']
+    answer_lang: de
+    max_tools: 4

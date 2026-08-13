@@ -24,10 +24,13 @@ directly for map interactivity.
 - **`backend/`** - Python service running the LLM loop on Amazon Bedrock and the MCP client
   for the geodata tools, plus feedback and conversation-turn persistence. See
   [`docs/architecture.md`](docs/architecture.md#backend-architecture).
+- **`geosearch/`** - the geodata **MCP server** the chat answers from: semantic search over
+  all 896 catalogue layers, administrative boundaries from swissBOUNDARIES3D, and
+  `identify` subdivided over a grid so a count is a real total rather than a capped page.
+  Deployed as its own service ([`geosearch/README.md`](geosearch/README.md)).
 - **`mcp_dummy/`** - a stand-in geodata MCP server whose tools are backed by the **real**
-  geo.admin.ch APIs. It exists so the backend and the benchmark could be built before
-  swisstopo's own MCP server does, and it is used for development and evaluation - **not**
-  to answer production traffic ([`mcp_dummy/README.md`](mcp_dummy/README.md)).
+  geo.admin.ch APIs. It predates `geosearch/` and now serves development and evaluation
+  only - **not** production traffic ([`mcp_dummy/README.md`](mcp_dummy/README.md)).
 - **`evals/`** - a user-perspective question set and runner that doubles as a **side-by-side
   benchmark of the two pilot models** ([`docs/evals.md`](docs/evals.md)).
 - **`mock-agent/`** - the protocol reference implementation, kept as a local test double and
@@ -37,19 +40,18 @@ The AWS infrastructure - ECS Fargate, ALB, Bedrock access, DynamoDB, S3 - is dep
 ([`infra/`](infra/), [`docs/deployment.md`](docs/deployment.md#backend-deployment)). This is
 a prototype - not for operational use; interfaces and layout may still change.
 
-> **The chat waits for a geodata MCP server.** swisstopo's does not exist yet, and the
-> backend does **not** substitute the bundled stand-in for it - the stand-in is a
-> development tool and is not even in the deployed image. With `MCP_SERVER_URL` unset the
-> backend accepts WebSocket connections and refuses every turn, so nothing can mistake
-> stand-in output for production data. Setting that one variable turns the chat on. The map
-> is a separate track and is fully usable meanwhile - see
+> **The chat needs `MCP_SERVER_URL`.** The geodata server is [`geosearch/`](geosearch/README.md);
+> pointing that one variable at it turns the chat on. With it unset the backend accepts
+> WebSocket connections and refuses every turn rather than substituting the bundled
+> stand-in, so nothing can mistake development output for production data. The map is a
+> separate track and is fully usable meanwhile - see
 > [`docs/protocol.md`](docs/protocol.md#waiting-for-the-production-mcp-server).
 
 > **Model note.** The pilot's primary model is Claude Sonnet 4.6 via a Bedrock EU inference
-> profile. An organization-level Service Control Policy currently denies the EU regions that
-> profile routes to, so the backend automatically falls back to
-> `mistral.ministral-3-14b-instruct` in `eu-west-1`, which works. Claude starts serving the
-> moment the policy is amended, with no redeploy - see
+> profile, with `mistral.ministral-3-14b-instruct` in `eu-west-1` as the secondary. Both the
+> organization SCP and the Anthropic use-case gate that blocked Claude are now clear -
+> Sonnet 4.6 and Sonnet 5 both answered from `eu-central-1` on 2026-08-10. A process started
+> before that clears keeps using the secondary until restarted - see
 > [`docs/llm.md`](docs/llm.md).
 
 A live POC instance (frontend + mock-agent) is deployed on AWS at
@@ -100,7 +102,9 @@ Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core, map in EPSG:2056)
   │                                 wms.geo.admin.ch, data.geo.admin.ch)
   └── WebSocket /ws/v1 ─────────►  Agent backend (backend/)
                                      ├─ Amazon Bedrock - Claude / Mistral, EU regions
-                                     ├─ MCP client ──► geodata tools (mcp_dummy/ today)
+                                     ├─ MCP client ──► geodata MCP server (geosearch/)
+                                     │                 FAISS catalogue search, boundaries,
+                                     │                 grid-subdivided identify
                                      └─ DynamoDB - feedback + conversation turns
 ```
 
@@ -119,6 +123,7 @@ model benchmark are in [`docs/evals.md`](docs/evals.md).
 ```text
 frontend/      Lit + TypeScript + Vite chat + map application
 backend/       Python agent backend: protocol v1, Bedrock LLM loop, MCP client, persistence
+geosearch/     Geodata MCP server: FAISS catalogue search, boundaries, feature fetching
 mcp_dummy/     Stand-in geodata MCP server backed by the real geo.admin.ch APIs
 evals/         Question set + runner; doubles as a side-by-side model benchmark
 mock-agent/    Node WebSocket server implementing the agent protocol for development
@@ -135,22 +140,46 @@ git clone https://github.com/swisstopo/sgs-llm.git
 cd sgs-llm
 ```
 
-### Run an agent backend (terminal 1)
+### Run the geodata MCP server (terminal 1)
+
+Build the index once - it fetches the catalogue and the boundary polygons and embeds them
+through Bedrock, so it needs credentials and about twelve minutes. Everything it writes
+lands in the gitignored `index/`, and the server only reads it:
+
+```bash
+python -m venv geosearch/.venv
+geosearch/.venv/bin/pip install -r geosearch/requirements-dev.txt
+export AWS_BEARER_TOKEN_BEDROCK=<key>
+geosearch/.venv/bin/python -m geosearch.build     # once, ~12 min
+geosearch/.venv/bin/python -m geosearch.server    # http://127.0.0.1:8790/mcp
+```
+
+With no `GEOSEARCH_S3_BUCKET` set it boots an in-process moto on a free port and publishes
+answer layers there, so the browser fetches them over ordinary presigned URLs and no AWS
+bucket is involved.
+
+> The rerank stage resolves its region as `BEDROCK_SECONDARY_REGION` → `BEDROCK_REGION` →
+> `eu-west-1`. Ministral is **not** offered in `eu-central-1`, so exporting only
+> `BEDROCK_REGION=eu-central-1` in a shell shared with the backend silently degrades every
+> search to unfiltered vector hits. Export `BEDROCK_SECONDARY_REGION=eu-west-1` too.
+
+`python -m mcp_dummy.server` (port 8788) is the alternative: no index, no build, weaker
+search. It is what the evaluation harness and the integration tests use.
+
+### Run an agent backend (terminal 2)
 
 Either the real backend, which answers with a live model and real geodata (needs a Bedrock
 key and the project VPN - see
 [`docs/deployment.md`](docs/deployment.md#run-the-backend-locally)):
 
 ```bash
-# The geodata server the chat answers from; without it every turn is refused.
-python -m mcp_dummy.server &                     # http://127.0.0.1:8788/mcp
-
 cd backend
 python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 export AWS_BEARER_TOKEN_BEDROCK=<key>
+export BEDROCK_PRIMARY_MODEL_ID=eu.anthropic.claude-sonnet-4-6
 export BEDROCK_SECONDARY_MODEL_ID=mistral.ministral-3-14b-instruct
 export BEDROCK_SECONDARY_REGION=eu-west-1
-export MCP_SERVER_URL=http://127.0.0.1:8788/mcp
+export MCP_SERVER_URL=http://127.0.0.1:8790/mcp   # 8788 for mcp_dummy
 PYTHONPATH=..:. .venv/bin/python -m uvicorn app.main:app --port 8787 --reload
 ```
 
@@ -165,7 +194,7 @@ npm start          # WebSocket on ws://localhost:8787/ws/v1, feedback on /feedba
 Both serve the same endpoints on the same port, so the frontend does not care which is
 running.
 
-### Run the frontend (terminal 2)
+### Run the frontend (terminal 3)
 
 ```bash
 cd frontend
