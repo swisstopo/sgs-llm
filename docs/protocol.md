@@ -168,12 +168,13 @@ The backend answers only when it is connected to a real geodata MCP server
 one `error` (`code: "internal"`) followed by `done` - the ordinary exchange
 termination, so no client change is needed and nothing hangs.
 
-This is the state the pilot ships in, because swisstopo's MCP server does not exist
-yet. The alternative was to answer from the bundled stand-in
-([`mcp_dummy/`](../mcp_dummy/README.md)), which returns real geo.admin.ch data but is
-not swisstopo's service; answers sourced from it could be mistaken for production
-output. Refusing is the honest default, and the map (Track A in
-[`architecture.md`](./architecture.md#overview)) is unaffected - it never depended on
+The server to point it at is [`geosearch/`](../geosearch/README.md), which this project
+builds and deploys ([`deployment.md`](./deployment.md#geodata-mcp-server-geosearch-deployment)).
+The refusal is what an *unconfigured* deployment does, and it stays: the alternative was
+to answer from the bundled stand-in ([`mcp_dummy/`](../mcp_dummy/README.md)), which
+returns real geo.admin.ch data but is a development tool; answers sourced from it could
+be mistaken for production output. Refusing is the honest default, and the map (Track A
+in [`architecture.md`](./architecture.md#overview)) is unaffected - it never depended on
 the agent.
 
 Two consequences worth knowing:

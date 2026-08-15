@@ -21,8 +21,8 @@ API3 = "https://api3.geo.admin.ch/rest/services"
 # The API's own maximum for identify; the default is 50.
 IDENTIFY_MAX = 200
 
-# ~1 MB per language and rarely changing, so fetched once and kept. Tells us up front
-# whether a layer is queryable and how it renders, which we used to learn by failing.
+# ~1 MB per language and rarely changing, so fetched once and kept. Carries how a layer
+# renders, and the `tooltip` flag used as the queryability hint.
 LAYERS_CONFIG = f"{API3}/all/MapServer/layersConfig"
 
 # Search results wrap the matched substring in markup for highlighting.
@@ -126,8 +126,9 @@ class Swisstopo:
     async def layer_capabilities(self, layer_id: str, lang: str) -> dict[str, Any]:
         """How a layer can be used: rendered as a map layer, queried for features, or both.
 
-        `queryable` is exactly why identify answers HTTP 400 for raster layers, and it is
-        available here up front - so the agent no longer has to find out by failing.
+        `queryable` is a hint derived from layersConfig's `tooltip`, not a guarantee:
+        identify answers for some layers it reports false. Treat a LayerNotQueryable from
+        identify as the authority.
         """
         config = (await self.layers_config(lang)).get(layer_id)
         if not isinstance(config, dict):
@@ -139,7 +140,12 @@ class Swisstopo:
             # Everything layersConfig describes can be rendered by the client; only
             # background-less entries with no service type cannot.
             "displayable": config.get("type") in ("wmts", "wms", "geojson", "aggregate"),
-            "queryable": bool(config.get("queryable")),
+            # `tooltip`, not `queryable`: layersConfig has no `queryable` key at all (0 of
+            # 896 entries), so reading it reported every layer as unqueryable and the agent
+            # never fetched any features. `tooltip` is the flag map.geo.admin.ch uses, and
+            # it is a hint rather than a guarantee - identify answers for some layers with
+            # tooltip false, so the authority is LayerNotQueryable from identify itself.
+            "queryable": bool(config.get("tooltip")),
         }
 
     async def search_layers(self, query: str, lang: str, limit: int = 8) -> list[dict[str, Any]]:

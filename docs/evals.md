@@ -117,8 +117,13 @@ python evals/run.py --judge --all                   # add model-graded quality
 ```
 
 Results land in `evals/results/<timestamp>.jsonl` (every turn in full) and
-`<timestamp>.md` (the report). Both are gitignored - they contain model output and are
-regenerated on demand.
+`<timestamp>.md` (the report). Rows are written as each question finishes, so an
+interrupted run is still readable and `summarise` can report on a partial file.
+
+Both are gitignored: they contain model output and are regenerated on demand. A run worth
+keeping goes in `evals/results/keep/` with a notes file recording the model ids, the
+question-set hash, the prompt variant, whether judged scores were produced, and anything
+the pass rate does not show. Still local only, still out of the repository.
 
 **Runs are not merged.** Each invocation writes a standalone report; `--all` is what
 produces a side-by-side table, and it needs both models reachable in the same run. While

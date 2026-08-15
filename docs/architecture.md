@@ -211,10 +211,20 @@ interface is in [MCP client interface](#mcp-client-interface); model choice is i
 The backend is the **MCP client**; the geodata tools live on a separate MCP
 **server** (the connector). The client side is **implemented** as described below.
 
-Until swisstopo's server exists there is nothing to connect to, and the backend
-**refuses chat turns rather than answering from a stand-in** - the reasoning is in
-[`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server). Turning the chat on
-is setting `MCP_SERVER_URL`; no code or image change.
+The server this project connects to is [`geosearch/`](../geosearch/README.md): semantic
+search over the swisstopo catalogue, administrative boundaries resolved from
+swissBOUNDARIES3D, and grid-subdivided `identify`, deployed as its own ECS service
+([`deployment.md`](./deployment.md#geodata-mcp-server-geosearch-deployment)). Turning the
+chat on is pointing `MCP_SERVER_URL` at it; no code or image change. With that variable
+unset the backend **refuses chat turns rather than answering from a stand-in** - the
+reasoning is in [`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server).
+
+`geosearch` offers one tool the stand-in does not, `display_division`, and the client
+adapts to that rather than assuming it: the prompt's paragraph describing the tool is
+appended only when `display_division` appears in the server's `tools/list`
+([`app/agent/loop.py`](../backend/app/agent/loop.py)), because naming a tool that is
+absent buys an unknown-tool round trip. The same principle as the schema normalisation
+below - the server owns the catalogue, and the client conforms to what it finds there.
 
 The bundled [`mcp_dummy/`](../mcp_dummy/README.md) - a real MCP server over Streamable
 HTTP whose tools are backed by the live geo.admin.ch APIs - therefore serves development

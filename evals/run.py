@@ -20,6 +20,9 @@ prompt variant that produced it, so two runs can be compared only when both matc
     # one category while iterating
     python evals/run.py --only place_scoped --model ...
 
+    # against a running geosearch instead of the bundled stand-in
+    python evals/run.py --mcp-url http://127.0.0.1:8790/mcp --only geosearch_tools --model ...
+
 Credentials come from the normal boto3 chain, so AWS_BEARER_TOKEN_BEDROCK works exactly
 as it does for scripts/ask-llm.py (VPN required).
 """
@@ -34,7 +37,7 @@ import json
 import sys
 import time
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -117,12 +120,23 @@ def load_questions(only: str | None, ids: list[str] | None) -> list[dict[str, An
 
 
 @contextlib.asynccontextmanager
-async def tool_gateway(inject: bool) -> AsyncIterator[ToolGateway]:
+async def tool_gateway(inject: bool, url: str = "") -> AsyncIterator[ToolGateway]:
     """A gateway onto the dummy MCP server, hitting the real geo.admin.ch APIs.
 
     In-process transport rather than loopback HTTP: a benchmark must not be skewed by a
     server-startup race silently leaving a question with no tools.
+
+    `url` runs against an already-running server instead, which is the only way to reach
+    the tools the stand-in does not implement.
+
+    The injection fixture subclasses the stand-in's client and cannot apply to a server
+    reached over HTTP, so `inject` wins over `url`: what it measures is a property of the
+    loop, not of the server. `run_model` prints that it is doing so.
     """
+    if url and not inject:
+        yield ToolGateway(url=url)
+        return
+
     api = InjectingSwisstopo() if inject else Swisstopo()
     try:
         # Explicitly bucketless: an exported DATA_LAYER_BUCKET would otherwise write
@@ -131,6 +145,15 @@ async def tool_gateway(inject: bool) -> AsyncIterator[ToolGateway]:
         yield ToolGateway(server=build_server(artifacts, swisstopo=api))
     finally:
         await api.aclose()
+
+
+def wants_judge(question: dict[str, Any]) -> bool:
+    """`judge` lives under `expect`, alongside the rule checks it complements.
+
+    Both read sites went to the top level, so --judge silently graded nothing and every
+    row came back with no score.
+    """
+    return bool((question.get("expect") or {}).get("judge"))
 
 
 def _tool_for_step(step_id: str, calls: list[str]) -> str:
@@ -249,6 +272,8 @@ async def run_model(
     settings: Settings,
     use_judge: bool,
     judge_handle: ModelHandle | None,
+    sink: Callable[[dict[str, Any]], None] | None = None,
+    mcp_url: str = "",
 ) -> list[dict[str, Any]]:
     models = BedrockModels(settings)
     rows: list[dict[str, Any]] = []
@@ -259,7 +284,9 @@ async def run_model(
         batch = [q for q in questions if bool(q.get("fixture") == "injected_features") is inject]
         if not batch:
             continue
-        async with tool_gateway(inject) as gateway:
+        if inject and mcp_url:
+            print(f"  ({len(batch)} injection questions run against mcp_dummy, not {mcp_url})")
+        async with tool_gateway(inject, mcp_url) as gateway:
             for index, question in enumerate(batch, start=1):
                 print(f"  [{index}/{len(batch)}] {question['id']} … ", end="", flush=True)
                 observed = await ask(
@@ -267,7 +294,7 @@ async def run_model(
                 )
                 verdict = evaluate(question, observed)
 
-                if use_judge and question.get("judge") and judge_handle is not None:
+                if use_judge and wants_judge(question) and judge_handle is not None:
                     score, reason = await judge(
                         question, observed, models=models, handle=judge_handle
                     )
@@ -278,19 +305,23 @@ async def run_model(
                     "PASS" if verdict.passed else f"FAIL ({', '.join(verdict.stages)})",
                     f"{observed.latency_ms}ms",
                 )
-                rows.append(
-                    {
-                        "model": str(handle),
-                        "question_set": QUESTION_SET,
-                        "prompt_variant": prompt_variant_for(handle.model_id),
-                        "catalog_layers": settings.enable_catalog_layers,
-                        "question": question["id"],
-                        "category": question.get("category", "uncategorised"),
-                        "lang": question.get("lang", "de"),
-                        "observed": asdict(observed),
-                        "verdict": asdict(verdict),
-                    }
-                )
+                row = {
+                    "model": str(handle),
+                    "question_set": QUESTION_SET,
+                    "prompt_variant": prompt_variant_for(handle.model_id),
+                    "catalog_layers": settings.enable_catalog_layers,
+                    # Two servers answer the same question differently, so rows from them
+                    # are not a controlled comparison and the report says so.
+                    "mcp": "mcp_dummy" if inject else (mcp_url or "mcp_dummy"),
+                    "question": question["id"],
+                    "category": question.get("category", "uncategorised"),
+                    "lang": question.get("lang", "de"),
+                    "observed": asdict(observed),
+                    "verdict": asdict(verdict),
+                }
+                rows.append(row)
+                if sink is not None:
+                    sink(row)
     return rows
 
 
@@ -306,12 +337,14 @@ def summarise(rows: list[dict[str, Any]]) -> str:
     lines.append(f"{len(rows)} runs · {len(models)} model(s) · {len(categories)} categories")
     sets = sorted({row.get("question_set", "?") for row in rows})
     variants = sorted({f"{row['model']}={row.get('prompt_variant', '?')}" for row in rows})
+    servers = sorted({row.get("mcp", "mcp_dummy") for row in rows})
     lines.append(f"question set `{', '.join(sets)}` · prompt {', '.join(variants)}")
-    if len(sets) > 1:
+    lines.append(f"MCP server `{', '.join(servers)}`")
+    if len(sets) > 1 or len(servers) > 1:
         lines.append("")
         lines.append(
-            "> These rows come from more than one question set, so the columns are not a "
-            "controlled comparison."
+            "> These rows come from more than one question set or MCP server, so the "
+            "columns are not a controlled comparison."
         )
     lines.append("")
     lines.append("## Pass rate by category")
@@ -427,6 +460,13 @@ async def main() -> None:
     parser.add_argument("--id", action="append", dest="ids", help="Run specific question ids")
     parser.add_argument("--judge", action="store_true", help="Also model-grade the judge questions")
     parser.add_argument("--list", action="store_true", help="List the question set and exit")
+    parser.add_argument(
+        "--mcp-url",
+        default="",
+        help="Run against an MCP server already listening there (e.g. a local geosearch "
+        "on http://127.0.0.1:8790/mcp) instead of the bundled stand-in. Required for the "
+        "questions covering tools the stand-in does not implement.",
+    )
     parser.add_argument("--timeout", type=float, default=120.0, help="Per-question budget")
     parser.add_argument(
         "--catalog-layers",
@@ -449,7 +489,7 @@ async def main() -> None:
         for category, bucket in sorted(by_category.items()):
             print(f"{category} ({len(bucket)})")
             for question in bucket:
-                judged = " [judged]" if question.get("judge") else ""
+                judged = " [judged]" if wants_judge(question) else ""
                 text = question["question"][:60]
                 print(f"  {question['id']:<28} {question['lang']}  {text}{judged}")
             print()
@@ -463,25 +503,33 @@ async def main() -> None:
     handles = resolve_handles(args, settings)
     judge_handle = handles[0] if args.judge else None
 
-    rows: list[dict[str, Any]] = []
-    for handle in handles:
-        print(f"\n=== {handle} ({len(questions)} questions) ===")
-        rows.extend(
-            await run_model(
-                handle,
-                questions,
-                settings=settings,
-                use_judge=args.judge,
-                judge_handle=judge_handle,
-            )
-        )
-
     RESULTS_DIR.mkdir(exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     jsonl = RESULTS_DIR / f"{stamp}.jsonl"
-    with jsonl.open("w", encoding="utf-8") as handle_out:
-        for row in rows:
+
+    # Written as each question finishes, not at the end: a full run takes tens of minutes,
+    # and an interruption used to discard every completed turn. `summarise` takes a row
+    # list, so a partial file can still be reported on.
+    rows: list[dict[str, Any]] = []
+    with jsonl.open("w", encoding="utf-8", buffering=1) as handle_out:
+
+        def sink(row: dict[str, Any]) -> None:
             handle_out.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle_out.flush()
+
+        for handle in handles:
+            print(f"\n=== {handle} ({len(questions)} questions) ===")
+            rows.extend(
+                await run_model(
+                    handle,
+                    questions,
+                    settings=settings,
+                    use_judge=args.judge,
+                    judge_handle=judge_handle,
+                    sink=sink,
+                    mcp_url=args.mcp_url,
+                )
+            )
 
     report = RESULTS_DIR / f"{stamp}.md"
     report.write_text(summarise(rows), encoding="utf-8")
