@@ -6,7 +6,9 @@ docs/architecture.md#data-layers-from-chat describes. With no bucket configured
 served from /data/<name>, which is the same path the CloudFront `/data/*` behavior
 and mock-agent already use - so the frontend needs no special case either way.
 
-GeoJSON only for now: the frontend renders `parquet` as "format not yet supported".
+This store remains GeoJSON for the bundled mock MCP producer. The production geosearch
+service publishes GeoParquet directly to the same bucket, and the frontend accepts both
+protocol formats.
 """
 
 from __future__ import annotations

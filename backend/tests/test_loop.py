@@ -122,8 +122,166 @@ async def test_failed_tool_is_reported_and_the_turn_still_answers(settings) -> N
     )
 
     events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
-    assert any(e.type == "intermediate" and e.status == "failed" for e in events)
+    failed = [e for e in events if e.type == "intermediate" and e.status == "failed"]
+    assert len(failed) == 1
+    assert failed[0].detail == "upstream 503"
+    tool_result_message = models.calls[1]["messages"][-1]
+    assert tool_result_message["content"][0]["toolResult"]["status"] == "error"
+    assert tool_result_message["content"][0]["toolResult"]["content"] == [{"text": "upstream 503"}]
     assert events[-1].type == "final"
+
+
+async def test_failed_named_place_filter_keeps_its_scope_on_bbox_retry(settings) -> None:
+    """A transport retry must not turn a canton into its rectangular bounding box."""
+
+    class ScriptedTools(FakeToolSession):
+        def __init__(self) -> None:
+            super().__init__({}, specs=["filter_features"])
+            self._script = [
+                ToolOutcome(text="connection closed", data=None, is_error=True),
+                ToolOutcome(
+                    text='{"result_id":"fs_1","clipped_to":"kanton Genève"}',
+                    data={"result_id": "fs_1", "clipped_to": "kanton Genève"},
+                    is_error=False,
+                ),
+            ]
+
+        async def call(self, name, arguments):
+            self.calls.append((name, arguments))
+            return self._script.pop(0)
+
+    tools = ScriptedTools()
+    models = FakeModels(
+        [
+            tool_result(
+                "filter_features",
+                {
+                    "layer_id": "ch.swisstopo.vec25-gebaeude",
+                    "place": "Genève",
+                    "place_kind": "kanton",
+                },
+                "tu-place",
+            ),
+            tool_result(
+                "filter_features",
+                {
+                    "layer_id": "ch.swisstopo.vec25-gebaeude",
+                    "bbox": [5.95, 46.13, 6.31, 46.36],
+                },
+                "tu-bbox",
+            ),
+            text_result("Die Gebäude im Kanton Genève wurden gefiltert."),
+        ]
+    )
+
+    events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
+
+    assert events[-1].type == "final"
+    assert tools.calls[1] == (
+        "filter_features",
+        {
+            "layer_id": "ch.swisstopo.vec25-gebaeude",
+            "place": "Genève",
+            "place_kind": "kanton",
+        },
+    )
+
+
+async def test_named_place_filter_fails_closed_without_clipping_provenance(settings) -> None:
+    tools = FakeToolSession(
+        {
+            "filter_features": ToolOutcome(
+                text='{"result_id":"fs_unverified","feature_count":68525}',
+                data={"result_id": "fs_unverified", "feature_count": 68_525},
+                is_error=False,
+            )
+        }
+    )
+    models = FakeModels(
+        [
+            tool_result(
+                "filter_features",
+                {
+                    "layer_id": "ch.swisstopo.vec25-gebaeude",
+                    "place": "Genève",
+                    "place_kind": "kanton",
+                },
+            ),
+            text_result("Ich konnte die Kantonsgrenze nicht bestätigen."),
+        ]
+    )
+
+    events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
+
+    failed = [
+        event for event in events if event.type == "intermediate" and event.status == "failed"
+    ]
+    assert len(failed) == 1
+    assert "did not confirm clipping" in (failed[0].detail or "")
+    tool_block = models.calls[1]["messages"][-1]["content"][0]["toolResult"]
+    assert tool_block["status"] == "error"
+    assert (
+        "do not describe the result as covering that named area" in tool_block["content"][0]["text"]
+    )
+
+
+async def test_named_filter_keeps_a_nonqueryable_result_instead_of_hiding_its_guidance(
+    settings,
+) -> None:
+    not_queryable = {
+        "feature_count": 0,
+        "queryable": False,
+        "note": "Choose a vector dataset; do not retry this layer_id.",
+    }
+    tools = FakeToolSession(
+        {
+            "filter_features": ToolOutcome(
+                text=json.dumps(not_queryable), data=not_queryable, is_error=False
+            )
+        }
+    )
+    models = FakeModels(
+        [
+            tool_result(
+                "filter_features",
+                {"layer_id": "ch.raster", "place": "Genève", "place_kind": "kanton"},
+            ),
+            text_result("Dieser Datensatz ist nicht objektweise abfragbar."),
+        ]
+    )
+
+    events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
+
+    assert not [
+        event for event in events if event.type == "intermediate" and event.status == "failed"
+    ]
+    tool_block = models.calls[1]["messages"][-1]["content"][0]["toolResult"]
+    assert tool_block["status"] == "success"
+    assert "Choose a vector dataset" in tool_block["content"][0]["text"]
+
+
+async def test_prompt_requires_clipping_provenance_for_named_area_claims(settings) -> None:
+    models = FakeModels([text_result("ok")])
+
+    await _collect(_message(), models, FakeGateway(NO_TOOLS), settings, TurnStats())
+
+    assert "Only describe a feature result" in models.calls[0]["system"]
+    assert "clipped_to" in models.calls[0]["system"]
+
+
+async def test_prompt_prioritises_an_explicit_place_over_the_current_map_view(settings) -> None:
+    models = FakeModels([text_result("ok")])
+    message = _message(
+        "Zeige Gebäude im Kanton Genève",
+        map_context={"bbox": [7.1, 46.2, 7.3, 46.4], "active_layer_ids": []},
+    )
+
+    await _collect(message, models, FakeGateway(NO_TOOLS), settings, TurnStats())
+
+    assert (
+        "A named place in the request takes priority over the current map view"
+        in models.calls[0]["system"]
+    )
 
 
 async def test_no_model_available_produces_one_error(settings) -> None:

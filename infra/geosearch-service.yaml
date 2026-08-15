@@ -217,6 +217,11 @@ Resources:
         Services:
           - PortName: mcp
             DiscoveryName: !Ref GeosearchName
+            # Service Connect otherwise ends requests after 15 seconds. Large but valid
+            # geo.admin.ch filters regularly exceed that; keep the proxy outside the
+            # backend client's 60-second read budget so the application owns the error.
+            Timeout:
+              PerRequestTimeoutSeconds: 90
             ClientAliases:
               - Port: !Ref ContainerPort
                 DnsName: !Ref GeosearchName

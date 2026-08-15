@@ -436,6 +436,32 @@ def test_clip_cuts_to_the_boundary_and_drops_the_neighbours():
     assert measure(kept)["area_km2"] < measure(features[:2])["area_km2"]
 
 
+def test_clip_only_intersects_geometries_that_cross_the_boundary(monkeypatch):
+    """Features wholly in or out need predicates, not a costly overlay operation."""
+    from shapely.geometry.base import BaseGeometry
+
+    from .geometry import clip
+
+    original_intersection = BaseGeometry.intersection
+    intersections = []
+
+    def tracked_intersection(self, other, grid_size=None):
+        intersections.append(self)
+        return original_intersection(self, other, grid_size=grid_size)
+
+    monkeypatch.setattr(BaseGeometry, "intersection", tracked_intersection)
+    features = [
+        _square(0.2, 0.2, 0.4, 0.4, name="inside"),
+        _square(0.5, 0.5, 1.5, 1.5, name="crosses"),
+        _square(2, 2, 3, 3, name="outside"),
+    ]
+
+    kept = clip(features, [_square(0, 0, 1, 1)])
+
+    assert [feature["properties"]["name"] for feature in kept] == ["inside", "crosses"]
+    assert len(intersections) == 1
+
+
 def test_clip_keeps_points_that_fall_inside():
     from .geometry import clip
 

@@ -686,7 +686,7 @@ ECS from Secrets Manager at task start.
 | `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | foundation stack | Retention the backend must stamp into `expires_at` |
-| `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON/GeoParquet artifacts |
+| `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON-compatible producers and geosearch GeoParquet artifacts; published objects expire after 30 days |
 | `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
 | `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
 | `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin (comma-separated; empty allows any, for local development) |
@@ -1140,6 +1140,12 @@ What ends up inside the image:
 | DuckDB rows + three `.faiss` files | ~36 MB | a human runs `geosearch.build` |
 | 6272 division boundaries (GeoJSON) | ~108 MB | same |
 | **Layer catalogue and feature data** | — | **not baked** — fetched from `geo.admin.ch` per request |
+
+Displayed feature results are written as GeoParquet to the existing data-layer bucket,
+returned through one-hour presigned URLs, and expired by the bucket's 30-day lifecycle.
+The browser decodes them in a Web Worker. The filtered and boundary-clipped result limit
+is exactly 100,000 features; larger complete results are rejected with guidance to narrow
+the query. No MVT tiles are generated or stored.
 
 That last row matters: a six-month-old image still queries today's data. Only the
 *searchable set of layers* is as of the build.

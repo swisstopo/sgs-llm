@@ -23,13 +23,14 @@ python_version = "3.12"
 files = ["app", "../mcp_dummy", "../evals", "../geosearch"]
 strict = true
 # Tests are not type-checked anywhere in this repo (backend/tests is absent from `files`
-# too); annotating pytest fixtures to strict standards buys nothing.
-exclude = "test_geosearch\\.py$"
+# too); annotating pytest fixtures to strict standards buys nothing. Match every test
+# module under the explicitly included geosearch tree, not one obsolete filename.
+exclude = "(^|/)test_.*\\.py$"
 # All live at the repo root, next to backend/.
 mypy_path = ".."
 # boto3 ships no bundled stubs; the AWS surface is exercised by tests instead.
 [[tool.mypy.overrides]]
-module = ["boto3.*", "botocore.*", "shapely.*", "pyproj.*", "duckdb.*", "faiss.*", "moto.*"]
+module = ["boto3.*", "botocore.*", "shapely.*", "pyproj.*", "duckdb.*", "faiss.*", "moto.*", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

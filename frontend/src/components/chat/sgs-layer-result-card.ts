@@ -65,7 +65,7 @@ export class SgsLayerResultCard extends LitElement {
 
   override render() {
     const { layer } = this;
-    const supported = layer.format === 'geojson';
+    const supported = layer.format === 'geojson' || layer.format === 'parquet';
     return html`
       <p class="name">${layer.name}</p>
       <p class="meta">

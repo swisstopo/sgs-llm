@@ -120,6 +120,7 @@ def clip(
     """
     from shapely.geometry import mapping, shape
     from shapely.ops import unary_union
+    from shapely.prepared import prep
 
     area = unary_union(
         [shape(f["geometry"]) for f in boundary if isinstance(f.get("geometry"), dict)]
@@ -128,6 +129,7 @@ def clip(
         # Cheapest repair that keeps the outline; an invalid boundary makes every
         # intersection below raise, which would empty the result rather than trim it.
         area = area.buffer(0)
+    prepared_area = prep(area)
 
     kept: list[dict[str, Any]] = []
     for feature in features:
@@ -136,6 +138,14 @@ def clip(
             continue
         try:
             whole = shape(geometry)
+            # A canton-sized bbox can contain tens of thousands of neighbours. Prepared
+            # predicates classify the wholly outside/inside majority without building an
+            # overlay geometry; only border-crossing features need the costly cut.
+            if not prepared_area.intersects(whole):
+                continue
+            if prepared_area.covers(whole):
+                kept.append(feature)
+                continue
             piece = _same_dimension(whole.intersection(area), geometry.get("type"))
         except Exception:
             logger.debug("skipping unclippable geometry", exc_info=True)

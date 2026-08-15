@@ -134,6 +134,9 @@ jobs:
           done
           curl -sf http://127.0.0.1:8790/health
           test "$(curl -s http://127.0.0.1:8790/health | python -c 'import json,sys;print(json.load(sys.stdin)["layers"] > 0)')" = "True"
+          # /health cannot prove the image contains the optional serializer dependency.
+          # Write and reopen a real artifact inside the exact image that will deploy.
+          docker exec smoke python -c "from pathlib import Path;import pyarrow.parquet as pq;from geosearch.artifacts import write_geoparquet;p=Path('/tmp/smoke.parquet');write_geoparquet([{'type':'Feature','id':1,'geometry':{'type':'Point','coordinates':[7.4,46.9]},'properties':{'name':'Bern'}}],p);assert pq.read_table(p).num_rows == 1"
           # /health is not enough on its own. It dials loopback, which the MCP SDK's
           # DNS-rebinding guard always allows, so it stayed green through a deploy where
           # every POST /mcp came back 421 because the backend addresses this server by

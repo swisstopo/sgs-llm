@@ -23,6 +23,8 @@ import { buildDataLayerStyle } from '../map/dataLayerStyle';
 import { lv95TileGrid } from '../map/swissGrid';
 import { loadLayerOverrides } from '../layers/layerOverrides';
 import { languageChanged$ } from '../i18n/i18n';
+import { loadGeoParquet } from '../map/geoparquetWorkerClient';
+import type { DecodedFeature } from '../map/geoparquet';
 
 interface BaseLayerState {
   id: string;
@@ -46,6 +48,7 @@ export interface DataLayerState extends BaseLayerState {
 export type MapLayerState = OfficialLayerState | DataLayerState;
 
 export type AddLayerResult = 'added' | 'exists' | 'unsupported' | 'unknown' | 'failed';
+export type GeoParquetLoader = typeof loadGeoParquet;
 
 /** Official overlays and data layers render above the basemap (zIndex 0). */
 const OVERLAY_BASE_Z_INDEX = 10;
@@ -61,10 +64,13 @@ export class LayerService {
   private readonly overrides = loadLayerOverrides();
   /** Periodic re-fetch handles for live geojson layers (rain radar etc.). */
   private readonly refreshTimers = new Map<string, ReturnType<typeof setInterval>>();
+  /** Loads not yet visible on the map; tracked so duplicates and removal are deterministic. */
+  private readonly pendingDataLayers = new Map<string, AbortController>();
 
   constructor(
     private readonly mapService: MapService,
     private readonly catalog: CatalogService,
+    private readonly geoParquetLoader: GeoParquetLoader = loadGeoParquet,
   ) {
     // Official layer labels follow the UI language.
     languageChanged$.subscribe(() => void this.refreshLabels());
@@ -240,31 +246,59 @@ export class LayerService {
     }
   }
 
-  /** Fetches a chat data layer (GeoJSON) and puts it on the map. */
+  /** Fetches a chat data layer and puts it on the map only after complete decoding. */
   async addDataLayer(spec: LayerSpec): Promise<AddLayerResult> {
-    if (this.olLayers.has(spec.id)) {
+    if (this.olLayers.has(spec.id) || this.pendingDataLayers.has(spec.id)) {
       return 'exists';
     }
-    if (spec.format !== 'geojson') {
+    if (spec.format !== 'geojson' && spec.format !== 'parquet') {
       return 'unsupported';
     }
-    let data: unknown;
+    const source = new VectorSource();
+    const controller = new AbortController();
+    this.pendingDataLayers.set(spec.id, controller);
     try {
-      const response = await fetch(spec.url);
-      if (!response.ok) {
-        throw new Error(`data layer request failed: ${response.status}`);
+      if (spec.format === 'geojson') {
+        const response = await fetch(spec.url, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`data layer request failed: ${response.status}`);
+        }
+        const data: unknown = await response.json();
+        source.addFeatures(
+          new GeoJSON().readFeatures(data, {
+            dataProjection: 'EPSG:4326',
+            featureProjection: 'EPSG:2056',
+          }),
+        );
+      } else {
+        await this.geoParquetLoader(
+          spec.url,
+          (chunk: DecodedFeature[]) => {
+            source.addFeatures(
+              new GeoJSON().readFeatures(
+                { type: 'FeatureCollection', features: chunk },
+                { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:2056' },
+              ),
+            );
+          },
+          { signal: controller.signal },
+        );
       }
-      data = await response.json();
     } catch (error) {
-      console.error(`Failed to load data layer ${spec.id}`, error);
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        console.error(`Failed to load data layer ${spec.id}`, error);
+      }
       return 'failed';
+    } finally {
+      if (this.pendingDataLayers.get(spec.id) === controller) {
+        this.pendingDataLayers.delete(spec.id);
+      }
     }
-    const features = new GeoJSON().readFeatures(data, {
-      dataProjection: 'EPSG:4326',
-      featureProjection: 'EPSG:2056',
-    });
+    if (controller.signal.aborted || this.olLayers.has(spec.id)) {
+      return controller.signal.aborted ? 'failed' : 'exists';
+    }
     const olLayer = new VectorLayer({
-      source: new VectorSource({ features }),
+      source,
       style: buildDataLayerStyle(spec),
       properties: spec.attribution ? { attribution: spec.attribution } : {},
     });
@@ -283,6 +317,8 @@ export class LayerService {
   }
 
   removeLayer(id: string): void {
+    this.pendingDataLayers.get(id)?.abort();
+    this.pendingDataLayers.delete(id);
     const olLayer = this.olLayers.get(id);
     if (!olLayer) {
       return;

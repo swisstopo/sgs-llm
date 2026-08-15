@@ -222,7 +222,7 @@ search, so the only safe answer to "which model wrote these?" is the recorded on
 Two different things get called "storage" here, and separating them is what makes the
 deployment simple.
 
-**Published layers** — the GeoJSON an answer produces — go to S3 through ordinary boto3,
+**Published layers** — the GeoParquet an answer produces — go to S3 through ordinary boto3,
 to `sgs-llm-data-259789526488` under `layers/`. `S3Store` is used either way: set
 `GEOSEARCH_S3_BUCKET` and the calls go to real S3, leave it unset and
 `GEOSEARCH_S3_ENDPOINT` points the identical calls at an in-process moto server — no
@@ -338,13 +338,17 @@ Same six-tool surface as `mcp_dummy` so the backend and eval harness need no cha
 | `search_locations` | pre-embedded divisions; resolves "Zurich" → "Zürich", and localities as well as communes |
 | `display_division` | new — puts a stored boundary on the map, no network call |
 | `filter_features` | grid-subdivided identify: a real total, not a capped page; takes `place` and clips to the boundary instead of the bbox |
-| `display_catalog_layer`, `compute`, `display_layer` | unchanged |
+| `display_catalog_layer`, `compute` | unchanged |
+| `display_layer` | publishes GeoParquet instead of GeoJSON; complete results only |
 
 ## Known limits
 
 - `ResultCache` is per-process and in-memory, so `result_id` does not survive a restart or
   reach a second instance. Fine single-instance; needs sticky sessions or a shared store
   before scaling out.
+- A filtered and boundary-clipped result may contain at most 100,000 features. Larger
+  results are rejected with guidance to narrow the area or dataset; they are never
+  silently truncated because that would make the map and computed totals disagree.
 - The index is built for one language at a time (`--lang`, default `de`). The embedding
   model is multilingual, so a German index answers French queries; a per-language index
   would still rank better.
