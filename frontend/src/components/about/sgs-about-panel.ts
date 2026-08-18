@@ -5,6 +5,7 @@ import { languageChanged$, t } from '../../i18n/i18n';
 import { panelBaseStyles } from '../panelStyles';
 
 const REPO_URL = 'https://github.com/swisstopo/sgs-llm';
+const TERMS_URL = 'https://www.admin.ch/en/terms-and-conditions';
 const GEOADMIN_API_URL = 'https://api3.geo.admin.ch';
 const AGEOSPATIAL_URL = 'https://www.ageospatial.com';
 const ASKEARTH_URL = 'https://ask.earth';
@@ -147,6 +148,9 @@ export class SgsAboutPanel extends LitElement {
         <li>
           <a href=${REPO_URL} target="_blank" rel="noopener noreferrer">${t('about.github')}</a>
           <span class="role">${t('about.license')}</span>
+        </li>
+        <li>
+          <a href=${TERMS_URL} target="_blank" rel="noopener noreferrer">${t('about.terms')}</a>
         </li>
       </ul>
 

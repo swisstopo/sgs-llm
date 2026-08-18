@@ -144,6 +144,7 @@
     "projectTitle": "Progetto",
     "github": "Codice sorgente su GitHub",
     "license": "Open source, licenza BSD-3-Clause",
+    "terms": "Termini e condizioni",
     "disclaimer": "Prototipo – non destinato all'uso operativo. Contenuti e funzionalità possono cambiare in qualsiasi momento durante la fase di prototipo."
   },
   "locate": {
