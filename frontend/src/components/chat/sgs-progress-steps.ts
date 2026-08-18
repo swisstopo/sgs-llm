@@ -9,6 +9,8 @@ export class SgsProgressSteps extends LitElement {
   static override styles = css`
     :host {
       display: block;
+      min-width: 0;
+      max-width: 100%;
       font-size: 0.8125rem;
       color: var(--sgc-color-text--secondary);
     }
@@ -25,6 +27,14 @@ export class SgsProgressSteps extends LitElement {
       display: flex;
       align-items: baseline;
       gap: 0.375rem;
+      min-width: 0;
+    }
+
+    .content {
+      min-width: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .icon {
@@ -53,8 +63,11 @@ export class SgsProgressSteps extends LitElement {
 
     .detail {
       display: block;
+      max-width: 100%;
       font-size: 0.75rem;
       opacity: 0.8;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     @keyframes pulse {
@@ -79,7 +92,7 @@ export class SgsProgressSteps extends LitElement {
                     ? checkIcon
                     : closeIcon}
               </span>
-              <span>
+              <span class="content">
                 ${step.label} ${step.detail ? html`<span class="detail">${step.detail}</span>` : ''}
               </span>
             </li>

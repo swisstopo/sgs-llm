@@ -20,6 +20,8 @@ export class SgsChatMessage extends LitElement {
   static override styles = css`
     :host {
       display: block;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .user {
@@ -38,6 +40,8 @@ export class SgsChatMessage extends LitElement {
       display: grid;
       gap: 0.625rem;
       position: relative;
+      min-width: 0;
+      max-width: 100%;
     }
 
     /* Markdown typography must live here: sanitized HTML gets no global styles. */

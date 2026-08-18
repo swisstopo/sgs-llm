@@ -19,15 +19,23 @@ export class SgsChatPanel extends LitElement {
       grid-template-rows: 1fr auto;
       height: 100%;
       min-height: 0;
+      min-width: 0;
       background: var(--sgc-color-bg--grey);
     }
 
     .messages {
       overflow-y: auto;
+      overflow-x: hidden;
+      min-width: 0;
       padding: 1rem;
+    }
+
+    .message-stack {
       display: grid;
       gap: 0.875rem;
       align-content: start;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .welcome {
@@ -58,6 +66,10 @@ export class SgsChatPanel extends LitElement {
   private busy?: ObservableController<boolean>;
   private model?: ObservableController<ModelPreference>;
   private mapLayers?: ObservableController<MapLayerState[]>;
+  private messageStackObserver?: ResizeObserver;
+  private observedMessageStack?: HTMLElement;
+  private scrollFrame?: number;
+  private followLatest = true;
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
@@ -69,29 +81,41 @@ export class SgsChatPanel extends LitElement {
     this.mapLayers ??= new ObservableController(this, this.layerService.layers$);
   }
 
+  override disconnectedCallback(): void {
+    this.messageStackObserver?.disconnect();
+    this.observedMessageStack = undefined;
+    if (this.scrollFrame !== undefined) {
+      cancelAnimationFrame(this.scrollFrame);
+      this.scrollFrame = undefined;
+    }
+    super.disconnectedCallback();
+  }
+
   override render() {
     const messages = this.messages?.value ?? [];
     const addedLayerIds = new Set((this.mapLayers?.value ?? []).map((layer) => layer.id));
     return html`
-      <div class="messages">
-        ${messages.length === 0
-          ? html`
-              <div class="welcome">
-                <p>${t('chat.welcome')}</p>
-                <ul>
-                  <li>${t('chat.exampleFlood')}</li>
-                  <li>${t('chat.exampleSolar')}</li>
-                </ul>
-              </div>
-            `
-          : messages.map(
-              (message) => html`
-                <sgs-chat-message
-                  .message=${message}
-                  .addedLayerIds=${addedLayerIds}
-                ></sgs-chat-message>
-              `,
-            )}
+      <div class="messages" @scroll=${this.onMessagesScroll}>
+        <div class="message-stack">
+          ${messages.length === 0
+            ? html`
+                <div class="welcome">
+                  <p>${t('chat.welcome')}</p>
+                  <ul>
+                    <li>${t('chat.exampleFlood')}</li>
+                    <li>${t('chat.exampleSolar')}</li>
+                  </ul>
+                </div>
+              `
+            : messages.map(
+                (message) => html`
+                  <sgs-chat-message
+                    .message=${message}
+                    .addedLayerIds=${addedLayerIds}
+                  ></sgs-chat-message>
+                `,
+              )}
+        </div>
       </div>
       <footer>
         <sgs-composer
@@ -108,11 +132,33 @@ export class SgsChatPanel extends LitElement {
   }
 
   override updated(): void {
-    // Keep the newest message in view while streaming.
-    const container = this.renderRoot.querySelector('.messages');
-    if (container) {
-      container.scrollTop = container.scrollHeight;
+    const stack = this.renderRoot.querySelector<HTMLElement>('.message-stack');
+    if (stack && stack !== this.observedMessageStack && typeof ResizeObserver !== 'undefined') {
+      this.messageStackObserver?.disconnect();
+      this.messageStackObserver = new ResizeObserver(() => this.scrollToLatest());
+      this.messageStackObserver.observe(stack);
+      this.observedMessageStack = stack;
     }
+    this.scrollToLatest();
+  }
+
+  private onMessagesScroll(event: Event): void {
+    const container = event.currentTarget as HTMLElement;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    this.followLatest = distanceFromBottom <= 48;
+  }
+
+  private scrollToLatest(): void {
+    if (!this.followLatest || this.scrollFrame !== undefined) {
+      return;
+    }
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = undefined;
+      const container = this.renderRoot.querySelector<HTMLElement>('.messages');
+      if (container && this.followLatest) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
   }
 }
 
