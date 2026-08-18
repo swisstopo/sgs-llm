@@ -64,6 +64,14 @@ export interface LayerSpec {
   style_hint?: StyleHint;
 }
 
+/** An official geo.admin.ch layer resolved and tiled directly by the browser. */
+export interface CatalogLayerRef {
+  id: string;
+  name?: string;
+  opacity?: number;
+  attribution?: string;
+}
+
 export interface IntermediateEvent {
   type: 'intermediate';
   message_id: string;
@@ -79,6 +87,8 @@ export interface FinalEvent {
   message_id: string;
   content_markdown: string;
   layers?: LayerSpec[];
+  catalog_layers?: CatalogLayerRef[];
+  focus_bbox?: ProtocolBBox;
 }
 
 export type ErrorCode = 'internal' | 'timeout' | 'bad_request' | 'cancelled';
@@ -128,6 +138,18 @@ export function isLayerSpec(value: unknown): value is LayerSpec {
   );
 }
 
+export function isCatalogLayerRef(value: unknown): value is CatalogLayerRef {
+  if (!isRecord(value) || typeof value.id !== 'string' || !/^ch\.[a-z0-9_.-]+$/.test(value.id)) {
+    return false;
+  }
+  return (
+    (value.name === undefined || typeof value.name === 'string') &&
+    (value.opacity === undefined ||
+      (typeof value.opacity === 'number' && value.opacity >= 0 && value.opacity <= 1)) &&
+    (value.attribution === undefined || typeof value.attribution === 'string')
+  );
+}
+
 /**
  * Parses a raw WebSocket frame into a known server event. Returns null for
  * malformed frames and unknown event types (forward compatibility).
@@ -162,11 +184,16 @@ export function parseServerEvent(raw: string): ServerEvent | null {
     case 'final':
       if (typeof data.content_markdown === 'string') {
         const layers = Array.isArray(data.layers) ? data.layers.filter(isLayerSpec) : undefined;
+        const catalogLayers = Array.isArray(data.catalog_layers)
+          ? data.catalog_layers.filter(isCatalogLayerRef)
+          : undefined;
         return {
           type: 'final',
           message_id: data.message_id,
           content_markdown: data.content_markdown,
           layers,
+          catalog_layers: catalogLayers,
+          focus_bbox: isBBox(data.focus_bbox) ? data.focus_bbox : undefined,
         };
       }
       return null;

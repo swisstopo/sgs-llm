@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { beforeAll, describe, expect, it } from 'vitest';
+import { changeLanguage, initI18n } from '../../i18n/i18n';
 import './sgs-layer-result-card';
 import type { SgsLayerResultCard } from './sgs-layer-result-card';
 
-beforeAll(() => {
-  document.documentElement.lang = 'en';
+beforeAll(async () => {
+  await initI18n();
+  await changeLanguage('en');
 });
 
 describe('sgs-layer-result-card', () => {
@@ -23,6 +25,9 @@ describe('sgs-layer-result-card', () => {
 
     expect(element.shadowRoot?.querySelector('button')).not.toBeNull();
     expect(element.shadowRoot?.querySelector('.unsupported')).toBeNull();
+    expect(element.shadowRoot?.querySelector('.kind')?.textContent).toBe(
+      'Personalized result layer',
+    );
     element.remove();
   });
 });

@@ -193,6 +193,15 @@ class TestCatalogLayers:
         refs = extract_catalog_layers({"catalog_layer": {"layer_id": "ch.are.bauzonen"}})
         assert [r.id for r in refs] == ["ch.are.bauzonen"]
 
+    def test_search_can_explicitly_offer_clickable_layer_references(self) -> None:
+        refs = extract_catalog_layers(
+            {"layer_refs": [{"id": "ch.a.b", "name": "Layer A"}, {"id": "ch.c.d"}]}
+        )
+        assert [(ref.id, ref.name) for ref in refs] == [
+            ("ch.a.b", "Layer A"),
+            ("ch.c.d", None),
+        ]
+
     def test_accepts_a_list_under_the_display_key(self) -> None:
         refs = extract_catalog_layers({"catalog_layers": [{"id": "ch.a.b"}, {"id": "ch.c.d"}]})
         assert [r.id for r in refs] == ["ch.a.b", "ch.c.d"]

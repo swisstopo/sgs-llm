@@ -122,7 +122,7 @@ async def test_tool_catalogue_is_discovered_and_converted_for_bedrock(
             "search_layers",
             "search_locations",
             "filter_features",
-            "compute",
+            "analyze_features",
             "display_layer",
             "display_catalog_layer",
         }
@@ -163,7 +163,9 @@ async def test_a_place_scoped_question_chains_the_tools(gateway_and_artifacts: A
         assert "features" not in fetched.text
         result_id = fetched.data["result_id"]
 
-        computed = await session.call("compute", {"result_id": result_id, "operation": "summary"})
+        computed = await session.call(
+            "analyze_features", {"result_id": result_id, "operation": "summary"}
+        )
         assert computed.data["count"] == 2
 
         shown = await session.call(
@@ -186,7 +188,7 @@ async def test_a_place_scoped_question_chains_the_tools(gateway_and_artifacts: A
 async def test_a_stale_handle_is_reported_rather_than_crashing(gateway_and_artifacts: Any) -> None:
     gateway, _ = gateway_and_artifacts
     async with gateway.session() as session:
-        outcome = await session.call("compute", {"result_id": "fs_gone"})
+        outcome = await session.call("analyze_features", {"result_id": "fs_gone"})
         assert "Unknown result_id" in outcome.text
 
 
@@ -252,10 +254,8 @@ async def test_a_raster_layer_is_shown_as_a_catalog_reference(
 ) -> None:
     """The proposed raster path, end to end, with the capability enabled.
 
-    Aquaprotect and the noise maps are WMTS and cannot be a LayerSpec. `catalog_layers` is
-    a proposed protocol addition (docs/protocol.md) that is not yet implemented
-    client-side, so it is off in the deployed pilot and switched on here to prove the
-    backend can serve it the day it is accepted.
+    Aquaprotect and the noise maps are WMTS and cannot be a LayerSpec. `catalog_layers`
+    names those official layers so the browser can offer a user-controlled tile action.
     """
     settings.enable_catalog_layers = True
     gateway, _ = gateway_and_artifacts

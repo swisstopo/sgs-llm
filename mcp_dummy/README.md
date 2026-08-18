@@ -23,13 +23,13 @@ endpoint and the backend connects there instead, with no code or image change.
 | `search_layers` | SearchServer `type=layers` | candidate `layer_id`s with titles and a trimmed abstract |
 | `search_locations` | SearchServer `type=locations` | cantons / districts / communes / places → WGS84 bbox |
 | `filter_features` | `MapServer/identify` as a bbox query | a `result_id` handle plus a summary of the features |
-| `compute` | shapely + pyproj | count, total area (km²), total length (km), extent |
+| `analyze_features` | shapely + pyproj | count, total area (km²), total length (km), extent |
 | `display_layer` | the backend's artifact store | a published GeoJSON URL, bbox, geometry type and count |
 
 Two design choices are worth knowing, because a real server will face both:
 
 - **Features never cross the wire.** `filter_features` returns a short `result_id`
-  handle, and `compute` / `display_layer` take it. A few hundred Swiss features are far
+  handle, and `analyze_features` / `display_layer` take it. A few hundred Swiss features are far
   larger than a small model's usable context, so round-tripping them through the model
   would be expensive and lossy.
 - **Areas are measured in LV95** (EPSG:2056), not in degrees, which is the same CRS the

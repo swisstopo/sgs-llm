@@ -97,12 +97,16 @@ describe('ChatService', () => {
           geometry_type: 'polygon',
         },
       ],
+      catalog_layers: [{ id: 'ch.bafu.aquaprotect_100', name: 'Aquaprotect' }],
+      focus_bbox: [7.29, 46.91, 7.5, 46.99],
     });
     client.events$.next({ type: 'done', message_id: id });
     expect(service.messages[1]).toMatchObject({
       status: 'complete',
       markdown: '## Antwort',
       layers: [{ id: 'l1' }],
+      catalogLayers: [{ id: 'ch.bafu.aquaprotect_100' }],
+      focusBBox: [7.29, 46.91, 7.5, 46.99],
     });
     expect(service.busy).toBe(false);
   });

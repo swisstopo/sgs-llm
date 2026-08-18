@@ -115,7 +115,16 @@ with one or more failed steps in it. Note that this differs from the wording in
       "attribution": "BAFU",
       "style_hint": { "fill_color": "#1c64f2", "opacity": 0.45 }
     }
-  ]
+  ],
+  "catalog_layers": [
+    {
+      "id": "ch.bafu.aquaprotect_100",
+      "name": "Flooding Aquaprotect 100",
+      "opacity": 0.7,
+      "attribution": "geo.admin.ch"
+    }
+  ],
+  "focus_bbox": [7.0, 46.05, 8.1, 46.35]
 }
 ```
 
@@ -129,6 +138,17 @@ with one or more failed steps in it. Note that this differs from the wording in
   - `bbox` — WGS84, for zoom-to-layer.
   - `style_hint` — optional rendering hints: `fill_color`, `stroke_color`,
     `stroke_width`, `point_radius`, `opacity`.
+- `catalog_layers` — optional structured official-layer references. When an exact layer
+  title occurs in the answer, the frontend turns that title into an inline control;
+  clicking it opens an anchored tooltip with “Add map layer” and “Layer details”, plus an
+  × close control. When already active, the first action becomes “Remove map layer”. These
+  labels deliberately differ from “Show result on map” on agent-produced data.
+  The tooltip also shows the official title, layer id, and attribution. Adding resolves
+  the current WMS/WMTS/GeoJSON configuration through
+  `LayerService.addOfficialLayer`; tiles remain hosted by geo.admin.ch. A separate card
+  is retained only as a fallback when the answer omitted the exact title.
+- `focus_bbox` — optional WGS84 camera target applied after the user adds an official
+  layer. A reference is an offer, not an automatic map mutation.
 
 ### `error`
 
@@ -229,7 +249,3 @@ in a key shipped to the browser.
   also be streamed incrementally.
 - `conversation_id` on `user_message` - an explicit thread id, replacing the
   derivation described in [Conversation identity](#conversation-identity).
-- `catalog_layers` and `focus_bbox` on `final` - naming an official geo.admin.ch
-  layer instead of shipping it, so the agent can put raster datasets (Aquaprotect,
-  the noise maps) on the map at all. Requires client work and has not been agreed;
-  the backend implements it behind a flag that is off by default.

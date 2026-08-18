@@ -28,7 +28,18 @@
         "type": { "const": "final" },
         "message_id": { "type": "string" },
         "content_markdown": { "type": "string" },
-        "layers": { "type": "array", "items": { "$ref": "#/$defs/layerSpec" } }
+        "layers": { "type": "array", "items": { "$ref": "#/$defs/layerSpec" } },
+        "catalog_layers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/catalogLayerRef" }
+        },
+        "focus_bbox": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Camera target [minLon, minLat, maxLon, maxLat] in WGS84"
+        }
       }
     },
     "error": {
@@ -47,6 +58,16 @@
       "properties": {
         "type": { "const": "done" },
         "message_id": { "type": "string" }
+      }
+    },
+    "catalogLayerRef": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^ch\\." },
+        "name": { "type": "string" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "attribution": { "type": "string" }
       }
     },
     "layerSpec": {

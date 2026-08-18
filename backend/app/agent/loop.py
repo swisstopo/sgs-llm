@@ -344,8 +344,33 @@ async def run_turn(
 
                 if settings.enable_catalog_layers:
                     for ref in extract_catalog_layers(outcome.data):
-                        if all(ref.id != existing.id for existing in catalog_layers):
+                        existing_index = next(
+                            (
+                                index
+                                for index, existing in enumerate(catalog_layers)
+                                if ref.id == existing.id
+                            ),
+                            None,
+                        )
+                        if existing_index is None:
                             catalog_layers.append(ref)
+                            continue
+                        # search_layers offers every displayable candidate before the
+                        # model chooses one. A later display_catalog_layer call carries
+                        # the localized title and explicit opacity selected for the
+                        # answer; prefer those while retaining the richer owner from
+                        # search when the display adapter only says geo.admin.ch.
+                        if use.name == "display_catalog_layer":
+                            existing = catalog_layers[existing_index]
+                            catalog_layers[existing_index] = existing.model_copy(
+                                update={
+                                    "name": ref.name or existing.name,
+                                    "opacity": (
+                                        ref.opacity if ref.opacity is not None else existing.opacity
+                                    ),
+                                    "attribution": existing.attribution or ref.attribution,
+                                }
+                            )
                     focus_bbox = extract_focus_bbox(outcome.data) or focus_bbox
 
                 yield Intermediate(

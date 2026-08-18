@@ -1,8 +1,9 @@
 import { LitElement, css, html } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { consume } from '@lit/context';
-import { chatServiceContext } from '../../context';
+import { chatServiceContext, layerServiceContext } from '../../context';
 import type { ChatMessage, ChatService } from '../../services/ChatService';
+import type { LayerService, MapLayerState } from '../../services/LayerService';
 import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
 import './sgs-chat-message';
@@ -49,10 +50,12 @@ export class SgsChatPanel extends LitElement {
   @consume({ context: chatServiceContext })
   private chatService!: ChatService;
 
-  @state() private addedLayerIds: ReadonlySet<string> = new Set();
+  @consume({ context: layerServiceContext })
+  private layerService!: LayerService;
 
   private messages?: ObservableController<ChatMessage[]>;
   private busy?: ObservableController<boolean>;
+  private mapLayers?: ObservableController<MapLayerState[]>;
 
   private readonly _language = new ObservableController(this, languageChanged$);
 
@@ -60,15 +63,12 @@ export class SgsChatPanel extends LitElement {
     super.connectedCallback();
     this.messages ??= new ObservableController(this, this.chatService.messages$);
     this.busy ??= new ObservableController(this, this.chatService.busy$);
-  }
-
-  /** Called by the app shell when a chat data layer lands on the map. */
-  markLayerAdded(layerId: string): void {
-    this.addedLayerIds = new Set([...this.addedLayerIds, layerId]);
+    this.mapLayers ??= new ObservableController(this, this.layerService.layers$);
   }
 
   override render() {
     const messages = this.messages?.value ?? [];
+    const addedLayerIds = new Set((this.mapLayers?.value ?? []).map((layer) => layer.id));
     return html`
       <div class="messages">
         ${messages.length === 0
@@ -85,7 +85,7 @@ export class SgsChatPanel extends LitElement {
               (message) => html`
                 <sgs-chat-message
                   .message=${message}
-                  .addedLayerIds=${this.addedLayerIds}
+                  .addedLayerIds=${addedLayerIds}
                 ></sgs-chat-message>
               `,
             )}

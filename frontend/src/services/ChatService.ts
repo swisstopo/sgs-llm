@@ -1,7 +1,15 @@
 import { BehaviorSubject } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { AgentClient } from '../agent/AgentClient';
-import type { ErrorCode, HistoryEntry, LayerSpec, MapContext, ServerEvent } from '../protocol/v1';
+import type {
+  CatalogLayerRef,
+  ErrorCode,
+  HistoryEntry,
+  LayerSpec,
+  MapContext,
+  ProtocolBBox,
+  ServerEvent,
+} from '../protocol/v1';
 import { currentLanguage } from '../i18n/i18n';
 
 export interface ProgressStep {
@@ -25,6 +33,8 @@ export interface AssistantChatMessage {
   steps: ProgressStep[];
   markdown?: string;
   layers?: LayerSpec[];
+  catalogLayers?: CatalogLayerRef[];
+  focusBBox?: ProtocolBBox;
   errorCode?: ErrorCode;
   errorMessage?: string;
 }
@@ -156,6 +166,8 @@ export class ChatService {
           status: 'complete',
           markdown: event.content_markdown,
           layers: event.layers,
+          catalogLayers: event.catalog_layers,
+          focusBBox: event.focus_bbox,
         }));
         break;
       case 'error':

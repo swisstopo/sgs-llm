@@ -124,7 +124,7 @@
     than estimating - a plausible-looking invented number is the failure mode here.
   expect:
     must_chain_tools: [search_locations, filter_features]
-    must_call_tool: [compute]
+    must_call_tool: [analyze_features]
     answer_lang: de
     max_tools: 6
     judge: true
@@ -148,7 +148,7 @@
   question: How many flood gauging stations are there in Ticino, and can you put them on the map?
   user_intent: Two things asked at once; both must be delivered, not one.
   expect:
-    must_call_tool: [compute]
+    must_call_tool: [analyze_features]
     must_produce_layer: true
     answer_lang: en
 
@@ -160,7 +160,7 @@
     An area, which must be measured in a projected CRS. If the model answers in square
     degrees or invents a number, that shows.
   expect:
-    must_call_tool: [compute]
+    must_call_tool: [analyze_features]
     answer_lang: de
     judge: true
 
@@ -1029,7 +1029,7 @@
     more than one page of stops, so any figure at or below the cap is the bug returning.
     Judged rather than pinned to a number: the count is real data and moves.
   expect:
-    must_chain_tools: [filter_features, compute]
+    must_chain_tools: [filter_features, analyze_features]
     must_produce_layer: true
     answer_lang: de
     max_tools: 8
