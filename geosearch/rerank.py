@@ -48,6 +48,10 @@ The user asked for: {query}
 Below are {n} candidate datasets found by vector search, which optimises for recall and \
 therefore includes near-misses. Decide which ones genuinely answer the request.
 
+The query and catalogue records may use different Swiss national languages. Judge their \
+meaning across German, French, Italian, Romansh and English; do not reject a relevant \
+record merely because its title or description is written in another language.
+
 {candidates}
 
 Return ONLY a JSON array of the numbers you keep, best first, most relevant to least. \

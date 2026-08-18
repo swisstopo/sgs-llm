@@ -39,9 +39,54 @@ class StubIndex:
 class StubSwisstopo:
     def __init__(self, features: list[dict[str, Any]]) -> None:
         self.features = features
+        self.fetch_kwargs: dict[str, Any] = {}
 
     async def fetch_features(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        self.fetch_kwargs = kwargs
         return self.features
+
+    async def geocode_location(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{
+            "location_ref": "address:1",
+            "kind": "address",
+            "label": "Seftigenstrasse 264, 3084 Wabern",
+            "coordinates": {
+                "wgs84": {"longitude": 7.45135, "latitude": 46.92794},
+                "lv95": {"easting": 2600968.75, "northing": 1197427.0},
+            },
+            "match_quality": "exact",
+            "related_features": [],
+        }]
+
+    async def identify_at_point(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        feature = {
+            "feature_ref": {"layer_id": "ch.test.oereb", "feature_id": "865116"},
+            "layer_name": "ÖREB parcel",
+            "properties": {
+                "egris_egrid": "CH669746359158",
+                "oereb_extract_pdf": "https://example.test/extract.pdf",
+            },
+            "external_links": [{
+                "field": "oereb_extract_pdf",
+                "kind": "pdf",
+                "label": "oereb extract pdf",
+                "url": "https://example.test/extract.pdf",
+            }],
+        }
+        if kwargs.get("return_geometry"):
+            feature["geometry"] = {"type": "Point", "coordinates": [7.45135, 46.92794]}
+        return [feature]
+
+    async def describe_layer(self, layer_id: str, lang: str) -> dict[str, Any] | None:
+        if layer_id == "missing":
+            return None
+        return {
+            "layer_id": layer_id,
+            "title": "ÖREB",
+            "fields": [{"name": "oereb_extract_pdf", "type": "VARCHAR"}],
+            "queryable": True,
+            "displayable": True,
+        }
 
 
 class StubBoundaries:
@@ -99,6 +144,27 @@ async def _call(
         result = await client.call_tool(tool, arguments)
     assert isinstance(result.structured_content, dict)
     return result.structured_content
+
+
+async def test_phase_one_exposes_the_intended_ten_tools() -> None:
+    server = build_server(
+        StubIndex(), StubSwisstopo([]), RecordingArtifacts(), StubBoundaries()
+    )
+    async with Client(server) as client:
+        tools = await client.list_tools()
+
+    assert {tool.name for tool in tools.tools} == {
+        "search_layers",
+        "search_locations",
+        "geocode_location",
+        "describe_layer",
+        "identify_at_point",
+        "filter_features",
+        "analyze_features",
+        "display_division",
+        "display_catalog_layer",
+        "display_layer",
+    }
 
 
 async def test_exactly_one_hundred_thousand_features_are_accepted() -> None:
@@ -252,3 +318,141 @@ async def test_publication_failure_is_a_semantic_error(tool: str) -> None:
         shown = await client.call_tool(tool, arguments)
 
     assert shown.structured_content == {"error": "Could not publish the layer."}
+
+
+async def test_geocode_reference_can_be_used_for_full_point_identify() -> None:
+    api = StubSwisstopo([])
+    server = build_server(StubIndex(), api, RecordingArtifacts(), StubBoundaries())
+    async with Client(server) as client:
+        geocoded = await client.call_tool(
+            "geocode_location", {"query": "Seftigenstrasse 264 Wabern", "origins": ["address"]}
+        )
+        location_ref = geocoded.structured_content["locations"][0]["location_ref"]
+        identified = await client.call_tool(
+            "identify_at_point",
+            {"location_ref": location_ref, "layer_ids": ["ch.test.oereb"]},
+        )
+
+    assert identified.structured_content["feature_count"] == 1
+    feature = identified.structured_content["features"][0]
+    assert feature["properties"]["oereb_extract_pdf"].endswith("extract.pdf")
+    assert feature["external_links"][0]["kind"] == "pdf"
+
+
+async def test_geocode_result_can_be_displayed_as_a_personalized_point() -> None:
+    artifacts = RecordingArtifacts()
+    server = build_server(StubIndex(), StubSwisstopo([]), artifacts, StubBoundaries())
+    async with Client(server) as client:
+        geocoded = await client.call_tool(
+            "geocode_location", {"query": "Seftigenstrasse 264, 3084 Wabern"}
+        )
+        location = geocoded.structured_content["locations"][0]
+        shown = await client.call_tool(
+            "display_layer",
+            {"result_id": location["result_id"], "name": location["label"]},
+        )
+
+    assert location["display_scope"] == "geocoded_point"
+    assert shown.structured_content["layer"]["geometry_type"] == "point"
+    assert shown.structured_content["layer"]["feature_count"] == 1
+    assert shown.structured_content["layer"]["bbox"] == [
+        7.45135,
+        46.92794,
+        7.45135,
+        46.92794,
+    ]
+
+
+async def test_point_identify_geometry_produces_a_personalized_display_result() -> None:
+    api = StubSwisstopo([])
+    artifacts = RecordingArtifacts()
+    server = build_server(StubIndex(), api, artifacts, StubBoundaries())
+    async with Client(server) as client:
+        geocoded = await client.call_tool(
+            "geocode_location", {"query": "Seftigenstrasse 264 Wabern"}
+        )
+        location_ref = geocoded.structured_content["locations"][0]["location_ref"]
+        identified = await client.call_tool(
+            "identify_at_point",
+            {
+                "location_ref": location_ref,
+                "layer_ids": ["ch.test.oereb"],
+                "return_geometry": True,
+            },
+        )
+        shown = await client.call_tool(
+            "display_layer",
+            {
+                "result_id": identified.structured_content["result_id"],
+                "name": "ÖREB parcel result",
+            },
+        )
+
+    assert identified.structured_content["display_feature_count"] == 1
+    assert identified.structured_content["result_id"].startswith("fs_")
+    assert "geometry" not in identified.structured_content["features"][0]
+    assert shown.structured_content["layer"]["feature_count"] == 1
+    assert shown.structured_content["layer"]["bbox"] == [7.45135, 46.92794, 7.45135, 46.92794]
+    assert artifacts.calls[0][1][0]["properties"]["egris_egrid"] == "CH669746359158"
+
+
+async def test_describe_layer_exposes_complete_schema() -> None:
+    data = await _call([], "describe_layer", {"layer_id": "ch.test.oereb"})
+
+    assert data["layer"]["fields"][0]["name"] == "oereb_extract_pdf"
+    assert data["layer"]["queryable"] is True
+
+
+async def test_structured_filters_and_time_are_applied_before_caching() -> None:
+    api = StubSwisstopo([
+        {**_point(1), "properties": {"category": "high", "value": 12}},
+        {**_point(2), "properties": {"category": "low", "value": 3}},
+    ])
+    server = build_server(StubIndex(), api, RecordingArtifacts(), StubBoundaries())
+    async with Client(server) as client:
+        fetched = await client.call_tool(
+            "filter_features",
+            {
+                "layer_id": "ch.test",
+                "bbox": [7, 46, 8, 47],
+                "time": "2025",
+                "filters": [{"field": "value", "operator": "greater_than", "value": 10}],
+            },
+        )
+
+    assert fetched.structured_content["feature_count"] == 1
+    assert api.fetch_kwargs["time_instant"] == "2025"
+
+
+async def test_analyze_features_groups_and_computes_numeric_statistics() -> None:
+    features = [
+        {**_point(1), "properties": {"category": "high", "value": 12}},
+        {**_point(2), "properties": {"category": "high", "value": 8}},
+        {**_point(3), "properties": {"category": "low", "value": None}},
+    ]
+    server = build_server(
+        StubIndex(), StubSwisstopo(features), RecordingArtifacts(), StubBoundaries()
+    )
+    async with Client(server) as client:
+        fetched = await client.call_tool(
+            "filter_features", {"layer_id": "ch.test", "bbox": [7, 46, 8, 47]}
+        )
+        result_id = fetched.structured_content["result_id"]
+        grouped = await client.call_tool(
+            "analyze_features",
+            {"result_id": result_id, "operation": "group_by", "field": "category"},
+        )
+        stats = await client.call_tool(
+            "analyze_features",
+            {"result_id": result_id, "operation": "numeric_statistics", "field": "value"},
+        )
+
+    assert grouped.structured_content["groups"][0] == {"value": "high", "count": 2}
+    assert stats.structured_content["statistics"] == {
+        "numeric_count": 2,
+        "min": 8.0,
+        "max": 12.0,
+        "mean": 10.0,
+        "sum": 20.0,
+    }
+    assert stats.structured_content["missing_values"] == 1

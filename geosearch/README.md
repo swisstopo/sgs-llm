@@ -329,16 +329,19 @@ on an image it never built — `index/` is gitignored, and CI cannot reproduce i
 
 ## Tools
 
-Same six-tool surface as `mcp_dummy` so the backend and eval harness need no changes, plus
-`display_division`.
+The Phase 1 production surface contains ten intent-oriented tools.
 
 | tool | change |
 |---|---|
-| `search_layers` | FAISS + LLM filter instead of SearchServer; returns `similarity`, `low_confidence` |
+| `search_layers` | exact/lexical + FAISS + LLM filtering; returns confidence and clickable official layer references |
 | `search_locations` | pre-embedded divisions; resolves "Zurich" → "Zürich", and localities as well as communes |
+| `geocode_location` | addresses, parcels, postcodes and precise named points with explicit WGS84/LV95 coordinates |
+| `describe_layer` | merged catalogue metadata, schema, timestamps, legend, services and download links |
+| `identify_at_point` | complete point feature properties and extracted official web/PDF links |
 | `display_division` | new — puts a stored boundary on the map, no network call |
-| `filter_features` | grid-subdivided identify: a real total, not a capped page; takes `place` and clips to the boundary instead of the bbox |
-| `display_catalog_layer`, `compute` | unchanged |
+| `filter_features` | complete grid-subdivided area query, boundary clipping, timestamps and structured filters |
+| `analyze_features` | count/area/length/extent plus grouping, top values and numeric statistics |
+| `display_catalog_layer` | returns an official-layer reference rendered as a clickable chat card |
 | `display_layer` | publishes GeoParquet instead of GeoJSON; complete results only |
 
 ## Known limits

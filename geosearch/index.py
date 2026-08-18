@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -81,6 +82,8 @@ SIMILARITY_FLOOR = 0.25
 # The top hit has to beat the runner-up by this much for the agent to be allowed to
 # auto-select it. Ported from search_data.py's confidence gate.
 CONFIDENCE_MARGIN = 0.02
+
+_SEARCH_WORD = re.compile(r"[\w.-]+", re.UNICODE)
 
 
 @dataclass
@@ -247,7 +250,35 @@ class GeoIndex:
                 if rid >= 0:
                     combined[int(rid)] = combined.get(int(rid), 0.0) + weight * float(score)
 
-        ranked = sorted(combined.items(), key=lambda kv: -kv[1])
+        # Exact identifiers and catalogue terminology must not lose to embedding noise.
+        # Lexical scoring is fused with semantic scoring rather than replacing it, so a
+        # multilingual conceptual query still benefits from the embedding model.
+        normalised_query = " ".join(_SEARCH_WORD.findall(query.casefold())).strip()
+        query_tokens = set(normalised_query.split())
+        lexical_rows = self.db.execute(
+            "SELECT rid, layer_id, title, description FROM layers"
+        ).fetchall()
+        for rid, layer_id, title, description in lexical_rows:
+            layer_id_text = str(layer_id).casefold()
+            title_text = " ".join(_SEARCH_WORD.findall(str(title).casefold()))
+            description_text = " ".join(_SEARCH_WORD.findall(str(description or "").casefold()))
+            title_tokens = set(title_text.split())
+            description_tokens = set(description_text.split())
+            lexical = 0.0
+            if normalised_query == layer_id_text:
+                lexical = 1.2
+            elif normalised_query == title_text:
+                lexical = 1.1
+            elif normalised_query and normalised_query in title_text:
+                lexical = 0.9
+            elif query_tokens:
+                title_overlap = len(query_tokens & title_tokens) / len(query_tokens)
+                description_overlap = len(query_tokens & description_tokens) / len(query_tokens)
+                lexical = max(0.7 * title_overlap, 0.5 * description_overlap)
+            if lexical:
+                combined[int(rid)] = max(combined.get(int(rid), 0.0), lexical)
+
+        ranked = sorted(combined.items(), key=lambda kv: (-kv[1], kv[0]))
         hits: list[Hit] = []
         for rid, score in ranked:
             if score < SIMILARITY_FLOOR:
@@ -276,6 +307,13 @@ class GeoIndex:
             # TypeError from zip() and sending whoever reads it looking in the wrong file.
             raise LookupError(f"layer rid {rid} is in the FAISS index but not in {self.directory}")
         return dict(zip(keys, row))
+
+    def layer_by_id(self, layer_id: str) -> dict[str, Any] | None:
+        """Return catalogue metadata for an official layer identifier."""
+        row = self.db.execute(
+            "SELECT rid FROM layers WHERE layer_id = ?", [layer_id]
+        ).fetchone()
+        return self._layer_row(int(row[0])) if row is not None else None
 
     # --------------------------------------------------------------- divisions
 
