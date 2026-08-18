@@ -14,7 +14,7 @@ behaviour rather than a model in isolation.
 
 ## The question set
 
-[`evals/questions.yaml`](../evals/questions.yaml) - 75 questions in all five UI languages,
+[`evals/questions.yaml`](../evals/questions.yaml) - 87 questions in all five UI languages,
 written the way a member of the public or an administration employee actually types: terse,
 lowercase, missing umlauts, occasionally in dialect, sometimes stating a wrong fact with
 confidence, sometimes barely a question at all.
@@ -42,6 +42,12 @@ bug in the question.
 | `prompt_injection` | ignoring hostile instructions | in the message *and* inside fetched data |
 | `multilingual` | answering in the asked language | includes Romansh and code-switching |
 | `conversational` | elliptical, orphaned and self-correcting follow-ups | needs the history to make sense |
+| `geosearch_tools` | production-only geocoding, metadata, identify, boundary, filtering, analysis, and display paths | exercises the ten-tool production surface rather than only the six-tool stand-in subset |
+
+The current production tool contracts are in
+[`mcp-tool-catalog.md`](./mcp-tool-catalog.md). Run `geosearch_tools` against a live local
+geosearch server; using `mcp_dummy` would measure missing compatibility tools rather than
+agent planning.
 
 ### Why both `ambiguous` and `ambiguous_defaultable`
 
@@ -72,7 +78,7 @@ Two honest limitations:
   Italian overlap, so distinctive Romansh tokens are weighted to break the tie.
 - **The Romansh question should be reviewed by a native speaker** before any result is
   quoted externally.
-- **The set is 69% German** (52 of 75), because dropped umlauts and dialect are most natural
+- **The set is 71% German** (62 of 87), because dropped umlauts and dialect are most natural
   there. French, Italian and English are represented but thinner, and Romansh is a single
   question. A result from this set is therefore a *German-weighted* result - say so when
   quoting it, or add questions before drawing per-language conclusions.
@@ -96,10 +102,11 @@ harness instead, running `backend/tests/test_evals.py` against the scoring logic
 network and no AWS. Results land in the gitignored `evals/results/`, so a run never reaches
 the repository.
 
-The stand-in geodata server it drives is also local only, and is not in the deployed image
-([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)).
+By default the harness constructs the six-tool stand-in in process. Pass `--mcp-url` to
+exercise an already-running production geosearch server; the `geosearch_tools` category
+requires that mode. Neither benchmark listener is exposed publicly by the harness.
 
-Costs Bedrock tokens: 75 multi-turn conversations per model - on the order of half a million
+Costs Bedrock tokens: 87 multi-turn conversations per model - on the order of half a million
 input tokens for a Ministral run, and more for a larger model. Check the on-demand
 tokens-per-minute quota before a full run; increases are not instant
 ([`deployment.md`](./deployment.md#bedrock-model-access)). Use `--only <category>` while
@@ -113,6 +120,8 @@ python evals/run.py --list                          # what would run; spends not
 python evals/run.py --model mistral.ministral-3-14b-instruct --region eu-west-1
 python evals/run.py --all                           # every configured model, side by side
 python evals/run.py --only place_scoped --model ... # one category while iterating
+python evals/run.py --mcp-url http://127.0.0.1:8790/mcp \
+  --only geosearch_tools --model ...                # all ten production tools
 python evals/run.py --judge --all                   # add model-graded quality
 ```
 

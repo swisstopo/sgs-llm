@@ -119,7 +119,7 @@
 - [ ] **Step 3: Implement the cap and switch geosearch output**
 
   Apply `contains` and `clip`, then reject `len(features) > MAX_LAYER_FEATURES` before
-  `cache.put`. Keep `compute` exact. Publish the retained features directly with
+  `cache.put`. Keep `analyze_features` exact. Publish the retained features directly with
   `publish_geoparquet`; keep the baked boundary source files as GeoJSON and convert only
   when publishing them to the browser.
 

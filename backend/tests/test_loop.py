@@ -470,6 +470,7 @@ async def test_exhausting_the_tool_budget_keeps_a_usable_answer(settings) -> Non
 async def test_catalog_layers_are_withheld_until_the_client_supports_them(settings) -> None:
     """The field is a proposed protocol addition the frontend drops, so emitting it would
     have the agent claim a layer is on the map when nothing was added."""
+    settings.enable_catalog_layers = False
     payload = {
         "catalog_layer": {"id": "ch.bafu.aquaprotect_100"},
         "focus_bbox": [7.3, 46.9, 7.5, 47.0],
@@ -502,6 +503,60 @@ async def test_catalog_layers_are_withheld_until_the_client_supports_them(settin
     assert "Never send them to" in models.calls[0]["system"]
     assert "Geocatalog" in models.calls[0]["system"]
     assert "title" in models.calls[0]["system"]
+
+
+async def test_explicit_display_localizes_an_earlier_search_reference(settings) -> None:
+    search = {
+        "layer_refs": [
+            {
+                "id": "ch.bafu.aquaprotect_100",
+                "name": "Überschwemmung Aquaprotect 100",
+                "attribution": "Bundesamt für Umwelt BAFU",
+            }
+        ]
+    }
+    display = {
+        "catalog_layer": {
+            "id": "ch.bafu.aquaprotect_100",
+            "name": "Inondation Aquaprotect 100",
+            "opacity": 0.65,
+            "attribution": "geo.admin.ch",
+        }
+    }
+    session = FakeToolSession(
+        {
+            "search_layers": ToolOutcome(text=json.dumps(search), data=search, is_error=False),
+            "display_catalog_layer": ToolOutcome(
+                text=json.dumps(display), data=display, is_error=False
+            ),
+        }
+    )
+    models = FakeModels(
+        [
+            tool_result("search_layers", {"query": "crues"}, "tu1"),
+            tool_result(
+                "display_catalog_layer",
+                {
+                    "layer_id": "ch.bafu.aquaprotect_100",
+                    "name": "Inondation Aquaprotect 100",
+                    "opacity": 0.65,
+                },
+                "tu2",
+            ),
+            text_result("Inondation Aquaprotect 100"),
+        ]
+    )
+
+    events = await _collect(_message(), models, FakeGateway(session), settings, TurnStats())
+    final = events[-1]
+
+    assert final.type == "final"
+    assert final.catalog_layers is not None
+    assert len(final.catalog_layers) == 1
+    ref = final.catalog_layers[0]
+    assert ref.name == "Inondation Aquaprotect 100"
+    assert ref.opacity == 0.65
+    assert ref.attribution == "Bundesamt für Umwelt BAFU"
 
 
 async def test_display_division_is_described_only_when_the_server_offers_it(settings) -> None:

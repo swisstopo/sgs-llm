@@ -115,7 +115,16 @@ with one or more failed steps in it. Note that this differs from the wording in
       "attribution": "BAFU",
       "style_hint": { "fill_color": "#1c64f2", "opacity": 0.45 }
     }
-  ]
+  ],
+  "catalog_layers": [
+    {
+      "id": "ch.bafu.aquaprotect_100",
+      "name": "Flooding Aquaprotect 100",
+      "opacity": 0.7,
+      "attribution": "geo.admin.ch"
+    }
+  ],
+  "focus_bbox": [7.0, 46.05, 8.1, 46.35]
 }
 ```
 
@@ -129,6 +138,21 @@ with one or more failed steps in it. Note that this differs from the wording in
   - `bbox` — WGS84, for zoom-to-layer.
   - `style_hint` — optional rendering hints: `fill_color`, `stroke_color`,
     `stroke_width`, `point_radius`, `opacity`.
+- `catalog_layers` — optional structured official-layer references. When an exact layer
+  title occurs in the answer, the frontend turns that title into an inline control;
+  clicking it opens an anchored tooltip with “Add map layer” and “Layer details”, plus an
+  × close control. When already active, the first action becomes “Remove map layer”. These
+  labels deliberately differ from “Show result on map” on agent-produced data.
+  The tooltip also shows the official title, layer id, and attribution. Adding resolves
+  the current WMS/WMTS/GeoJSON configuration through
+  `LayerService.addOfficialLayer`; tiles remain hosted by geo.admin.ch. A separate card
+  is retained only as a fallback when the answer omitted the exact title.
+- `focus_bbox` — optional WGS84 camera target applied after the user adds an official
+  layer. A reference is an offer, not an automatic map mutation.
+
+The WebSocket protocol intentionally describes presentation rather than MCP implementation
+details. The production server's ten tool contracts and representative chains are documented
+in [`mcp-tool-catalog.md`](./mcp-tool-catalog.md).
 
 ### `error`
 
@@ -161,7 +185,9 @@ Always the terminal event of an exchange.
 3. Events of one exchange arrive in order; exchanges are not interleaved on
    a single connection.
 
-## Waiting for the production MCP server
+<a id="waiting-for-the-production-mcp-server"></a>
+
+## Production MCP configuration
 
 The backend answers only when it is connected to a real geodata MCP server
 (`MCP_SERVER_URL`). Until then it **accepts connections and refuses every turn** with
@@ -183,8 +209,8 @@ Two consequences worth knowing:
   rather than refusing. The model is told its tools are unavailable and answers what it
   can, per [`architecture.md`](./architecture.md#backend-architecture).
 - The refusal lives in the transport, not the agent loop, so the evaluation harness
-  ([`evals.md`](./evals.md)) still drives the loop against the stand-in and the
-  benchmark keeps working.
+  ([`evals.md`](./evals.md)) can drive the loop against either its in-process stand-in or a
+  running production geosearch endpoint.
 
 ## Limits and the optional key
 
@@ -229,7 +255,3 @@ in a key shipped to the browser.
   also be streamed incrementally.
 - `conversation_id` on `user_message` - an explicit thread id, replacing the
   derivation described in [Conversation identity](#conversation-identity).
-- `catalog_layers` and `focus_bbox` on `final` - naming an official geo.admin.ch
-  layer instead of shipping it, so the agent can put raster datasets (Aquaprotect,
-  the noise maps) on the map at all. Requires client work and has not been agreed;
-  the backend implements it behind a flag that is off by default.

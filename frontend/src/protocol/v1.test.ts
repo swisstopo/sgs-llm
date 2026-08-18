@@ -32,12 +32,21 @@ describe('parseServerEvent', () => {
           },
           { id: 'broken' },
         ],
+        catalog_layers: [
+          { id: 'ch.bafu.aquaprotect_100', name: 'Aquaprotect', opacity: 0.7 },
+          { id: 42 },
+        ],
+        focus_bbox: [7.29, 46.91, 7.5, 46.99],
       }),
     );
     expect(event?.type).toBe('final');
     if (event?.type === 'final') {
       expect(event.layers).toHaveLength(1);
       expect(event.layers?.[0]?.name).toBe('Flood zones');
+      expect(event.catalog_layers).toEqual([
+        { id: 'ch.bafu.aquaprotect_100', name: 'Aquaprotect', opacity: 0.7 },
+      ]);
+      expect(event.focus_bbox).toEqual([7.29, 46.91, 7.5, 46.99]);
     }
   });
 

@@ -7,6 +7,7 @@ import json
 import pytest
 
 from app.protocol import (
+    CatalogLayerRef,
     Done,
     Error,
     Final,
@@ -102,7 +103,15 @@ def test_frames_validate_against_the_published_schema(server_event_validator) ->
     )
     frames = [
         Intermediate(message_id="m", step_id="s1", status="finished", label="done", detail="d"),
-        Final(message_id="m", content_markdown="## Answer", layers=[layer]),
+        Final(
+            message_id="m",
+            content_markdown="## Answer",
+            layers=[layer],
+            catalog_layers=[
+                CatalogLayerRef(id="ch.bafu.aquaprotect_100", name="Aquaprotect", opacity=0.7)
+            ],
+            focus_bbox=(7.29, 46.91, 7.5, 46.99),
+        ),
         Error(message_id="m", code="timeout", message="too slow"),
         Done(message_id="m"),
     ]

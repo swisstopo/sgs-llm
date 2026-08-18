@@ -27,7 +27,11 @@ import {
   panelWidthFromPointer,
 } from './shell/panelWidth';
 import type { AddLayerEventDetail } from './chat/sgs-layer-result-card';
-import type { SgsChatPanel } from './chat/sgs-chat-panel';
+import type {
+  AddCatalogLayerEventDetail,
+  OpenCatalogLayerEventDetail,
+  RemoveCatalogLayerEventDetail,
+} from './chat/sgs-catalog-layer-card';
 import './sgs-header';
 import './shell/sgs-nav-rail';
 import './shell/sgs-flyout';
@@ -112,7 +116,13 @@ export class SgsApp extends LitElement {
     const shown = this._displayedPanel;
     return html`
       <sgs-header></sgs-header>
-      <div class="content" @sgs-add-layer=${this.onAddDataLayer}>
+      <div
+        class="content"
+        @sgs-add-layer=${this.onAddDataLayer}
+        @sgs-add-catalog-layer=${this.onAddCatalogLayer}
+        @sgs-remove-catalog-layer=${this.onRemoveCatalogLayer}
+        @sgs-open-catalog-layer=${this.onOpenCatalogLayer}
+      >
         <sgs-nav-rail></sgs-nav-rail>
         <sgs-map></sgs-map>
         <sgs-map-legend></sgs-map-legend>
@@ -234,10 +244,28 @@ export class SgsApp extends LitElement {
 
   private async onAddDataLayer(event: CustomEvent<AddLayerEventDetail>): Promise<void> {
     const { layer } = event.detail;
-    const result = await this.layerService.addDataLayer(layer);
+    await this.layerService.addDataLayer(layer);
+  }
+
+  private async onAddCatalogLayer(event: CustomEvent<AddCatalogLayerEventDetail>): Promise<void> {
+    const { layer, focusBBox } = event.detail;
+    const result = await this.layerService.addOfficialLayer(layer.id);
     if (result === 'added' || result === 'exists') {
-      this.querySelector<SgsChatPanel>('sgs-chat-panel')?.markLayerAdded(layer.id);
+      if (layer.opacity !== undefined) {
+        this.layerService.setOpacity(layer.id, layer.opacity);
+      }
+      if (focusBBox) {
+        this.mapService.fitBBox(focusBBox);
+      }
     }
+  }
+
+  private onRemoveCatalogLayer(event: CustomEvent<RemoveCatalogLayerEventDetail>): void {
+    this.layerService.removeLayer(event.detail.id);
+  }
+
+  private onOpenCatalogLayer(event: CustomEvent<OpenCatalogLayerEventDetail>): void {
+    this.uiService.openLayerInfo({ id: event.detail.id, label: event.detail.label });
   }
 }
 

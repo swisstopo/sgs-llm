@@ -91,7 +91,7 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         whose attributes contain that text.
 
         Returns a summary plus a `result_id` handle - not the features themselves. Pass
-        the handle to compute for figures, or to display_layer to put it on the user's
+        the handle to analyze_features for figures, or to display_layer to put it on the user's
         map.
         """
         if len(bbox) != 4:
@@ -190,7 +190,7 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         return result
 
     @server.tool()
-    async def compute(result_id: str, operation: str = "summary") -> dict[str, Any]:
+    async def analyze_features(result_id: str, operation: str = "summary") -> dict[str, Any]:
         """Compute figures over a fetched feature set.
 
         `operation` is one of: "count", "area" (total km²), "length" (total km),

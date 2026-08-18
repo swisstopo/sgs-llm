@@ -20,8 +20,9 @@ to a single TLS origin — no mixed-content, no CORS, and `wss://` works.
 
 The **EC2 mock-agent origin is retained but no longer in the path** — the agent
 behaviors point at `alb-agent`, so rolling back is flipping three
-`TargetOriginId` values. Until the agent code lands under `backend/`, the Fargate
-task runs the same mock-agent as its container image, so behaviour is unchanged.
+`TargetOriginId` values. The Fargate service runs the production image from
+`backend/Dockerfile`; the mock-agent image remains a deterministic protocol reference and
+emergency rollback option.
 See [Backend deployment](#backend-deployment).
 
 The geodata tools the backend calls over MCP run as a **second Fargate service in the
@@ -99,13 +100,14 @@ templates; generated values come from the stack outputs:
 | DynamoDB tables | `sgs-llm-feedback`, `sgs-llm-conversations` (on-demand, TTL, PITR) |
 | S3 bucket (data layers) | `sgs-llm-data-259789526488` (private, presigned reads) |
 | CloudWatch log group | `/ecs/sgs-llm-backend` (30 days) |
-| Secret | `sgs-llm/backend` (MCP token; placeholder until MCP lands) |
+| Secret | `sgs-llm/backend` (optional MCP token; geosearch currently relies on VPC and security-group isolation) |
 | Task roles (IAM) | `sgs-llm-backend-task`, `sgs-llm-backend-task-execution` |
 | CI deploy role (IAM) | `github-actions-sgs-llm-backend-deploy` — same repo/branch trust, scoped to ECR push + rolling the one service |
 | Developer role (IAM) | `sgs-llm-dev` — Bedrock inference + read-only tables, restricted to one source IP |
 
-Geodata MCP server ([Geodata MCP server](#geodata-mcp-server-geosearch-deployment)) — **not
-yet deployed**; the names below are fixed by the templates, the generated values are not:
+Geodata MCP server ([Geodata MCP server](#geodata-mcp-server-geosearch-deployment)). The
+names below are fixed by the templates; use the operating commands in that section to
+verify the current environment's service state and image revision:
 
 | Resource | ID / value |
 | --- | --- |
@@ -782,8 +784,15 @@ memory at `/data/...` and persistence is disabled. The frontend's default `confi
 already points at `localhost:8787`, so `cd frontend && npm run dev` needs no change.
 
 **The chat needs an MCP server.** With `MCP_SERVER_URL` unset the backend refuses every
-turn, exactly as the deployed pilot does. To develop against real geodata, run the
-bundled stand-in in a third terminal and point the backend at it:
+turn. For full local behavior, build and run the production server as described in
+[`geosearch/README.md`](../geosearch/README.md), then use:
+
+```bash
+export MCP_SERVER_URL=http://127.0.0.1:8790/mcp
+```
+
+For lightweight backend integration work that needs only the six compatibility tools,
+run the bundled stand-in instead:
 
 ```bash
 python -m mcp_dummy.server                       # http://127.0.0.1:8788/mcp
@@ -796,7 +805,7 @@ Checks before pushing - the same ones CI runs:
 cd backend
 .venv/bin/python -m ruff check app tests ../mcp_dummy ../evals
 .venv/bin/python -m ruff format --check app tests ../mcp_dummy ../evals
-.venv/bin/python -m mypy          # app, mcp_dummy and evals (see pyproject.toml)
+.venv/bin/python -m mypy          # app, mcp_dummy, evals and geosearch (see pyproject.toml)
 .venv/bin/python -m pytest
 ```
 
@@ -1072,6 +1081,8 @@ http://sgs-llm-geosearch:8790/mcp
 
 Its internal design (the FAISS index, the rerank stage, the `result_id` handles) is in
 [`geosearch/README.md`](../geosearch/README.md).
+Its ten public tools and their input/output contracts are in
+[`mcp-tool-catalog.md`](./mcp-tool-catalog.md).
 
 ```text
         ECS cluster `sgs-llm`  (one cluster, two services)
@@ -1117,7 +1128,7 @@ geosearch task role cannot read the conversation tables.
 | | Backend | Geosearch | Why |
 | --- | --- | --- | --- |
 | Ingress | ALB, from CloudFront | **None** — Service Connect | The only client is a task in the same VPC. The browser never speaks MCP; it only fetches the presigned S3 URL a tool returns. Saves the ALB's ~$20/month and leaves no public path to it |
-| Scale | desired 1, raisable | desired 1, **`MaxValue: 1`** | `result_id` handles live in the `ResultCache` inside one process ([`geosearch/results.py`](../geosearch/results.py)). A second task answers `compute` with "unknown result_id" for half the handles it just issued |
+| Scale | desired 1, raisable | desired 1, **`MaxValue: 1`** | `result_id` handles live in the `ResultCache` inside one process ([`geosearch/results.py`](../geosearch/results.py)). A second task answers `analyze_features` or `display_layer` with "unknown result_id" for half the handles it just issued |
 | Deploy | 100/200 rolling, zero downtime | **0/100** — old task stops first | Same reason. The cost is a gap of a minute or two per deploy, during which the backend's tool calls fail. Raising either needs a shared result store or sticky routing first |
 
 ### The index is built by a human, not by CI

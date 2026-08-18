@@ -39,12 +39,10 @@ class Settings(BaseSettings):
     mcp_server_url: str = ""
     mcp_server_token: str = ""
 
-    # `catalog_layers` / `focus_bbox` are proposed protocol additions, not yet implemented
-    # client-side (docs/protocol.md). Until they are, the frontend drops both fields, so
-    # emitting them would have the agent claim a layer is on the map when nothing was
-    # added. Off by default; the gate is here rather than in the tool set because in
-    # production the tools come from a server this project does not own.
-    enable_catalog_layers: bool = False
+    # Official layers travel as small references and the browser resolves their current
+    # WMS/WMTS/GeoJSON configuration directly from geo.admin.ch. Kept as an emergency
+    # rollout switch, but enabled now that protocol v1 renders inline layer actions.
+    enable_catalog_layers: bool = True
 
     # Empty disables the key, which is the deployed default. Served from the public
     # config.json, so it is a speed bump rather than a boundary (docs/protocol.md).

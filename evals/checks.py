@@ -273,7 +273,7 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         # "would you like more detail?", so the marker alone passed a model that silently
         # picked one reading. Fetching data or showing a layer means a choice was made.
         answered_anyway = bool(observed.layers) or any(
-            call in ("filter_features", "compute", "display_catalog_layer")
+            call in ("filter_features", "analyze_features", "display_catalog_layer")
             for call in observed.tool_calls
         )
         if not asked:

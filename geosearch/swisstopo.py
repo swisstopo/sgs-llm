@@ -17,8 +17,10 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
+from pyproj import Transformer
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,11 @@ LAYERS_CONFIG = f"{API3}/all/MapServer/layersConfig"
 LAYER_METADATA = f"{API3}/api/MapServer"
 
 IDENTIFY = f"{API3}/all/MapServer/identify"
+SEARCH = f"{API3}/ech/SearchServer"
+ECH_MAPSERVER = f"{API3}/ech/MapServer"
+ATTRIBUTION_FALLBACK = "swisstopo / geo.admin.ch"
+
+_WGS84_TO_LV95 = Transformer.from_crs(4326, 2056, always_xy=True)
 
 # identify's own maximum per request. Not a total: pagination walks past it.
 PAGE = 200
@@ -46,6 +53,7 @@ CONCURRENCY = 8
 CH_BBOX = (5.9, 45.8, 10.6, 47.9)
 
 _TAGS = re.compile(r"<[^>]+>")
+_MATCH_WORD = re.compile(r"\w+", re.UNICODE)
 _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 # Candidate name properties, most specific first. Each division layer names its label
@@ -166,6 +174,33 @@ class Swisstopo:
             self._layers_config[lang] = await self._get(LAYERS_CONFIG, {"lang": lang})
         return self._layers_config[lang]
 
+    async def search_catalog_layers(
+        self, query: str, lang: str = "de", limit: int = 30
+    ) -> list[dict[str, str]]:
+        """Use SearchServer's language-specific lexical catalogue index.
+
+        The local semantic index is intentionally built once in one language. This live
+        source complements it for catalogue terms whose cross-language embedding is weak.
+        """
+        payload = await self._get(
+            SEARCH,
+            {"searchText": query, "type": "layers", "lang": lang, "limit": limit},
+        )
+        found: list[dict[str, str]] = []
+        for item in payload.get("results", []):
+            attrs = item.get("attrs") or {}
+            layer_id = attrs.get("layer")
+            if not layer_id:
+                continue
+            found.append(
+                {
+                    "layer_id": str(layer_id),
+                    "title": strip_markup(attrs.get("label") or attrs.get("title")),
+                    "description": str(attrs.get("detail") or ""),
+                }
+            )
+        return found
+
     async def layer_metadata(self, lang: str = "de") -> dict[str, dict[str, Any]]:
         """layerBodId -> attributes, including the `abstract` we embed."""
         if not self._metadata.get(lang):
@@ -212,6 +247,201 @@ class Swisstopo:
                 }
             )
         return records
+
+    async def geocode_location(
+        self,
+        query: str,
+        *,
+        origins: list[str] | None = None,
+        lang: str = "de",
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Resolve an address, parcel, postcode, or named point.
+
+        SearchServer's historical ``x``/``y`` names are deliberately not exposed: their
+        meaning depends on the requested projection and has caused axis swaps in real
+        integrations.  WGS84 longitude/latitude is taken from the explicit response
+        fields and LV95 is derived with an always-XY transformer.
+        """
+        allowed = {
+            "zipcode",
+            "gg25",
+            "district",
+            "kantone",
+            "gazetteer",
+            "address",
+            "parcel",
+        }
+        selected = [value for value in (origins or []) if value in allowed]
+        params: dict[str, Any] = {
+            "searchText": query,
+            "type": "locations",
+            "lang": lang,
+            "limit": max(1, min(int(limit), 50)),
+            "sr": 4326,
+            "returnGeometry": "true",
+            "geometryFormat": "geojson",
+        }
+        if selected:
+            params["origins"] = ",".join(selected)
+        payload = await self._get(SEARCH, params)
+
+        rows = payload.get("features") or payload.get("results") or []
+        locations: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            props = row.get("properties") or row.get("attrs") or {}
+            if not isinstance(props, dict):
+                continue
+            try:
+                longitude = float(props["lon"])
+                latitude = float(props["lat"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            easting, northing = _WGS84_TO_LV95.transform(longitude, latitude)
+            related = []
+            for link in props.get("links") or []:
+                if not isinstance(link, dict) or not isinstance(link.get("href"), str):
+                    continue
+                related.append(
+                    {
+                        "layer_id": str(link.get("title") or ""),
+                        "feature_id": str(link["href"]).rstrip("/").rsplit("/", 1)[-1],
+                        "url": urljoin("https://api3.geo.admin.ch", link["href"]),
+                    }
+                )
+            origin = str(props.get("origin") or "location")
+            feature_id = str(props.get("featureId") or props.get("id") or "")
+            query_words = set(_MATCH_WORD.findall(query.casefold()))
+            detail_words = set(
+                _MATCH_WORD.findall(str(props.get("detail") or "").casefold())
+            )
+            locations.append(
+                {
+                    "location_ref": f"{origin}:{feature_id or len(locations)}",
+                    "kind": origin,
+                    "label": strip_markup(props.get("label") or props.get("detail")),
+                    "coordinates": {
+                        "wgs84": {"longitude": longitude, "latitude": latitude},
+                        "lv95": {"easting": easting, "northing": northing},
+                    },
+                    # SearchServer explicitly says its numeric weight is not a stable
+                    # confidence score.  Expose an interpretable match class instead.
+                    "match_quality": (
+                        "exact" if query_words and query_words <= detail_words
+                        else "partial"
+                    ),
+                    "related_features": related,
+                }
+            )
+        return locations
+
+    async def describe_layer(self, layer_id: str, lang: str = "de") -> dict[str, Any] | None:
+        """Merge catalogue, renderer, schema, time, and download metadata for one layer."""
+        config = (await self.layers_config(lang)).get(layer_id)
+        if not isinstance(config, dict):
+            return None
+        metadata = (await self.layer_metadata(lang)).get(layer_id) or {}
+        schema = await self._get(f"{ECH_MAPSERVER}/{layer_id}", {"lang": lang})
+        fields = []
+        for field in schema.get("fields") or []:
+            if not isinstance(field, dict) or not isinstance(field.get("name"), str):
+                continue
+            fields.append(
+                {
+                    "name": field["name"],
+                    "alias": field.get("alias"),
+                    "type": field.get("type"),
+                }
+            )
+        timestamps = [str(value) for value in (config.get("timestamps") or [])]
+        return {
+            "layer_id": layer_id,
+            "title": strip_markup(config.get("label")) or layer_id,
+            "description": strip_markup(metadata.get("abstract")),
+            "owner": metadata.get("dataOwner"),
+            "attribution": config.get("attribution") or ATTRIBUTION_FALLBACK,
+            "queryable": bool(config.get("tooltip")),
+            "displayable": config.get("type") in ("wmts", "wms", "geojson"),
+            "layer_type": config.get("type"),
+            "geometry_type": schema.get("geometryType"),
+            "fields": fields,
+            "time_enabled": bool(config.get("timeEnabled")),
+            "timestamps": timestamps,
+            "current_timestamp": max(timestamps) if timestamps else None,
+            "details_url": metadata.get("urlDetails"),
+            "download_url": metadata.get("downloadUrl"),
+            "legend_url": f"{ECH_MAPSERVER}/{layer_id}/legend?lang={lang}",
+            "data_status": metadata.get("dataStatus"),
+        }
+
+    async def identify_at_point(
+        self,
+        layer_ids: list[str],
+        longitude: float,
+        latitude: float,
+        *,
+        lang: str = "de",
+        return_geometry: bool = False,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return complete structured feature records intersecting one WGS84 point."""
+        selected = [layer_id for layer_id in layer_ids if isinstance(layer_id, str)][:10]
+        if not selected:
+            return []
+        payload = await self._get(
+            IDENTIFY,
+            {
+                "geometry": f"{float(longitude)},{float(latitude)}",
+                "geometryType": "esriGeometryPoint",
+                "layers": "all:" + ",".join(selected),
+                "tolerance": 0,
+                "sr": 4326,
+                "geometryFormat": "geojson",
+                "returnGeometry": str(bool(return_geometry)).lower(),
+                "lang": lang,
+                "limit": max(1, min(int(limit), 200)),
+            },
+        )
+        features: list[dict[str, Any]] = []
+        for row in payload.get("results") or []:
+            if not isinstance(row, dict) or row.get("featureId") == -99 or row.get("id") == -99:
+                continue
+            properties = row.get("properties") or row.get("attributes") or {}
+            if not isinstance(properties, dict):
+                properties = {}
+            external_links = []
+            for key, value in properties.items():
+                if not isinstance(value, str) or not value.lower().startswith(("http://", "https://")):
+                    continue
+                lowered = value.lower().split("?", 1)[0]
+                external_links.append(
+                    {
+                        "field": str(key),
+                        "kind": (
+                            "pdf"
+                            if lowered.endswith(".pdf") or "pdf" in str(key).casefold()
+                            else "web"
+                        ),
+                        "label": str(key).replace("_", " "),
+                        "url": value,
+                    }
+                )
+            feature_id = row.get("featureId", row.get("id"))
+            feature: dict[str, Any] = {
+                "feature_ref": {
+                    "layer_id": row.get("layerBodId"),
+                    "feature_id": str(feature_id),
+                },
+                "layer_name": row.get("layerName"),
+                "properties": properties,
+                "external_links": external_links,
+            }
+            if return_geometry and isinstance(row.get("geometry"), dict):
+                feature["geometry"] = to_2d(row["geometry"])
+            features.append(feature)
+        return features
 
     # ----------------------------------------------------------------- features
 

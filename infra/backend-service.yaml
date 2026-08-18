@@ -114,8 +114,8 @@ Parameters:
       Streamable-HTTP MCP server endpoint, and the switch that enables the chat. Empty
       means no production geodata server, so /ws/v1 accepts connections and refuses
       every turn rather than answering from the bundled stand-in (see
-      docs/protocol.md). Set this to swisstopo's endpoint to turn the chat on, with no
-      image change.
+      docs/protocol.md). Set this to the geosearch Service Connect endpoint (or another
+      compatible production MCP endpoint) to turn the chat on, with no image change.
   ServiceConnectNamespace:
     Type: String
     Default: ''

@@ -184,16 +184,18 @@ def _walk(node: Any, found: list[dict[str, Any]], depth: int = 0) -> None:
 # An official geo.admin.ch layer id: dotted, lowercase, starts with the country prefix.
 _CATALOG_ID = re.compile(r"^ch\.[a-z0-9_.-]+$")
 
-# Only these keys mean "display this". Matching any dict merely holding a ch.* id put
-# every `search_layers` candidate on the user's map, since results have that same shape.
-_CATALOG_CONTAINER_KEYS = ("catalog_layer", "catalog_layers")
+# Only these keys mean "offer this official layer in chat". A layer reference creates a
+# user-clickable inline action, not an automatic map mutation, so search_layers may
+# deliberately return `layer_refs` while display_catalog_layer returns the singular form.
+_CATALOG_CONTAINER_KEYS = ("catalog_layer", "catalog_layers", "layer_refs")
 
 
 def extract_catalog_layers(data: Any) -> list[CatalogLayerRef]:
     """Finds official layers a tool explicitly asked to display.
 
-    Only values under a `catalog_layer` / `catalog_layers` key count, which is the shape
-    documented in docs/protocol.md. Search results are candidates, not instructions.
+    Only values under an explicit reference container count. Plain layer metadata is not
+    interpreted as a UI action, preventing arbitrary nested `ch.*` strings from becoming
+    inline controls.
     """
     found: list[CatalogLayerRef] = []
     seen: set[str] = set()

@@ -28,6 +28,15 @@ export class SgsLayerResultCard extends LitElement {
       margin: 0 0 0.125rem;
     }
 
+    .kind {
+      color: var(--sgc-color-brand);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin: 0 0 0.25rem;
+      text-transform: uppercase;
+    }
+
     .meta {
       color: var(--sgc-color-text--secondary);
       margin: 0 0 0.5rem;
@@ -67,6 +76,7 @@ export class SgsLayerResultCard extends LitElement {
     const { layer } = this;
     const supported = layer.format === 'geojson' || layer.format === 'parquet';
     return html`
+      <p class="kind">${t('chat.personalizedResultLayer')}</p>
       <p class="name">${layer.name}</p>
       <p class="meta">
         ${layer.feature_count !== undefined

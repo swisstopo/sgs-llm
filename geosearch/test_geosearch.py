@@ -20,7 +20,7 @@ import pytest
 
 from .build import _kind, _s3_key, _slug
 from .index import GeoIndex, build, confidence
-from .rerank import _parse
+from .rerank import PROMPT, _parse
 from .swisstopo import DivisionLayer, Swisstopo, feature_name, to_2d
 
 
@@ -207,6 +207,65 @@ def test_parse_converts_to_zero_based_and_drops_junk():
     assert _parse("[true, 2]", 5) == [1]
 
 
+def test_reranker_is_told_to_compare_across_catalogue_languages():
+    assert "different Swiss national languages" in PROMPT
+
+
+def test_language_specific_catalogue_search_normalizes_results():
+    api = Swisstopo.__new__(Swisstopo)
+
+    async def fake_get(url, params):
+        assert params == {
+            "searchText": "crues", "type": "layers", "lang": "fr", "limit": 4
+        }
+        return {
+            "results": [
+                {
+                    "attrs": {
+                        "layer": "ch.bafu.hydroweb-warnkarte_national",
+                        "label": "<b>Carte vigilance crues</b>",
+                        "detail": "Situation actuelle des crues",
+                    }
+                }
+            ]
+        }
+
+    api._get = fake_get  # type: ignore[method-assign]
+    assert asyncio.run(api.search_catalog_layers("crues", "fr", 4)) == [
+        {
+            "layer_id": "ch.bafu.hydroweb-warnkarte_national",
+            "title": "Carte vigilance crues",
+            "description": "Situation actuelle des crues",
+        }
+    ]
+
+
+def test_geocoder_ignores_address_punctuation_when_classifying_an_exact_match():
+    api = Swisstopo.__new__(Swisstopo)
+
+    async def fake_get(url, params):
+        return {
+            "results": [
+                {
+                    "attrs": {
+                        "lon": 7.451352,
+                        "lat": 46.927937,
+                        "origin": "address",
+                        "featureId": "1272199_0",
+                        "label": "Seftigenstrasse 264 3084 Wabern",
+                        "detail": "Seftigenstrasse 264 3084 Wabern",
+                    }
+                }
+            ]
+        }
+
+    api._get = fake_get  # type: ignore[method-assign]
+    locations = asyncio.run(
+        api.geocode_location("Seftigenstrasse 264, 3084 Wabern", origins=["address"])
+    )
+    assert locations[0]["match_quality"] == "exact"
+
+
 # -------------------------------------------------------------------- index
 
 
@@ -267,6 +326,20 @@ def test_layer_without_abstract_still_scores(tiny_index):
     hits = tiny_index.search_layers("Gletscher", limit=99)
     top = next(h for h in hits if h.row["layer_id"] == "ch.d.nodesc")
     assert top.score > 0.5
+
+
+def test_exact_layer_id_outranks_semantic_candidates(tiny_index):
+    hits = tiny_index.search_layers("ch.c.solar", limit=4)
+
+    assert hits[0].row["layer_id"] == "ch.c.solar"
+    assert hits[0].score == pytest.approx(1.2)
+
+
+def test_exact_catalogue_title_gets_a_lexical_boost(tiny_index):
+    hits = tiny_index.search_layers("Solarenergie Dächer", limit=4)
+
+    assert hits[0].row["layer_id"] == "ch.c.solar"
+    assert hits[0].score == pytest.approx(1.1)
 
 
 def test_confidence_flags_a_photo_finish():

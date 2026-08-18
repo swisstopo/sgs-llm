@@ -84,7 +84,7 @@ in a fence, and `\[.*\]` spanned both into invalid JSON.
 time-enabled, and `identify` returns *every* vintage of every feature unless `timeInstant`
 says otherwise — the commune layer carries 177, back to 1850. Nothing downstream can tell a
 vintage from a neighbour, so `filter_features` reported 1228 communes in a box holding 7 and
-`compute` summed their areas to 24104 km², more than half of Switzerland. `fetch_features`
+`analyze_features` summed their areas to 24104 km², more than half of Switzerland. `fetch_features`
 now pins the layer's newest published timestamp for every caller. Two traps here: the bug is
 invisible on point layers, where the inflated area is `0.0` and looks right; and
 `is_current_jahr` reads like the correct filter but is False on the previous year's rows
@@ -305,7 +305,7 @@ the backend's security group and nothing else: no browser ever calls this server
 fetched.
 
 **One task, and deploys 0/100 rather than 100/200.** `result_id` handles live in the
-`ResultCache` inside one process, so a second task would answer `compute` with "unknown
+`ResultCache` inside one process, so a second task would answer `analyze_features` with "unknown
 result_id" for half the handles it just issued. `DesiredCount` is capped at 1 and a rolling
 deploy stops the old task before starting the new one. The cost is a gap of a minute or two
 per deploy; the alternative is an answer that silently cannot find the features
@@ -329,17 +329,48 @@ on an image it never built — `index/` is gitignored, and CI cannot reproduce i
 
 ## Tools
 
-Same six-tool surface as `mcp_dummy` so the backend and eval harness need no changes, plus
-`display_division`.
+The Phase 1 production surface contains ten intent-oriented tools.
 
-| tool | change |
-|---|---|
-| `search_layers` | FAISS + LLM filter instead of SearchServer; returns `similarity`, `low_confidence` |
+| Tool | Purpose |
+| --- | --- |
+| `search_layers` | exact/lexical + FAISS + LLM filtering; returns confidence and clickable official layer references |
+| `geocode_location` | addresses, parcels, postcodes and precise named points with explicit WGS84/LV95 coordinates |
+| `describe_layer` | merged catalogue metadata, schema, timestamps, legend, services and download links |
+| `identify_at_point` | complete point feature properties and extracted official web/PDF links |
 | `search_locations` | pre-embedded divisions; resolves "Zurich" → "Zürich", and localities as well as communes |
-| `display_division` | new — puts a stored boundary on the map, no network call |
-| `filter_features` | grid-subdivided identify: a real total, not a capped page; takes `place` and clips to the boundary instead of the bbox |
-| `display_catalog_layer`, `compute` | unchanged |
+| `display_division` | puts a stored administrative boundary on the map without another API request |
+| `filter_features` | complete grid-subdivided area query, boundary clipping, timestamps and structured filters |
+| `display_catalog_layer` | returns an official-layer reference rendered as a clickable inline chat control |
+| `analyze_features` | count/area/length/extent plus grouping, top values and numeric statistics |
 | `display_layer` | publishes GeoParquet instead of GeoJSON; complete results only |
+
+The complete JSON input/output contract, validation cases, and expected tool chains are in
+[`docs/mcp-tool-catalog.md`](../docs/mcp-tool-catalog.md).
+
+### Example agent workflows
+
+```text
+"Find the exact coordinates of Seftigenstrasse 264, 3084 Wabern."
+geocode_location
+
+"Show me on the map."
+geocode_location → display_layer
+
+"Return the ÖREB EGRID, PDF and online extract for Seftigenstrasse 264, Wabern,
+and prepare the parcel and nationwide availability layer for the map."
+geocode_location → search_layers → identify_at_point(return_geometry=true)
+→ display_layer → display_catalog_layer
+
+"Find every municipality in canton Zug, calculate the count and total area,
+and show the municipalities and canton boundary."
+search_locations → search_layers → filter_features → analyze_features
+→ display_division → display_layer
+```
+
+`result_id` values are opaque, per-process handles. Copy them exactly from
+`geocode_location`, `identify_at_point`, or `filter_features` into the relevant analysis or
+display tool; never construct one. Official catalogue layers do not use a `result_id` because
+the browser resolves their WMS, WMTS, or GeoJSON configuration directly from geo.admin.ch.
 
 ## Known limits
 

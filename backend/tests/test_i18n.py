@@ -20,8 +20,11 @@ def test_the_geosearch_tools_are_all_labelled() -> None:
     for tool in (
         "search_layers",
         "search_locations",
+        "geocode_location",
+        "describe_layer",
+        "identify_at_point",
         "filter_features",
-        "compute",
+        "analyze_features",
         "display_layer",
         "display_catalog_layer",
         "display_division",

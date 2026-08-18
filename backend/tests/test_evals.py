@@ -37,12 +37,15 @@ KNOWN_EXPECT_KEYS = {
     "no_layer",
     "judge",
 }
-# Both servers' tool sets. `display_division` is geosearch's alone.
+# Union of both servers' tool sets; four tools are exclusive to production geosearch.
 KNOWN_TOOLS = {
     "search_layers",
     "search_locations",
+    "geocode_location",
+    "describe_layer",
+    "identify_at_point",
     "filter_features",
-    "compute",
+    "analyze_features",
     "display_layer",
     "display_catalog_layer",
     "display_division",
@@ -265,7 +268,7 @@ class TestRuleEngine:
         """A failed exchange reports one cause, not every derived failure."""
         question = {
             "id": "q",
-            "expect": {"must_produce_layer": True, "must_call_tool": ["compute"]},
+            "expect": {"must_produce_layer": True, "must_call_tool": ["analyze_features"]},
         }
         verdict = evaluate(question, _observed(error_code="timeout"))
         assert verdict.stages == ["exchange_error"]

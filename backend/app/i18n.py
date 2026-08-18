@@ -113,11 +113,29 @@ TOOL_RUNNING = {
         "it": "Caricamento dei geodati …",
         "en": "Fetching geodata …",
     },
-    "compute": {
+    "analyze_features": {
         "de": "Berechne Auswertung …",
         "fr": "Calcul de l'analyse …",
         "it": "Calcolo dell'analisi …",
         "en": "Computing the analysis …",
+    },
+    "geocode_location": {
+        "de": "Suche Adresse oder Parzelle …",
+        "fr": "Recherche de l'adresse ou de la parcelle …",
+        "it": "Ricerca dell'indirizzo o della particella …",
+        "en": "Resolving the address or parcel …",
+    },
+    "describe_layer": {
+        "de": "Prüfe den Datensatz …",
+        "fr": "Inspection du jeu de données …",
+        "it": "Verifica del set di dati …",
+        "en": "Inspecting the dataset …",
+    },
+    "identify_at_point": {
+        "de": "Frage Daten am Standort ab …",
+        "fr": "Interrogation des données à cet emplacement …",
+        "it": "Interrogazione dei dati nella posizione …",
+        "en": "Querying data at the location …",
     },
     "display_layer": {
         "de": "Bereite Kartenebene vor …",
