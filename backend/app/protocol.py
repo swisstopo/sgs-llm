@@ -17,6 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 ProtocolLang = Literal["de", "fr", "it", "en", "rm"]
+ModelPreference = Literal["primary", "secondary"]
 SUPPORTED_LANGS: frozenset[str] = frozenset({"de", "fr", "it", "en", "rm"})
 DEFAULT_LANG: ProtocolLang = "de"
 
@@ -47,6 +48,7 @@ class UserMessage(_ClientModel):
     id: str
     content: str
     lang: str = DEFAULT_LANG
+    model: ModelPreference = "primary"
     history: list[HistoryEntry] = Field(default_factory=list)
     map_context: MapContext | None = None
 

@@ -32,6 +32,11 @@
   "chat": {
     "placeholder": "Ask a question about Swiss geodata …",
     "send": "Send",
+    "model": {
+      "label": "Model",
+      "primary": "Claude Sonnet 4.6",
+      "secondary": "Ministral 3 14B"
+    },
     "newConversation": "New conversation",
     "cancel": "Cancel",
     "welcome": "Ask questions about Swiss geodata – for example:",

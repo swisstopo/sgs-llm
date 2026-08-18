@@ -31,6 +31,7 @@ from .bedrock import (
     BedrockModels,
     ModelHandle,
     NoModelAvailable,
+    configured_model_handle,
     tool_result_block,
     tool_results_message,
 )
@@ -215,7 +216,18 @@ async def run_turn(
                 text += DIVISION_NOTE
             return text
 
-        pinned: ModelHandle | None = None
+        pinned = configured_model_handle(settings, message.model)
+        if pinned is None:
+            logger.error("requested %s model is not configured or available", message.model)
+            stats.error_code = "internal"
+            yield Intermediate(
+                message_id=message_id,
+                step_id=THINKING_STEP,
+                status="failed",
+                label=i18n.tool_failed(lang),
+            )
+            yield Error(message_id=message_id, code="internal", message=i18n.internal(lang))
+            return
         last_text = ""
         thinking_closed = False
         step = 0

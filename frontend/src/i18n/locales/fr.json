@@ -32,6 +32,11 @@
   "chat": {
     "placeholder": "Posez une question sur les géodonnées suisses …",
     "send": "Envoyer",
+    "model": {
+      "label": "Modèle",
+      "primary": "Claude Sonnet 4.6",
+      "secondary": "Ministral 3 14B"
+    },
     "newConversation": "Nouvelle conversation",
     "cancel": "Annuler",
     "welcome": "Posez des questions sur les géodonnées suisses – par exemple :",

@@ -38,6 +38,7 @@ alongside `final_delta`; nothing depends on it today.
   "id": "9f1f6e8c-…",
   "content": "Zeige mir Hochwassergefahren im Wallis",
   "lang": "de",
+  "model": "primary",
   "history": [
     { "role": "user", "content": "…" },
     { "role": "assistant", "content": "…" }
@@ -53,10 +54,13 @@ alongside `final_delta`; nothing depends on it today.
   echo it as `message_id`.
 - `lang` — `de | fr | it | en | rm`. Server responses (labels, markdown)
   should be in this language.
+- `model` — optional model routing preference: `primary` pins the complete turn to
+  Claude, while `secondary` pins it to Mistral. The server defaults to `primary` for
+  older clients.
 - `history` — optional prior exchanges, oldest first; the server is
   stateless.
 - `map_context` — optional; current viewport bbox (WGS84, `[minLon, minLat,
-  maxLon, maxLat]`) and active layer ids.
+maxLon, maxLat]`) and active layer ids.
 
 ### `cancel`
 
@@ -196,7 +200,7 @@ termination, so no client change is needed and nothing hangs.
 
 The server to point it at is [`geosearch/`](../geosearch/README.md), which this project
 builds and deploys ([`deployment.md`](./deployment.md#geodata-mcp-server-geosearch-deployment)).
-The refusal is what an *unconfigured* deployment does, and it stays: the alternative was
+The refusal is what an _unconfigured_ deployment does, and it stays: the alternative was
 to answer from the bundled stand-in ([`mcp_dummy/`](../mcp_dummy/README.md)), which
 returns real geo.admin.ch data but is a development tool; answers sourced from it could
 be mistaken for production output. Refusing is the honest default, and the map (Track A
@@ -217,14 +221,14 @@ Two consequences worth knowing:
 The endpoint is unauthenticated by design, but it is not unprotected. The backend
 enforces, all configurable in the task definition:
 
-| Limit | Default | Why |
-| --- | --- | --- |
-| Accepted WebSocket origin (`ALLOWED_ORIGINS`) | the CloudFront domain | Stops a third-party page driving the socket. Browser-enforced only |
-| Messages per client per minute | 20 | Every turn spends Bedrock tokens |
-| Concurrent connections per client | 8 | |
-| Max message length / frame size | 4 000 chars / 256 KiB | |
-| One in-flight exchange per connection | - | The contract already forbids interleaving; a second `user_message` mid-turn gets `error` `bad_request` |
-| Turn wall-clock budget | 90 s | Then `error` `timeout` |
+| Limit                                         | Default               | Why                                                                                                    |
+| --------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Accepted WebSocket origin (`ALLOWED_ORIGINS`) | the CloudFront domain | Stops a third-party page driving the socket. Browser-enforced only                                     |
+| Messages per client per minute                | 20                    | Every turn spends Bedrock tokens                                                                       |
+| Concurrent connections per client             | 8                     |                                                                                                        |
+| Max message length / frame size               | 4 000 chars / 256 KiB |                                                                                                        |
+| One in-flight exchange per connection         | -                     | The contract already forbids interleaving; a second `user_message` mid-turn gets `error` `bad_request` |
+| Turn wall-clock budget                        | 90 s                  | Then `error` `timeout`                                                                                 |
 
 Over-limit requests still terminate the exchange properly - one `error`, then `done` - so
 the client never waits forever.
@@ -233,7 +237,7 @@ the client never waits forever.
 deployed. Two things are worth stating plainly, because they are easy to get wrong:
 
 - **The browser WebSocket API cannot set request headers.** A header-based key is
-  therefore possible on `POST /feedback` but *not* on `/ws/v1`. The server accepts
+  therefore possible on `POST /feedback` but _not_ on `/ws/v1`. The server accepts
   `x-api-key` on either endpoint, and on `/ws/v1` also a `Sec-WebSocket-Protocol` entry
   of the form `sgs-llm-key.<value>`, which is the only channel a browser could use. No
   client sends it today; enabling the key needs client work first.

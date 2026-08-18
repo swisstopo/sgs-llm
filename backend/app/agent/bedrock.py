@@ -46,6 +46,15 @@ class NoModelAvailable(RuntimeError):
     """Every configured model refused the request."""
 
 
+def configured_model_handle(settings: Settings, role: ModelRole) -> ModelHandle | None:
+    """Resolve an approved UI model role without accepting an arbitrary model id."""
+    if role == "primary" and settings.bedrock_primary_model_id:
+        return ModelHandle(settings.bedrock_primary_model_id, settings.bedrock_region, role)
+    if role == "secondary" and settings.bedrock_secondary_model_id:
+        return ModelHandle(settings.bedrock_secondary_model_id, settings.secondary_region, role)
+    return None
+
+
 def resolve_system(system: SystemPrompt, handle: ModelHandle) -> str:
     return system(handle) if callable(system) else system
 
@@ -93,28 +102,19 @@ class BedrockModels:
     @property
     def handles(self) -> tuple[ModelHandle, ...]:
         """Configured models in preference order, skipping unset ids."""
-        candidates: list[ModelHandle] = []
-        if self._settings.bedrock_primary_model_id:
-            candidates.append(
-                ModelHandle(
-                    model_id=self._settings.bedrock_primary_model_id,
-                    region=self._settings.bedrock_region,
-                    role="primary",
-                )
-            )
-        if self._settings.bedrock_secondary_model_id:
-            candidates.append(
-                ModelHandle(
-                    model_id=self._settings.bedrock_secondary_model_id,
-                    region=self._settings.secondary_region,
-                    role="secondary",
-                )
-            )
-        return tuple(candidates)
+        candidates = (
+            configured_model_handle(self._settings, "primary"),
+            configured_model_handle(self._settings, "secondary"),
+        )
+        return tuple(handle for handle in candidates if handle is not None)
 
     @property
     def usable_handles(self) -> tuple[ModelHandle, ...]:
         return tuple(h for h in self.handles if h.model_id not in self._unavailable)
+
+    def handle_for_role(self, role: ModelRole) -> ModelHandle | None:
+        """The configured, currently usable model for an explicit UI selection."""
+        return next((handle for handle in self.usable_handles if handle.role == role), None)
 
     def _client(self, region: str) -> Any:
         if region not in self._clients:

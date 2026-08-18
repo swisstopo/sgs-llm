@@ -49,6 +49,25 @@ describe('ChatService', () => {
     expect(service.busy).toBe(true);
   });
 
+  it('sends the selected agent model with the next query', () => {
+    service.selectModel('secondary');
+    expect(service.model).toBe('secondary');
+
+    service.send('Use Mistral for this query');
+
+    expect(client.sent.at(-1)).toMatchObject({
+      type: 'user_message',
+      model: 'secondary',
+    });
+  });
+
+  it('does not change the selected model during an active query', () => {
+    service.selectModel('primary');
+    service.send('Use Claude');
+    service.selectModel('secondary');
+    expect(service.model).toBe('primary');
+  });
+
   it('rejects empty input, double-send while busy, and closed connections', () => {
     expect(service.send('   ')).toBe(false);
     service.send('first');
@@ -168,6 +187,7 @@ describe('ChatService', () => {
         { role: 'assistant', content: 'answer one' },
       ]);
       expect(event.lang).toBe('de');
+      expect(event.model).toBe('primary');
     }
   });
 });

@@ -12,6 +12,7 @@
         "id": { "type": "string", "minLength": 1 },
         "content": { "type": "string", "minLength": 1 },
         "lang": { "enum": ["de", "fr", "it", "en", "rm"] },
+        "model": { "enum": ["primary", "secondary"], "default": "primary" },
         "history": {
           "type": "array",
           "items": {
@@ -28,7 +29,10 @@
           "required": ["bbox", "active_layer_ids"],
           "properties": {
             "bbox": { "$ref": "#/$defs/bbox" },
-            "active_layer_ids": { "type": "array", "items": { "type": "string" } }
+            "active_layer_ids": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
           }
         }
       }

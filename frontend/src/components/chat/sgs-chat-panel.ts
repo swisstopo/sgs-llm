@@ -4,6 +4,7 @@ import { consume } from '@lit/context';
 import { chatServiceContext, layerServiceContext } from '../../context';
 import type { ChatMessage, ChatService } from '../../services/ChatService';
 import type { LayerService, MapLayerState } from '../../services/LayerService';
+import type { ModelPreference } from '../../protocol/v1';
 import { ObservableController } from '../../lib/ObservableController';
 import { languageChanged$, t } from '../../i18n/i18n';
 import './sgs-chat-message';
@@ -55,6 +56,7 @@ export class SgsChatPanel extends LitElement {
 
   private messages?: ObservableController<ChatMessage[]>;
   private busy?: ObservableController<boolean>;
+  private model?: ObservableController<ModelPreference>;
   private mapLayers?: ObservableController<MapLayerState[]>;
 
   private readonly _language = new ObservableController(this, languageChanged$);
@@ -63,6 +65,7 @@ export class SgsChatPanel extends LitElement {
     super.connectedCallback();
     this.messages ??= new ObservableController(this, this.chatService.messages$);
     this.busy ??= new ObservableController(this, this.chatService.busy$);
+    this.model ??= new ObservableController(this, this.chatService.model$);
     this.mapLayers ??= new ObservableController(this, this.layerService.layers$);
   }
 
@@ -93,6 +96,9 @@ export class SgsChatPanel extends LitElement {
       <footer>
         <sgs-composer
           ?busy=${this.busy?.value ?? false}
+          .model=${this.model?.value ?? 'primary'}
+          @sgs-model-change=${(e: CustomEvent<{ model: ModelPreference }>) =>
+            this.chatService.selectModel(e.detail.model)}
           @sgs-send=${(e: CustomEvent<{ content: string }>) =>
             this.chatService.send(e.detail.content)}
           @sgs-cancel=${() => this.chatService.cancel()}

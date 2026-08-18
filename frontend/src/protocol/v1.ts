@@ -11,6 +11,7 @@
  */
 
 export type ProtocolLang = 'de' | 'fr' | 'it' | 'en' | 'rm';
+export type ModelPreference = 'primary' | 'secondary';
 
 export interface HistoryEntry {
   role: 'user' | 'assistant';
@@ -31,6 +32,8 @@ export interface UserMessageEvent {
   id: string;
   content: string;
   lang: ProtocolLang;
+  /** Agent model routing: Claude primary or Mistral secondary. */
+  model: ModelPreference;
   history?: HistoryEntry[];
   map_context?: MapContext;
 }

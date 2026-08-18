@@ -135,6 +135,11 @@ class TestParseResponse:
 
 
 class TestFallback:
+    def test_resolves_explicit_model_roles(self, settings: Settings) -> None:
+        models = BedrockModels(settings)
+        assert models.handle_for_role("primary") == models.handles[0]
+        assert models.handle_for_role("secondary") == models.handles[1]
+
     async def test_prefers_the_primary_model(self, settings: Settings) -> None:
         primary = FakeBedrockClient(_text_response("from claude"))
         secondary = FakeBedrockClient(_text_response("from mistral"))

@@ -27,6 +27,7 @@ def test_parses_a_user_message() -> None:
                 "id": "m1",
                 "content": "Zeige mir Hochwassergefahren im Wallis",
                 "lang": "de",
+                "model": "secondary",
                 "history": [{"role": "user", "content": "hallo"}],
                 "map_context": {"bbox": [7.0, 46.0, 8.2, 46.6], "active_layer_ids": ["a"]},
             }
@@ -35,6 +36,7 @@ def test_parses_a_user_message() -> None:
     assert isinstance(event, UserMessage)
     assert event.id == "m1"
     assert event.language == "de"
+    assert event.model == "secondary"
     assert event.map_context is not None
     assert event.map_context.bbox == (7.0, 46.0, 8.2, 46.6)
 
@@ -76,6 +78,28 @@ def test_romansh_is_supported() -> None:
     )
     assert isinstance(event, UserMessage)
     assert event.language == "rm"
+
+
+def test_model_defaults_to_primary_and_rejects_unknown_choices() -> None:
+    event = parse_client_event(
+        json.dumps({"type": "user_message", "id": "m1", "content": "hi", "lang": "en"})
+    )
+    assert isinstance(event, UserMessage)
+    assert event.model == "primary"
+    assert (
+        parse_client_event(
+            json.dumps(
+                {
+                    "type": "user_message",
+                    "id": "m2",
+                    "content": "hi",
+                    "lang": "en",
+                    "model": "auto",
+                }
+            )
+        )
+        is None
+    )
 
 
 def test_frames_omit_absent_optionals() -> None:

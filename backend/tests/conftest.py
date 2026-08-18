@@ -16,6 +16,7 @@ import pytest
 from app.agent.bedrock import (
     ConverseResult,
     ModelHandle,
+    ModelRole,
     NoModelAvailable,
     SystemPrompt,
     ToolUse,
@@ -50,6 +51,7 @@ def settings() -> Settings:
 
 
 HANDLE = ModelHandle(model_id="test.primary", region="eu-central-1", role="primary")
+SECONDARY_HANDLE = ModelHandle(model_id="test.secondary", region="eu-west-1", role="secondary")
 
 
 class FakeModels:
@@ -58,6 +60,9 @@ class FakeModels:
     def __init__(self, script: list[ConverseResult | Exception]) -> None:
         self._script = list(script)
         self.calls: list[dict[str, Any]] = []
+
+    def handle_for_role(self, role: ModelRole) -> ModelHandle | None:
+        return HANDLE if role == "primary" else SECONDARY_HANDLE
 
     async def converse_with_fallback(
         self,

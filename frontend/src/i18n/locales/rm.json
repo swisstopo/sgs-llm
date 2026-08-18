@@ -32,6 +32,11 @@
   "chat": {
     "placeholder": "Fai ina dumonda davart geodatas svizras …",
     "send": "Trametter",
+    "model": {
+      "label": "Model",
+      "primary": "Claude Sonnet 4.6",
+      "secondary": "Ministral 3 14B"
+    },
     "newConversation": "Nova conversaziun",
     "cancel": "Interrumper",
     "welcome": "Fai dumondas davart geodatas svizras – per exempel:",

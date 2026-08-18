@@ -53,6 +53,17 @@ async def test_plain_answer_emits_one_final(settings) -> None:
     assert stats.input_tokens == 10
 
 
+async def test_explicit_model_selection_pins_the_requested_model(settings) -> None:
+    models = FakeModels([text_result("Antwort von Mistral")])
+
+    events = await _collect(
+        _message(model="secondary"), models, FakeGateway(NO_TOOLS), settings, TurnStats()
+    )
+
+    assert events[-1].type == "final"
+    assert models.calls[0]["handle"].role == "secondary"
+
+
 async def test_tool_call_streams_progress_and_attaches_the_layer(settings) -> None:
     from tests.conftest import FakeModels
 

@@ -7,6 +7,7 @@ import type {
   HistoryEntry,
   LayerSpec,
   MapContext,
+  ModelPreference,
   ProtocolBBox,
   ServerEvent,
 } from '../protocol/v1';
@@ -51,6 +52,7 @@ const HISTORY_LIMIT = 10;
 export class ChatService {
   private readonly messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
   private readonly busySubject = new BehaviorSubject<boolean>(false);
+  private readonly modelSubject = new BehaviorSubject<ModelPreference>('primary');
 
   constructor(
     private readonly client: AgentClient,
@@ -76,6 +78,20 @@ export class ChatService {
     return this.busySubject.value;
   }
 
+  get model$(): Observable<ModelPreference> {
+    return this.modelSubject.asObservable();
+  }
+
+  get model(): ModelPreference {
+    return this.modelSubject.value;
+  }
+
+  selectModel(model: ModelPreference): void {
+    if (!this.busy) {
+      this.modelSubject.next(model);
+    }
+  }
+
   /** Sends a user message; returns false when sending is not possible. */
   send(content: string): boolean {
     const trimmed = content.trim();
@@ -88,6 +104,7 @@ export class ChatService {
       id,
       content: trimmed,
       lang: currentLanguage(),
+      model: this.model,
       history: this.buildHistory(),
       map_context: this.mapContextProvider?.(),
     });
