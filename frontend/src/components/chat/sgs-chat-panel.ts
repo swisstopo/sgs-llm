@@ -144,7 +144,8 @@ export class SgsChatPanel extends LitElement {
 
   private onMessagesScroll(event: Event): void {
     const container = event.currentTarget as HTMLElement;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
     this.followLatest = distanceFromBottom <= 48;
   }
 
