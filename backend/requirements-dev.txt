@@ -3,10 +3,10 @@
 # Imported by mcp_dummy/ and the tests; app/ uses httpx2.
 httpx==0.28.1
 
-# Geometry for the stand-in MCP server's `compute` tool. Dev-only: mcp_dummy/ is not in
-# the production image, so these must not be in requirements.txt. GeoJSON only for now -
-# the frontend cannot render GeoParquet yet
-# (docs/architecture.md#data-layers-from-chat), so pyarrow is deliberately absent.
+# Geometry for the stand-in MCP server's `analyze_features` tool. Dev-only: mcp_dummy/ is
+# not in the production image, so these must not be in requirements.txt. The stand-in
+# publishes GeoJSON and therefore does not need PyArrow; production geosearch publishes
+# GeoParquet (docs/architecture.md#data-layers-from-chat).
 shapely==2.1.2
 pyproj==3.7.2
 

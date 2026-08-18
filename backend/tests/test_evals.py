@@ -37,7 +37,7 @@ KNOWN_EXPECT_KEYS = {
     "no_layer",
     "judge",
 }
-# Both servers' tool sets. `display_division` is geosearch's alone.
+# Union of both servers' tool sets; four tools are exclusive to production geosearch.
 KNOWN_TOOLS = {
     "search_layers",
     "search_locations",

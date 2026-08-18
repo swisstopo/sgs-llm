@@ -127,6 +127,10 @@ needs. `magistral-small-2509` answered the same prompt with `end_turn` and no to
 call, so it was rejected; `mistral.mistral-large-2402` is older and returned no
 usable content.
 
+`find_geodata_layer` was the synthetic tool name used by that historical model probe, not a
+current MCP tool. The production discovery tool is `search_layers`; see
+[`mcp-tool-catalog.md`](./mcp-tool-catalog.md) for the complete current surface.
+
 Because the two models live in different regions, the task definition carries
 `BEDROCK_SECONDARY_REGION` (`eu-west-1`) alongside `BEDROCK_REGION`
 (`eu-central-1`). Ireland is inside the EU, and an in-region on-demand call does

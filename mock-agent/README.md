@@ -1,8 +1,10 @@
 # Mock agent
 
-A small Node WebSocket server that stands in for the LLM agent backend during
-development. It implements the agent protocol v1 ([`../docs/protocol.md`](../docs/protocol.md))
-so the frontend chat works end-to-end before the real backend exists.
+A small Node WebSocket server used as a deterministic UI and protocol test double. It
+implements agent protocol v1 ([`../docs/protocol.md`](../docs/protocol.md)) so frontend work
+can run end-to-end without Bedrock, AWS credentials, or an MCP server. The production agent
+lives in [`../backend/`](../backend/) and connects to the ten-tool
+[`../geosearch/`](../geosearch/) MCP server.
 
 ```bash
 npm install
@@ -16,9 +18,9 @@ npm start            # ws://localhost:8787/ws/v1  +  POST http://localhost:8787/
   tool-progress events, then a `final` markdown answer with a sample data
   layer, then `done`. Scenario text is localized to the request language.
 - **Data layers** — bundled GeoJSON in `data/` is served over HTTP with
-  permissive CORS, mirroring how the real agent will hand out presigned URLs.
-  The `parquet` scenario intentionally returns an unsupported format to
-  exercise the client's graceful degradation.
+  permissive CORS, mirroring how the production agent hands out presigned URLs.
+  The legacy `parquet` scenario intentionally points to a missing sample asset to exercise
+  the client's fetch-error handling; valid GeoParquet produced by `geosearch` is supported.
 - **Feedback** — `POST /feedback` validates `{category, message, ...}` and
   appends it to `feedback.log` (JSONL, git-ignored; override the path with
   `FEEDBACK_LOG`).
@@ -26,12 +28,11 @@ npm start            # ws://localhost:8787/ws/v1  +  POST http://localhost:8787/
   production load balancer probes, so the endpoint is part of the backend
   contract, not a mock-only convenience.
 
-## Running as the deployed backend image
+## Running the rollback/reference image
 
-`Dockerfile` builds this server as the container the ECS Fargate service runs.
-Until the real agent lands under `backend/`, it is the deployed backend — which
-means the whole CloudFront → ALB → Fargate path (including the WebSocket upgrade)
-is exercised by the reference implementation of the protocol.
+`Dockerfile` builds the historical rollback image for the ECS Fargate service. It remains
+useful for checking the CloudFront → ALB → Fargate path, including the WebSocket upgrade,
+but the current production image is built from [`../backend/Dockerfile`](../backend/Dockerfile).
 
 ```bash
 docker build -f mock-agent/Dockerfile -t sgs-llm-backend .   # from the repo root
@@ -40,6 +41,9 @@ docker run --rm -p 8787:8787 sgs-llm-backend
 
 It shuts down on `SIGTERM` so ECS task draining is clean. See
 [`../docs/deployment.md`](../docs/deployment.md#backend-deployment).
+
+The mock agent does not execute MCP tools. It keyword-routes to canned protocol events;
+use the real backend plus `geosearch` when testing the tool catalogue or agent planning.
 
 ## QA triggers (in the chat message text)
 

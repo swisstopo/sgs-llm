@@ -25,8 +25,9 @@ directly for map interactivity.
   for the geodata tools, plus feedback and conversation-turn persistence. See
   [`docs/architecture.md`](docs/architecture.md#backend-architecture).
 - **`geosearch/`** - the geodata **MCP server** the chat answers from: semantic search over
-  all 896 catalogue layers, administrative boundaries from swissBOUNDARIES3D, and
-  `identify` subdivided over a grid so a count is a real total rather than a capped page.
+  all 896 catalogue layers, precise address and point lookup, complete point identify,
+  administrative boundaries from swissBOUNDARIES3D, schema-validated filtering, spatial
+  analysis, and map-ready official or personalized layers.
   Deployed as its own service ([`geosearch/README.md`](geosearch/README.md)).
 - **`mcp_dummy/`** - a stand-in geodata MCP server whose tools are backed by the **real**
   geo.admin.ch APIs. It predates `geosearch/` and now serves development and evaluation
@@ -54,7 +55,7 @@ a prototype - not for operational use; interfaces and layout may still change.
 > before that clears keeps using the secondary until restarted - see
 > [`docs/llm.md`](docs/llm.md).
 
-A live POC instance (frontend + mock-agent) is deployed on AWS at
+A live POC instance (frontend + agent backend + geosearch MCP) is available at
 **https://denpw8uo5zpkl.cloudfront.net/**. See [Deployment](#deployment).
 
 ## Features
@@ -71,7 +72,9 @@ A live POC instance (frontend + mock-agent) is deployed on AWS at
 - **SwissGeo-style shell** — a left icon rail; clicking an icon slides its flyout panel in as
   an animated overlay over the map (one open at a time, resizable by dragging its right edge):
   - **Chat** — natural-language conversation with streamed tool-progress, sanitized markdown
-    answers, and data layers rendered on the map; a "+" button starts a new conversation
+    answers, and data layers rendered on the map; exact official layer titles open an inline
+    add/remove/details control, while personalized points, parcels, boundaries, and filtered
+    results use a separate **Show result on map** card; a "+" button starts a new conversation
   - **Displayed maps** — three Swisstopo basemaps (color / grey / aerial) and the active
     layer list with visibility, opacity, drag-and-drop ordering, zoom-to-extent, per-layer
     information, and a hint when many layers are active
@@ -103,8 +106,7 @@ Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core, map in EPSG:2056)
   └── WebSocket /ws/v1 ─────────►  Agent backend (backend/)
                                      ├─ Amazon Bedrock - Claude / Mistral, EU regions
                                      ├─ MCP client ──► geodata MCP server (geosearch/)
-                                     │                 FAISS catalogue search, boundaries,
-                                     │                 grid-subdivided identify
+                                     │                 10 intent-oriented Swiss geodata tools
                                      └─ DynamoDB - feedback + conversation turns
 ```
 
@@ -118,13 +120,62 @@ and [`docs/deployment.md`](docs/deployment.md#backend-deployment); model choice 
 current Bedrock access situation are in [`docs/llm.md`](docs/llm.md); the evaluation set and
 model benchmark are in [`docs/evals.md`](docs/evals.md).
 
+## MCP tools
+
+The production [`geosearch`](geosearch/README.md) server exposes ten intent-oriented tools.
+The model chooses and chains them; users ask ordinary questions rather than selecting tools.
+
+| Tool | Purpose |
+| --- | --- |
+| `search_layers` | Discover official Swiss datasets by subject and return actionable official-layer references. |
+| `geocode_location` | Resolve addresses, parcels, postcodes, and named points in WGS84 and LV95. |
+| `describe_layer` | Inspect layer metadata, schema, attributes, services, legend, timestamps, and downloads. |
+| `identify_at_point` | Retrieve complete feature properties and official links at an exact location. |
+| `search_locations` | Resolve cantons, districts, communes, localities, and Switzerland to administrative areas. |
+| `display_division` | Prepare an administrative boundary as a personalized GeoParquet layer. |
+| `filter_features` | Fetch all matching features inside a real boundary or current map bbox using validated filters. |
+| `display_catalog_layer` | Offer an official WMS, WMTS, or GeoJSON layer for the user to add to the map. |
+| `analyze_features` | Calculate counts, measurements, extents, groups, top values, and numeric statistics. |
+| `display_layer` | Publish a fetched, geocoded, or identified result as a personalized GeoParquet layer. |
+
+There are deliberately two map outputs:
+
+- **Official map layer** — existing nationwide geo.admin.ch content; click its exact title in
+  chat, then choose **Add map layer**, **Remove map layer**, or **Layer details**.
+- **Personalized result layer** — the exact point, parcel, boundary, or filtered features made
+  for the question; use **Show result on map** on its result card.
+
+Complete input/output contracts and acceptance cases are in
+[`docs/mcp-tool-catalog.md`](docs/mcp-tool-catalog.md). The latest sequential local
+browser/agent/MCP acceptance run is recorded in
+[`docs/local-e2e-acceptance-report-2026-08-18.md`](docs/local-e2e-acceptance-report-2026-08-18.md).
+
+### Example questions
+
+```text
+What official Swiss datasets are available about avalanche hazards?
+
+Find the exact coordinates of Seftigenstrasse 264, 3084 Wabern.
+Show me on the map.
+
+Locate Seftigenstrasse 264, 3084 Wabern; return the EGRID, official PDF
+extract, online extract, and responsible authority. Prepare the exact parcel
+result for the map and offer the official nationwide ÖREB availability layer separately.
+
+Find every municipality in canton Zug. Tell me the exact count, total area,
+total boundary length, minimum/maximum/average municipality area, and show both
+the municipalities and canton boundary on the map.
+
+Show me flood hazards in Valais.
+```
+
 ## Repository layout
 
 ```text
 frontend/      Lit + TypeScript + Vite chat + map application
 backend/       Python agent backend: protocol v1, Bedrock LLM loop, MCP client, persistence
-geosearch/     Geodata MCP server: FAISS catalogue search, boundaries, feature fetching
-mcp_dummy/     Stand-in geodata MCP server backed by the real geo.admin.ch APIs
+geosearch/     Production MCP: ten Swiss geodata discovery, query, analysis, and map tools
+mcp_dummy/     Six-tool compatibility stand-in backed by the real geo.admin.ch APIs
 evals/         Question set + runner; doubles as a side-by-side model benchmark
 mock-agent/    Node WebSocket server implementing the agent protocol for development
 layers/        Per-layer presentation overrides (layers_wmts.json5)
@@ -163,8 +214,9 @@ bucket is involved.
 > `BEDROCK_REGION=eu-central-1` in a shell shared with the backend silently degrades every
 > search to unfiltered vector hits. Export `BEDROCK_SECONDARY_REGION=eu-west-1` too.
 
-`python -m mcp_dummy.server` (port 8788) is the alternative: no index, no build, weaker
-search. It is what the evaluation harness and the integration tests use.
+`python -m mcp_dummy.server` (port 8788) is the compatibility alternative: no index, no
+build, and only six tools. Integration tests and the compatibility evaluation categories
+use it; production-tool evaluations use a running `geosearch` server.
 
 ### Run an agent backend (terminal 2)
 
@@ -205,6 +257,10 @@ npm run dev        # http://localhost:5173
 The agent WebSocket URL and feedback endpoint are configured at runtime in
 `frontend/public/config.json` (no rebuild needed to repoint them in a deployment).
 
+Open the Chat panel and try any question under [Example questions](#example-questions).
+When an answer names an official layer, click its title to inspect or add it. When an answer
+produces a personalized result card, click **Show result on map** instead.
+
 ### Other frontend commands
 
 ```bash
@@ -232,27 +288,29 @@ docker run -p 8080:80 sgs-llm-frontend
 ## Deployment
 
 A POC is deployed on AWS at **https://denpw8uo5zpkl.cloudfront.net/** — the static
-frontend on **S3 + CloudFront**, with the development **mock-agent** on a single
-**EC2** instance behind the same CloudFront distribution (so the site, the chat
-`wss://` WebSocket, `/feedback`, and `/data/*` are all served from one HTTPS
-origin).
+frontend is on **S3 + CloudFront**; `/ws/v1`, `/feedback`, and `/data/*` route through an
+**ALB** to the agent backend on **ECS Fargate**. The backend reaches the private geosearch
+MCP service through ECS Service Connect, so the browser never calls MCP directly.
 
 ```text
-                 ┌──────────── CloudFront (HTTPS / wss) ───────────┐
- browser ──────► │  /                         → S3  (private, OAC)  │
-                 │  /ws/v1, /feedback, /data/* → EC2 (mock-agent)    │
-                 └──────────────────────────────────────────────────┘
+                 ┌────────────── CloudFront (HTTPS / wss) ──────────────┐
+ browser ──────► │  /                           → S3 (private, OAC)       │
+                 │  /ws/v1, /feedback, /data/*  → ALB → agent (Fargate) │
+                 └───────────────────────────────────────────────────────┘
+                                                       │ Service Connect
+                                                       ▼
+                                                geosearch MCP (Fargate)
 ```
 
 **Every push to `main` redeploys the frontend automatically**: the `deploy` job
 in the CI workflow assumes a scoped IAM role via GitHub OIDC (no stored AWS
 keys) and runs the deploy script after the checks pass.
 
-The full process — reproduce-from-scratch steps, the redeploy script
-([`scripts/deploy-frontend.sh`](scripts/deploy-frontend.sh)), the OIDC role,
-how to operate the EC2 mock-agent, cost/teardown, and the CloudFront
-configuration — is in [`docs/deployment.md`](docs/deployment.md). Manual
-redeploy fallback:
+The full process — reproduce-from-scratch steps, the
+[`frontend`](scripts/deploy-frontend.sh), [`backend`](scripts/deploy-backend.sh), and
+[`geosearch`](scripts/deploy-geosearch.sh) redeploy scripts, the OIDC role,
+the retained EC2 rollback origin, cost/teardown, and the CloudFront configuration — is in
+[`docs/deployment.md`](docs/deployment.md). Manual frontend redeploy fallback:
 
 ```bash
 PROFILE=swisstopo ./scripts/deploy-frontend.sh

@@ -1,14 +1,15 @@
 # Stand-in geodata MCP server
 
-A working MCP server exposing geodata tools over **Streamable HTTP**, backed by the
-**real public geo.admin.ch APIs**. It exists so the backend's MCP client, agent loop and
-evaluation harness could be built and benchmarked before swisstopo's own MCP server is
-available.
+A small compatibility MCP server exposing six geodata tools over **Streamable HTTP**,
+backed by the **real public geo.admin.ch APIs**. It remains useful for backend integration
+tests, evaluation fixtures, and lightweight local development. Production uses the
+ten-tool [`geosearch`](../geosearch/README.md) server.
 
-It is a *stand-in for that server*, not a mock of it: the tools return genuine Swiss
-federal data, so the answers are real and the whole tool contract is exercised end to
-end. Replacing it is one environment variable - set `MCP_SERVER_URL` to the real
-endpoint and the backend connects there instead, with no code or image change.
+It is a *stand-in*, not a mock: its tools return genuine Swiss federal data. It deliberately
+does not reproduce the production search index, authoritative geocoder, schema inspection,
+point-identify, administrative-boundary display, structured filters, or advanced analysis.
+Switching between servers is one environment variable: set `MCP_SERVER_URL` to the desired
+endpoint and the backend discovers that server's actual tool catalogue.
 
 > **It does not answer production traffic.** The backend refuses chat turns unless
 > `MCP_SERVER_URL` names a real server, so this one serves development, the integration
@@ -18,6 +19,9 @@ endpoint and the backend connects there instead, with no code or image change.
 
 ## Tools
 
+This is the six-tool compatibility subset. For the ten production tools and their full
+input/output contracts, see [`docs/mcp-tool-catalog.md`](../docs/mcp-tool-catalog.md).
+
 | Tool | Backed by | Returns |
 | --- | --- | --- |
 | `search_layers` | SearchServer `type=layers` | candidate `layer_id`s with titles and a trimmed abstract |
@@ -25,6 +29,11 @@ endpoint and the backend connects there instead, with no code or image change.
 | `filter_features` | `MapServer/identify` as a bbox query | a `result_id` handle plus a summary of the features |
 | `analyze_features` | shapely + pyproj | count, total area (km²), total length (km), extent |
 | `display_layer` | the backend's artifact store | a published GeoJSON URL, bbox, geometry type and count |
+
+Production-only tools are `geocode_location`, `describe_layer`, `identify_at_point`, and
+`display_division`. Production `filter_features` additionally
+supports real administrative-boundary clipping and structured schema-validated filters;
+production `analyze_features` adds grouping, top values, and numeric statistics.
 
 Two design choices are worth knowing, because a real server will face both:
 
@@ -56,6 +65,13 @@ client at it.
 
 This is how you use it locally: start it, then set `MCP_SERVER_URL=http://127.0.0.1:8788/mcp`
 so the backend connects over the same Streamable HTTP path production uses.
+
+Example compatibility query:
+
+```text
+Find municipalities named Zug, count the returned features, and prepare them for the map.
+search_locations → filter_features → analyze_features → display_layer
+```
 
 The integration tests and the eval harness instead construct it **in-process** over the
 MCP SDK's in-memory transport - no listener, no port, nothing exposed. That is

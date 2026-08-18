@@ -150,6 +150,10 @@ with one or more failed steps in it. Note that this differs from the wording in
 - `focus_bbox` — optional WGS84 camera target applied after the user adds an official
   layer. A reference is an offer, not an automatic map mutation.
 
+The WebSocket protocol intentionally describes presentation rather than MCP implementation
+details. The production server's ten tool contracts and representative chains are documented
+in [`mcp-tool-catalog.md`](./mcp-tool-catalog.md).
+
 ### `error`
 
 ```json
@@ -181,7 +185,9 @@ Always the terminal event of an exchange.
 3. Events of one exchange arrive in order; exchanges are not interleaved on
    a single connection.
 
-## Waiting for the production MCP server
+<a id="waiting-for-the-production-mcp-server"></a>
+
+## Production MCP configuration
 
 The backend answers only when it is connected to a real geodata MCP server
 (`MCP_SERVER_URL`). Until then it **accepts connections and refuses every turn** with
@@ -203,8 +209,8 @@ Two consequences worth knowing:
   rather than refusing. The model is told its tools are unavailable and answers what it
   can, per [`architecture.md`](./architecture.md#backend-architecture).
 - The refusal lives in the transport, not the agent loop, so the evaluation harness
-  ([`evals.md`](./evals.md)) still drives the loop against the stand-in and the
-  benchmark keeps working.
+  ([`evals.md`](./evals.md)) can drive the loop against either its in-process stand-in or a
+  running production geosearch endpoint.
 
 ## Limits and the optional key
 

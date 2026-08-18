@@ -67,8 +67,9 @@ Parameters:
     MaxValue: 1
     Description: >-
       Capped at 1 on purpose. `result_id` handles live in the ResultCache inside
-      one process (geosearch/results.py), so a second task would answer `compute`
-      with "unknown result_id" for half the handles it just issued. Raising this
+      one process (geosearch/results.py), so a second task would answer
+      `analyze_features` or `display_layer` with "unknown result_id" for half the
+      handles it just issued. Raising this
       needs a shared store or sticky routing first. Set 0 to park the service.
   ImageTag:
     Type: String
@@ -185,8 +186,9 @@ Resources:
         # 0/100, not the backend's 100/200: two tasks must never run at once, for
         # the same reason DesiredCount is capped at 1. The cost is a gap of a
         # minute or two on every deploy, during which the backend's tool calls
-        # fail. That is the honest trade against a `compute` that silently cannot
-        # find the features `filter_features` just returned.
+        # fail. That is the honest trade against an `analyze_features` or
+        # `display_layer` call that silently cannot find the features
+        # `filter_features` just returned.
         MinimumHealthyPercent: 0
         MaximumPercent: 100
         DeploymentCircuitBreaker:

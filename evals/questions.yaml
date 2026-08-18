@@ -115,6 +115,9 @@
     answer_lang: de
     must_not_contain: ["welchen Ort", "welche Region"]
 
+# These four stable scenario IDs retain their historical `compute-*` prefix so stored
+# benchmark runs remain comparable. Their required production tool is now
+# `analyze_features`, as asserted below.
 - id: compute-count-de
   lang: de
   category: compositional
