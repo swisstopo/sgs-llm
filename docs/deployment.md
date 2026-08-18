@@ -97,7 +97,7 @@ templates; generated values come from the stack outputs:
 | Target group | `sgs-llm-backend-tg` (`/health`, HTTP 8787) |
 | Network (consumed, not created) | `vpc-0abf5add40b8be118` (default VPC) · subnets `subnet-0948e33e0f3c89a56`, `subnet-04daf3587f8597662`, `subnet-0c7a22581e6edd850` |
 | Security groups | `sgs-llm-backend-alb-sg` (CloudFront → 80), `sg-0890c6a0bb344e749` task SG (ALB → 8787) |
-| DynamoDB tables | `sgs-llm-feedback`, `sgs-llm-conversations` (on-demand, TTL, PITR) |
+| DynamoDB tables | `sgs-llm-feedback`, `sgs-llm-conversations` (on-demand, PITR; TTL auto-delete OFF — see What gets stored) |
 | S3 bucket (data layers) | `sgs-llm-data-259789526488` (private, presigned reads) |
 | CloudWatch log group | `/ecs/sgs-llm-backend` (30 days) |
 | Secret | `sgs-llm/backend` (optional MCP token; geosearch currently relies on VPC and security-group isolation) |
@@ -687,7 +687,7 @@ ECS from Secrets Manager at task start.
 | `BEDROCK_SECONDARY_MODEL_ID` | parameter | Second model for side-by-side evaluation |
 | `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
-| `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | foundation stack | Retention the backend must stamp into `expires_at` |
+| `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | parameters (0) | Days ahead to stamp `expires_at`; 0 = write no stamp (keep forever) |
 | `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON-compatible producers and geosearch GeoParquet artifacts; published objects expire after 30 days |
 | `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
 | `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
@@ -711,10 +711,49 @@ aws ecs update-service --profile swisstopo --region eu-central-1 \
 
 ### What gets stored
 
-Two DynamoDB tables (on-demand billing, point-in-time recovery on, TTL enabled).
+Two DynamoDB tables (on-demand billing, point-in-time recovery on).
 The GSI partition key is named `log_date` rather than `day` because **`DAY` is a
 DynamoDB reserved word** and would otherwise need an expression-attribute alias in
 every query.
+
+**Automatic deletion is currently OFF** (decision of 2026-08-18), at both layers:
+
+- the `RetentionAutoDelete` foundation parameter is `false`, so DynamoDB TTL is
+  disabled on both tables, and
+- `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` are `0` (service-stack
+  parameters), so the backend **writes no `expires_at` attribute at all**. TTL
+  ignores items without the attribute, so data written during this phase can
+  never be reaped, even after automatic deletion is re-enabled.
+
+**No stored item is ever deleted automatically — the pilot keeps everything.**
+The write moment is always recorded (`ts`, millisecond ISO-8601, plus `log_date`),
+so a retention policy adopted later can still be applied to old items by
+backfilling `expires_at` from `ts`.
+
+**To enable automatic retention for production** (after the periods are signed
+off), both layers flip back:
+
+```bash
+# 1. New items get expiry stamps again (service stack):
+aws cloudformation deploy --profile swisstopo --region eu-central-1 \
+  --stack-name sgs-llm-backend-service \
+  --template-file infra/backend-service.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides FeedbackTtlDays=365 ConversationTtlDays=90
+
+# 2. TTL starts deleting stamped items (foundation stack):
+aws cloudformation deploy --profile swisstopo --region eu-central-1 \
+  --stack-name sgs-llm-backend-foundation \
+  --template-file infra/backend-foundation.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides RetentionAutoDelete=true
+```
+
+> Items written while retention was off have **no `expires_at`**, so TTL never
+> touches them: enforcing the policy on them too means backfilling `expires_at`
+> from each item's `ts`. Conversely, any item that does carry a stamp already in
+> the past is deleted **within days** of enabling TTL. DynamoDB also rate-limits
+> TTL toggles (roughly one change per table per hour).
 
 **`sgs-llm-feedback`** — one item per submitted feedback form:
 
@@ -724,7 +763,7 @@ every query.
 | `log_date` + `ts` | `ByDay` GSI: `YYYY-MM-DD` + ISO-8601 timestamp, newest-first reads |
 | `category` | `bug` \| `feature` \| `improvement` \| `question` \| `other` |
 | `message`, `email?`, `lang` | as submitted by the form ([`submitFeedback.ts`](../frontend/src/feedback/submitFeedback.ts)) |
-| `expires_at` | epoch seconds; DynamoDB TTL deletes the item (default 365 days) |
+| `expires_at` | absent while retention is off (`FEEDBACK_TTL_DAYS=0`); otherwise epoch seconds, enforced only when `RetentionAutoDelete=true` |
 
 **`sgs-llm-conversations`** — one item per conversation turn:
 
@@ -739,7 +778,7 @@ every query.
 | `tool_calls`, `layer_count` | tool names in call order, and how many layers were returned |
 | `latency_ms`, `input_tokens`, `output_tokens` | for evaluating cost and speed |
 | `error_code` | present only on a failed turn: the protocol codes (`internal`, `timeout`, `cancelled`, `bad_request`), plus `mcp_not_configured` for a turn refused because no geodata server is connected - that one is not a protocol code, it is recorded so the dark period can be counted |
-| `expires_at` | epoch seconds; TTL default 90 days |
+| `expires_at` | absent while retention is off (`CONVERSATION_TTL_DAYS=0`); otherwise epoch seconds, enforced only when `RetentionAutoDelete=true` |
 
 Failed turns are recorded too - a turn that timed out is exactly the kind of thing the
 pilot needs to count. Both writes are **best effort**: storage exists to evaluate the
@@ -753,10 +792,10 @@ tools, layer count, latency and error code, so the service can be watched with
 
 > ⚠️ **Data protection.** Storing conversation turns and feedback (which may
 > include an email address the user typed) is **personal data**, and it changes
-> what [`architecture.md`](./architecture.md#security-notes) used to promise. The
-> retention periods above are defaults chosen here, not an approved policy —
-> **they need sign-off from swisstopo before this carries real user traffic**, and
-> the privacy notice shown to users should match. Bedrock **model invocation
+> what [`architecture.md`](./architecture.md#security-notes) used to promise. With
+> auto-delete off, retention is currently **indefinite** — that makes the
+> swisstopo sign-off *more* pressing, not less, and the privacy notice shown to
+> users must state what is actually configured. Bedrock **model invocation
 > logging is deliberately left off**: it would capture full prompts and responses,
 > it is an account-wide per-region setting, and the application-level tables above
 > already cover the requirement.

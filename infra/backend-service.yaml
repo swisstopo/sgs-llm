@@ -15,6 +15,8 @@ Metadata:
         Parameters: [TaskCpu, TaskMemory, DesiredCount, ImageTag, ContainerPort]
       - Label: { default: Backend configuration }
         Parameters:
+          - FeedbackTtlDays
+          - ConversationTtlDays
           - PrimaryModelId
           - SecondaryModelId
           - SecondaryModelRegion
@@ -77,6 +79,20 @@ Parameters:
     Type: Number
     Default: 8787
     Description: Must match the foundation stack's target group port.
+  FeedbackTtlDays:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    Description: >-
+      Days after which a feedback item's expires_at is stamped. 0 (the pilot's
+      keep-everything setting, decision of 2026-08-18) writes no expires_at at
+      all, so the item can never be reaped by TTL — even if automatic deletion
+      is enabled later. The write moment is always recorded in `ts`.
+  ConversationTtlDays:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    Description: Same rule for conversation turns. 0 = keep forever.
   PrimaryModelId:
     Type: String
     Default: eu.anthropic.claude-sonnet-4-6
@@ -237,12 +253,11 @@ Resources:
             - Name: CONVERSATION_TABLE
               Value: !ImportValue
                 Fn::Sub: '${FoundationStackName}-ConversationTableName'
-            - Name: FEEDBACK_TTL_DAYS
-              Value: !ImportValue
-                Fn::Sub: '${FoundationStackName}-FeedbackTtlDays'
-            - Name: CONVERSATION_TTL_DAYS
-              Value: !ImportValue
-                Fn::Sub: '${FoundationStackName}-ConversationTtlDays'
+            # Direct parameters, not the foundation exports: an exported value
+            # cannot change while another stack imports it, which would freeze
+            # retention at whatever it was on day one.
+            - { Name: FEEDBACK_TTL_DAYS, Value: !Ref FeedbackTtlDays }
+            - { Name: CONVERSATION_TTL_DAYS, Value: !Ref ConversationTtlDays }
             - Name: DATA_LAYER_BUCKET
               Value: !ImportValue
                 Fn::Sub: '${FoundationStackName}-DataLayerBucketName'

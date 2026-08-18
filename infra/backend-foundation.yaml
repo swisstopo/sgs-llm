@@ -17,7 +17,7 @@ Metadata:
       - Label: { default: Frontend integration }
         Parameters: [FrontendOrigin]
       - Label: { default: Data retention }
-        Parameters: [FeedbackTtlDays, ConversationTtlDays, DataLayerExpiryDays]
+        Parameters: [RetentionAutoDelete, FeedbackTtlDays, ConversationTtlDays, DataLayerExpiryDays]
       - Label: { default: CI/CD and developer access }
         Parameters: [OidcProviderArn, GitHubRepo, GitHubBranch, DevAccessCidr, DevAccessPrincipalArn]
 
@@ -70,18 +70,32 @@ Parameters:
     Description: >-
       Browser origin allowed to fetch data-layer artifacts from S3 via presigned
       URLs (the CloudFront distribution serving the frontend).
+  RetentionAutoDelete:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Whether DynamoDB TTL actually deletes feedback and conversation items when
+      their `expires_at` passes. 'false' for the pilot: every item is kept
+      indefinitely (decision of 2026-08-18), while the backend keeps stamping
+      `expires_at` so a retention policy can be enforced later. Set 'true' for
+      production once the retention periods are signed off — and read the warning
+      in docs/deployment.md first: enabling TTL deletes every item whose
+      `expires_at` is already in the past within days.
   FeedbackTtlDays:
     Type: Number
     Default: 365
     MinValue: 1
     Description: >-
-      Retention for user feedback (may contain an email address the user typed).
-      Enforced by the backend writing `expires_at`; DynamoDB TTL then deletes.
+      Retention stamped into feedback items' `expires_at` (feedback may contain an
+      email address the user typed). Only enforced when RetentionAutoDelete=true.
   ConversationTtlDays:
     Type: Number
     Default: 90
     MinValue: 1
-    Description: Retention for stored conversation turns (chat content is user data).
+    Description: >-
+      Retention stamped into conversation turns' `expires_at` (chat content is
+      user data). Only enforced when RetentionAutoDelete=true.
   DataLayerExpiryDays:
     Type: Number
     Default: 30
@@ -119,6 +133,7 @@ Parameters:
       access here is IAM Identity Center). Narrow it to a specific role ARN if needed.
 
 Conditions:
+  AutoDeleteEnabled: !Equals [!Ref RetentionAutoDelete, 'true']
   HasOidcProviderArn: !Not [!Equals [!Ref OidcProviderArn, '']]
   EnableDevAccess: !Not [!Equals [!Ref DevAccessCidr, '']]
   HasDevPrincipal: !Not [!Equals [!Ref DevAccessPrincipalArn, '']]
@@ -290,7 +305,7 @@ Resources:
           Projection: { ProjectionType: ALL }
       TimeToLiveSpecification:
         AttributeName: expires_at
-        Enabled: true
+        Enabled: !If [AutoDeleteEnabled, true, false]
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       Tags:
@@ -321,7 +336,7 @@ Resources:
           Projection: { ProjectionType: ALL }
       TimeToLiveSpecification:
         AttributeName: expires_at
-        Enabled: true
+        Enabled: !If [AutoDeleteEnabled, true, false]
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       Tags:

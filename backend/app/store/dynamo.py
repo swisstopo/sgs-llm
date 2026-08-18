@@ -92,8 +92,13 @@ class Store:
             "category": category,
             "message": message,
             "lang": lang,
-            "expires_at": _expires_at(moment, self._settings.feedback_ttl_days),
         }
+        # No expires_at while retention is switched off (TTL_DAYS=0): TTL skips
+        # items without the attribute, so re-enabling deletion later can never
+        # reap data written during the keep-everything phase. `ts` remains the
+        # record of when the item was stored.
+        if self._settings.feedback_ttl_days > 0:
+            item["expires_at"] = _expires_at(moment, self._settings.feedback_ttl_days)
         if email:
             item["email"] = email
         await self._put(self._settings.feedback_table, item)
@@ -134,8 +139,10 @@ class Store:
             "latency_ms": latency_ms,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "expires_at": _expires_at(moment, self._settings.conversation_ttl_days),
         }
+        # Same keep-everything rule as record_feedback: no expires_at at TTL_DAYS=0.
+        if self._settings.conversation_ttl_days > 0:
+            item["expires_at"] = _expires_at(moment, self._settings.conversation_ttl_days)
         if assistant_markdown:
             item["assistant_markdown"] = assistant_markdown
         if model_id:

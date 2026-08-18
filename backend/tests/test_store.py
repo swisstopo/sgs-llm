@@ -68,6 +68,43 @@ class TestFeedback:
         days = (item["expires_at"] - int(datetime.now(UTC).timestamp())) / 86_400
         assert 364 < days <= 365
 
+    async def test_zero_retention_writes_no_expires_at(self) -> None:
+        """TTL_DAYS=0 means keep everything: the attribute is omitted entirely, so
+        TTL cannot reap these items even if automatic deletion is enabled later."""
+        settings = Settings(
+            feedback_table="sgs-llm-feedback",
+            conversation_table="sgs-llm-conversations",
+            feedback_ttl_days=0,
+            conversation_ttl_days=0,
+        )
+        feedback = FakeTable()
+        conversations = FakeTable()
+        store = _store(
+            settings, {"sgs-llm-feedback": feedback, "sgs-llm-conversations": conversations}
+        )
+
+        await store.record_feedback(category="bug", message="x", lang="de")
+        await store.record_turn(
+            conversation_id="c1",
+            message_id="m1",
+            lang="de",
+            user_message="x",
+            assistant_markdown="y",
+            model_id="m",
+            tool_calls=[],
+            layer_count=0,
+            latency_ms=1,
+            input_tokens=1,
+            output_tokens=1,
+            error_code=None,
+        )
+
+        assert "expires_at" not in feedback.items[0]
+        assert "expires_at" not in conversations.items[0]
+        # The write moment stays recorded regardless.
+        assert feedback.items[0]["ts"].endswith("Z")
+        assert conversations.items[0]["ts"].endswith("Z")
+
     async def test_an_absent_email_is_not_stored_as_empty(self) -> None:
         table = FakeTable()
         store = _store(SETTINGS, {"sgs-llm-feedback": table})
