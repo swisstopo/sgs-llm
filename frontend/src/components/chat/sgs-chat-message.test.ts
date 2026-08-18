@@ -40,6 +40,7 @@ describe('sgs-chat-message inline catalog layers', () => {
     expect(choice?.style.top).toBe('0px');
     expect(choice?.querySelectorAll('.actions button')).toHaveLength(2);
     expect(choice?.querySelector('.close')).not.toBeNull();
+    expect(choice?.querySelector('.kind')).toBeNull();
     expect(choice?.querySelector('.title')?.textContent).toBe('Überschwemmung Aquaprotect 100');
     expect(choice?.querySelector('.metadata')?.textContent).toContain('ch.bafu.aquaprotect_100');
     choice?.querySelector<HTMLButtonElement>('.actions button')?.click();
@@ -49,6 +50,35 @@ describe('sgs-chat-message inline catalog layers', () => {
       layer: element.message.catalogLayers?.[0],
       focusBBox: [7.2, 46.8, 7.8, 47.2],
     });
+    element.remove();
+  });
+
+  it('keeps the menu inside the chat message when the layer title is near the right edge', async () => {
+    const element = document.createElement('sgs-chat-message') as SgsChatMessage;
+    element.message = message('Öffnen Sie **Überschwemmung Aquaprotect 100**.');
+    document.body.append(element);
+    await element.updateComplete;
+
+    const assistant = element.shadowRoot?.querySelector<HTMLElement>('.assistant');
+    const inline = element.shadowRoot?.querySelector<HTMLButtonElement>(
+      'button.inline-catalog-layer',
+    );
+    vi.spyOn(assistant!, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+    } as DOMRect);
+    vi.spyOn(inline!, 'getBoundingClientRect').mockReturnValue({
+      left: 380,
+      top: 120,
+    } as DOMRect);
+
+    inline?.click();
+    await element.updateComplete;
+
+    const choice = element.shadowRoot?.querySelector<HTMLElement>('.layer-choice');
+    expect(choice?.style.left).toBe('108px');
+    expect(choice?.style.top).toBe('120px');
     element.remove();
   });
 

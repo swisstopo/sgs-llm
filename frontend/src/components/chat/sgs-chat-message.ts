@@ -99,8 +99,8 @@ export class SgsChatMessage extends LitElement {
     .layer-choice {
       position: absolute;
       z-index: 20;
-      width: max-content;
-      max-width: min(18rem, calc(100% - 0.5rem));
+      box-sizing: border-box;
+      width: min(18rem, calc(100% - 0.5rem));
       transform: translateY(calc(-100% - 0.5rem));
       padding: 0.625rem 0.75rem;
       border: 1px solid var(--sgc-color-border);
@@ -140,17 +140,8 @@ export class SgsChatMessage extends LitElement {
       background: var(--sgc-color-bg--grey);
     }
 
-    .layer-choice .kind {
-      margin: 0 2rem 0.125rem 0;
-      color: var(--sgc-color-text--secondary);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-
     .layer-choice .title {
-      margin: 0 2rem 0.125rem 0;
+      margin: 0 2rem 0.25rem 0;
       font-weight: 600;
     }
 
@@ -301,8 +292,15 @@ export class SgsChatMessage extends LitElement {
       }
       const targetRect = target.getBoundingClientRect();
       const assistantRect = assistant.getBoundingClientRect();
+      const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const menuWidth = Math.min(
+        18 * (Number.isFinite(rootFontSize) ? rootFontSize : 16),
+        Math.max(0, assistantRect.width - 8),
+      );
+      const requestedLeft = targetRect.left - assistantRect.left;
+      const maximumLeft = Math.max(4, assistantRect.width - menuWidth - 4);
       this.layerChoicePosition = {
-        left: Math.max(4, targetRect.left - assistantRect.left),
+        left: Math.min(Math.max(4, requestedLeft), maximumLeft),
         top: targetRect.top - assistantRect.top,
       };
       this.selectedCatalogLayerId = id;
@@ -326,7 +324,6 @@ export class SgsChatMessage extends LitElement {
         >
           ×
         </button>
-        <p class="kind">${t('chat.officialLayer')}</p>
         <p class="title">${layer.name || layer.id}</p>
         <p class="metadata">${layer.attribution || 'geo.admin.ch'}<br />${layer.id}</p>
         <div class="actions">
