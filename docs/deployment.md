@@ -665,11 +665,54 @@ The image is the only contract between the backend code and this infrastructure:
 | Listens on `$PORT` (8787) | Target group port and security group rule |
 | `GET /health` → `200` | ALB health check; an unhealthy task is replaced and a bad deploy rolls back |
 | `WebSocket /ws/v1` | Protocol v1 ([`protocol.md`](./protocol.md)) |
-| `POST /feedback` | Feedback form endpoint |
+| `POST /feedback` | Feedback form and onboarding survey endpoint |
+| `POST /admin/api/login` / `logout` | Local administrator session endpoints |
+| `GET` / `POST /admin/api/users` | List or create local administrator accounts |
+| `GET /admin/api/metrics` | Admin-only daily metrics (maximum 31-day range) |
+| `GET /admin/api/records/{kind}` | Admin-only records; conversations are grouped and paginated as complete threads |
 | Handles `SIGTERM` | ECS stops tasks with SIGTERM (30 s stop timeout); draining beats being killed mid-conversation |
 | `linux/amd64` | The task definition pins X86_64; CI builds on x86 runners |
 
 `mock-agent/Dockerfile` satisfies all of these and is the working example.
+
+### Admin dashboard
+
+The pilot uses a local SQLite user database and does not require Cognito, IAM users, or
+another AWS identity resource. Create the first user from `backend/`; the command prompts
+for the password so it does not appear in shell history:
+
+```bash
+cd backend
+python manage_admin.py admin@example.ch
+```
+
+Passwords are stored only as independently salted `scrypt` hashes. Login produces an
+HTTP-only, strict same-site session cookie and logout revokes the server-side session.
+Additional administrators are created with the same management command; account
+management is intentionally not exposed in the analytics dashboard.
+
+For local development the default database is `backend/admin-users.sqlite3`. Override it
+with `ADMIN_USER_DB_PATH`; set `ADMIN_COOKIE_SECURE=true` whenever the admin API is served
+over HTTPS. The database file is ignored by git.
+
+For the frontend:
+
+1. Add a CloudFront behavior for `/admin/api/*` using the same ALB origin and disabled
+   caching policy as `/feedback`. The default S3 behavior continues to serve `/admin`
+   through the existing SPA fallback.
+2. Point the deployed `config.json` at the API; there are no identity-provider values:
+
+   ```json
+   {
+     "adminApiUrl": "https://<DOMAIN>/admin/api"
+   }
+   ```
+
+This is intentionally a single-instance pilot design. An ECS deployment must mount a
+durable volume at `ADMIN_USER_DB_PATH`; an ephemeral task filesystem would lose users
+and sessions when the task is replaced. Admin reads emit structured audit lines to the
+service logs; retained conversations expand into complete inline timelines and CSV export
+is an explicit administrator action. Onboarding profiles remain anonymous.
 
 ### Environment contract
 
@@ -688,6 +731,9 @@ ECS from Secrets Manager at task start.
 | `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | parameters (0) | Days ahead to stamp `expires_at`; 0 = write no stamp (keep forever) |
+| `ADMIN_USER_DB_PATH` | local path (`./admin-users.sqlite3`) | SQLite file containing administrator hashes and sessions |
+| `ADMIN_SESSION_HOURS` | environment (8) | Lifetime of an authenticated administrator session |
+| `ADMIN_COOKIE_SECURE` | environment (`false`) | Set `true` when the admin API is served over HTTPS |
 | `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON-compatible producers and geosearch GeoParquet artifacts; published objects expire after 30 days |
 | `DATA_LAYER_PRESIGN_TTL` | parameter (3600) | Lifetime of presigned URLs handed to the browser |
 | `PUBLIC_BASE_URL` | parameter | Public origin; emit same-origin data URLs against it |
@@ -755,7 +801,7 @@ aws cloudformation deploy --profile swisstopo --region eu-central-1 \
 > the past is deleted **within days** of enabling TTL. DynamoDB also rate-limits
 > TTL toggles (roughly one change per table per hour).
 
-**`sgs-llm-feedback`** — one item per submitted feedback form:
+**`sgs-llm-feedback`** — one item per submitted feedback form or onboarding survey:
 
 | Attribute | Role |
 | --- | --- |
@@ -764,6 +810,13 @@ aws cloudformation deploy --profile swisstopo --region eu-central-1 \
 | `category` | `bug` \| `feature` \| `improvement` \| `question` \| `other` |
 | `message`, `email?`, `lang` | as submitted by the form ([`submitFeedback.ts`](../frontend/src/feedback/submitFeedback.ts)) |
 | `expires_at` | absent while retention is off (`FEEDBACK_TTL_DAYS=0`); otherwise epoch seconds, enforced only when `RetentionAutoDelete=true` |
+
+Onboarding items use the same standalone-submission table and daily index, with
+`entry_type: "onboarding"` plus the closed-choice fields `user_group`,
+`geodata_experience`, `intended_use`, and `consent_version`. They contain no name,
+email, employer, location, or free-text profile field. Unlike ordinary feedback, the
+endpoint returns `503` unless DynamoDB confirms the onboarding write, because the
+browser records completion only after durable persistence succeeds.
 
 **`sgs-llm-conversations`** — one item per conversation turn:
 

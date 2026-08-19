@@ -16,6 +16,23 @@ browser, which fetches them. The backend also persists submitted **feedback** an
 [`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)); the map is
 unaffected.
 
+The separate `/admin` entry point does not initialize the map or public onboarding UI.
+It uses a deliberately small application-user database containing administrator email
+addresses and independently salted `scrypt` password hashes. Raw passwords are never
+stored. Successful login creates a random, revocable session whose hash is stored in the
+same local SQLite database and whose browser value is an HTTP-only, strict same-site
+cookie. Administrator accounts are provisioned outside the dashboard with the backend
+management command. The backend then queries only the DynamoDB `ByDay` indexes for daily
+aggregates and retained records. Conversation turns are grouped by `conversation_id`,
+ordered by timestamp, and paginated as complete threads before they reach the dashboard;
+the Records view presents one compact row per thread and expands its complete
+user/assistant timeline inline, including conversation totals and per-turn model, tool,
+latency, token, layer, language, identifier, and error diagnostics. The browser never
+receives AWS credentials or direct table access. This lightweight identity store is
+intended for the local, single-instance pilot. A production multi-instance deployment
+must place the file on a durable shared volume or replace this boundary with a managed
+identity service.
+
 ```mermaid
 flowchart TB
     browser["`**Browser** · frontend/
@@ -324,8 +341,9 @@ requests today, but that is operational behavior, not a contract).
   instruction, and the evaluation set attacks both routes - hostile text in the user's
   message and hostile text inside fetched feature attributes
   ([`evals.md`](./evals.md#prompt-injection-via-data)).
-- The **frontend** stores nothing server-side; the **agent backend** does: chat turns and
-  submitted feedback (which may include an email address the user typed) are persisted to
+- The **frontend** stores nothing server-side; the **agent backend** does: chat turns,
+  submitted feedback (which may include an email address the user typed), and the
+  closed-choice first-use onboarding survey are persisted to
   DynamoDB with a TTL so the pilot can be evaluated. That is personal data - see
   [`deployment.md`](./deployment.md#what-gets-stored) for the schema, retention and
   the sign-off still outstanding.
