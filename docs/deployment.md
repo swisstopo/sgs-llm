@@ -731,7 +731,7 @@ ECS from Secrets Manager at task start.
 | `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | parameters (0) | Days ahead to stamp `expires_at`; 0 = write no stamp (keep forever) |
-| `ADMIN_USER_DB_PATH` | local path (`./admin-users.sqlite3`) | SQLite file containing administrator hashes and sessions |
+| `ADMIN_USER_DB_PATH` | local: `./admin-users.sqlite3`; image: `/var/lib/sgs-llm/admin-users.sqlite3` | SQLite file containing administrator hashes and sessions; the image directory is owned by its non-root user |
 | `ADMIN_SESSION_HOURS` | environment (8) | Lifetime of an authenticated administrator session |
 | `ADMIN_COOKIE_SECURE` | environment (`false`) | Set `true` when the admin API is served over HTTPS |
 | `DATA_LAYER_BUCKET` | foundation stack | Bucket for GeoJSON-compatible producers and geosearch GeoParquet artifacts; published objects expire after 30 days |

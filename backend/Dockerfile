@@ -19,9 +19,11 @@ COPY backend/app ./app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8787
+    PORT=8787 \
+    ADMIN_USER_DB_PATH=/var/lib/sgs-llm/admin-users.sqlite3
 
-RUN useradd --create-home --uid 10001 sgs
+RUN useradd --create-home --uid 10001 sgs \
+    && install -d -o sgs -g sgs /var/lib/sgs-llm
 USER sgs
 
 EXPOSE 8787

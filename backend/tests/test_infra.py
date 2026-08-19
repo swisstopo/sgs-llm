@@ -47,3 +47,9 @@ def test_service_has_no_cognito_dependency() -> None:
     ]
     names = {entry["Name"] for entry in environment}
     assert not {"COGNITO_USER_POOL_ID", "COGNITO_APP_CLIENT_ID", "COGNITO_ADMIN_GROUP"} & names
+
+
+def test_backend_image_gives_the_non_root_user_a_writable_admin_database() -> None:
+    dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
+    assert "ADMIN_USER_DB_PATH=/var/lib/sgs-llm/admin-users.sqlite3" in dockerfile
+    assert "install -d -o sgs -g sgs /var/lib/sgs-llm" in dockerfile

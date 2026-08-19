@@ -77,13 +77,22 @@ jobs:
             sleep 1
           done
           curl -sf http://127.0.0.1:8787/health
-          status=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 \
+          smoke_http_status=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 \
             -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
             -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
             --max-time 5 http://127.0.0.1:8787/ws/v1 || true)
-          echo "WebSocket upgrade returned $status"
-          test "$status" = "101"
-          docker rm -f smoke
+          echo "WebSocket upgrade returned $smoke_http_status"
+          test "$smoke_http_status" = "101"
+
+      - name: Show smoke container logs
+        if: failure()
+        run: |
+          docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}}' smoke || true
+          docker logs smoke || true
+
+      - name: Remove smoke container
+        if: always()
+        run: docker rm -f smoke || true
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
