@@ -11,11 +11,14 @@ export interface RuntimeConfig {
   agentWsUrl: string;
   /** HTTP endpoint receiving feedback form submissions. */
   feedbackUrl: string;
+  /** Protected analytics API. Usually same-origin in AWS. */
+  adminApiUrl: string;
 }
 
 const DEFAULT_CONFIG: RuntimeConfig = {
   agentWsUrl: 'ws://localhost:8787/ws/v1',
   feedbackUrl: 'http://localhost:8787/feedback',
+  adminApiUrl: 'http://localhost:8787/admin/api',
 };
 
 /** Swisstopo REST services (search, identify, legends, layer metadata). */
@@ -43,6 +46,10 @@ export function mergeConfig(raw: unknown): RuntimeConfig {
       typeof candidate.feedbackUrl === 'string' && candidate.feedbackUrl.length > 0
         ? candidate.feedbackUrl
         : DEFAULT_CONFIG.feedbackUrl,
+    adminApiUrl:
+      typeof candidate.adminApiUrl === 'string' && candidate.adminApiUrl.length > 0
+        ? candidate.adminApiUrl
+        : DEFAULT_CONFIG.adminApiUrl,
   };
 }
 

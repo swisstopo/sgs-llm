@@ -8,8 +8,15 @@ import { initI18n } from './i18n/i18n';
 import { registerProjections } from './lib/projection';
 
 async function bootstrap(): Promise<void> {
-  registerProjections();
   await Promise.all([loadRuntimeConfig(), initI18n()]);
+  if (window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/')) {
+    document.querySelector('sgs-app')?.remove();
+    const admin = document.createElement('sgs-admin-app');
+    document.body.append(admin);
+    await import('./admin/sgs-admin-app');
+    return;
+  }
+  registerProjections();
   await import('./components/sgs-app');
 }
 

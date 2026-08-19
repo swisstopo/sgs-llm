@@ -25,6 +25,7 @@ mock-agent/feedback.log
 *.local
 *.pem
 *.key
+*.sqlite3
 .DS_Store
 
 # Internal cost analysis — kept local only, not published

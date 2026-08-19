@@ -24,4 +24,11 @@ describe('mergeConfig', () => {
     );
     expect(mergeConfig({}).feedbackUrl).toBe('http://localhost:8787/feedback');
   });
+
+  it('validates the optional admin API URL', () => {
+    const config = mergeConfig({
+      adminApiUrl: 'https://example.test/admin/api',
+    });
+    expect(config.adminApiUrl).toBe('https://example.test/admin/api');
+  });
 });

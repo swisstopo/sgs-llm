@@ -17,6 +17,8 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 
+from .admin import router as admin_router
+from .admin_users import AdminUserStore
 from .agent.bedrock import BedrockModels
 from .config import Settings, get_settings
 from .feedback import router as feedback_router
@@ -47,13 +49,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.models = BedrockModels(settings)
     app.state.limiter = RateLimiter(settings.rate_limit_messages_per_minute)
     app.state.connections = ConnectionRegistry(limit=settings.max_connections_per_ip)
+    app.state.admin_users = AdminUserStore(settings.admin_user_db_path)
+    app.state.admin_users.initialize()
 
     # The bundled stand-in is never wired up here; the tests and eval harness construct
     # it themselves. Locally, point MCP_SERVER_URL at `python -m mcp_dummy.server`.
     app.state.gateway = ToolGateway(settings.mcp_server_url, settings.mcp_server_token)
 
     logger.info(
-        "backend ready: models=%s mcp=%s (%s) feedback_table=%s data_bucket=%s",
+        "backend ready: models=%s mcp=%s (%s) submissions_table=%s data_bucket=%s",
         ", ".join(str(h) for h in app.state.models.handles) or "(none configured)",
         settings.mcp_server_url or "NOT CONFIGURED (refusing turns)",
         app.state.gateway.transport,
@@ -72,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="SGS LLM agent backend", version="1", lifespan=lifespan)
 app.include_router(feedback_router)
 app.include_router(ws_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")
