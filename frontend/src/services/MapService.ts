@@ -35,8 +35,25 @@ const DEFAULT_BASEMAP: BasemapId = 'ch.swisstopo.pixelkarte-grau';
 
 /** Default view: all of Switzerland, centered (LV95). */
 const SWISS_CENTER_LV95: [number, number] = [2660000, 1190000];
-/** Initial zoom on the LV95 ladder: 500 m/px, the whole country in view. */
+/** Fallback before the map has a measurable DOM target. */
 const DEFAULT_ZOOM = 1;
+
+/**
+ * Least-zoomed official resolution whose finite WMTS matrix covers the viewport.
+ * Showing the whole matrix at 500 m/px leaves grey strips on wide screens because
+ * swisstopo tiles intentionally end at LV95_EXTENT.
+ */
+export function initialZoomForViewport(width: number, height: number): number {
+  if (width <= 0 || height <= 0) {
+    return DEFAULT_ZOOM;
+  }
+  const extentWidth = LV95_EXTENT[2] - LV95_EXTENT[0];
+  const extentHeight = LV95_EXTENT[3] - LV95_EXTENT[1];
+  const zoom = LV95_VIEW_RESOLUTIONS.findIndex(
+    (resolution) => extentWidth / resolution >= width && extentHeight / resolution >= height,
+  );
+  return zoom >= 0 ? zoom : LV95_VIEW_RESOLUTIONS.length - 1;
+}
 
 /** [minLon, minLat, maxLon, maxLat] in WGS84. */
 export type BBox = [number, number, number, number];
@@ -69,6 +86,7 @@ export class MapService {
   /** Our own overlays, excluded from hit-testing: they are decoration, not data. */
   private readonly internalLayers = new Set<BaseLayer>();
   private hovered?: Feature;
+  private initialViewportApplied = false;
 
   constructor(private readonly catalog: CatalogService) {
     this.map = new OlMap({
@@ -284,6 +302,20 @@ export class MapService {
 
   attach(target: HTMLElement): void {
     this.map.setTarget(target);
+    const rect = target.getBoundingClientRect();
+    this.resize(rect.width, rect.height);
+  }
+
+  /** Updates OpenLayers after layout and applies the initial camera once size is real. */
+  resize(width: number, height: number): void {
+    this.map.updateSize();
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    if (!this.initialViewportApplied) {
+      this.map.getView().setZoom(initialZoomForViewport(width, height));
+      this.initialViewportApplied = true;
+    }
   }
 
   detach(): void {

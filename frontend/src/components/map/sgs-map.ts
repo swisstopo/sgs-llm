@@ -34,6 +34,7 @@ export class SgsMap extends LitElement {
   private overlay?: Overlay;
   private clickSubscription?: Subscription;
   private popupResize?: ResizeObserver;
+  private mapResize?: ResizeObserver;
   private identifyCounter = 0;
   private identifyAbort?: AbortController;
 
@@ -58,6 +59,12 @@ export class SgsMap extends LitElement {
     const target = this.querySelector<HTMLElement>('.sgs-map-target');
     if (target) {
       this.mapService.attach(target);
+      this.mapResize = new ResizeObserver(([entry]) => {
+        if (entry) {
+          this.mapService.resize(entry.contentRect.width, entry.contentRect.height);
+        }
+      });
+      this.mapResize.observe(target);
     }
     const anchor = this.querySelector<HTMLElement>('.sgs-identify-anchor');
     if (anchor) {
@@ -81,6 +88,7 @@ export class SgsMap extends LitElement {
     super.disconnectedCallback();
     this.clickSubscription?.unsubscribe();
     this.popupResize?.disconnect();
+    this.mapResize?.disconnect();
     this.mapService.detach();
   }
 
