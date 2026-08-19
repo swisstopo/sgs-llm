@@ -39,6 +39,48 @@
     },
     "newConversation": "Nuova conversazione",
     "cancel": "Annulla",
+    "onboarding": {
+      "title": "Benvenuti nella chat sui geodati svizzeri",
+      "introduction": "Questo chatbot sperimentale vi aiuta a esplorare i geodati federali svizzeri usando il linguaggio naturale.",
+      "personalDataWarning": "Non inserite informazioni personali, riservate o sensibili come nomi, password, date di nascita o indirizzi e-mail.",
+      "accuracyWarning": "Le risposte sono generate da un modello di IA e possono essere incomplete o errate. Verificate le informazioni importanti tramite fonti ufficiali.",
+      "acknowledgement": "Continuando, confermate di aver letto e accettato le",
+      "termsLink": "Basi legali.",
+      "accept": "Salvare e continuare",
+      "form": {
+        "choose": "Selezionare un’opzione",
+        "userGroup": {
+          "label": "Quale descrizione vi rappresenta meglio?",
+          "options": {
+            "private_individual": "Privato",
+            "public_administration": "Amministrazione pubblica",
+            "research_education": "Ricerca o istruzione",
+            "private_sector": "Settore privato",
+            "nonprofit_other": "Organizzazione non profit o altro"
+          }
+        },
+        "experience": {
+          "label": "Quanto conoscete i geodati?",
+          "options": {
+            "new": "I geodati sono una novità per me",
+            "occasional": "Uso i geodati occasionalmente",
+            "advanced": "Sono un utente esperto"
+          }
+        },
+        "intendedUse": {
+          "label": "Che cosa vorreste fare principalmente?",
+          "options": {
+            "find_data": "Trovare set di dati adatti",
+            "answer_question": "Rispondere a una domanda geografica",
+            "create_map": "Creare o arricchire una mappa",
+            "professional_analysis": "Supportare analisi o decisioni professionali",
+            "learning_other": "Imparare, esplorare o fare altro"
+          }
+        },
+        "saving": "Salvataggio …",
+        "saveError": "Non è stato possibile salvare le risposte. Riprovate."
+      }
+    },
     "welcome": "Fai domande sui geodati svizzeri – per esempio:",
     "exampleFlood": "Mostrami i pericoli di piena in Vallese",
     "exampleSolar": "I tetti di Berna sono adatti agli impianti solari?",
@@ -144,7 +186,7 @@
     "projectTitle": "Progetto",
     "github": "Codice sorgente su GitHub",
     "license": "Open source, licenza BSD-3-Clause",
-    "terms": "Termini e condizioni",
+    "terms": "Basi legali",
     "disclaimer": "Prototipo – non destinato all'uso operativo. Contenuti e funzionalità possono cambiare in qualsiasi momento durante la fase di prototipo."
   },
   "locate": {

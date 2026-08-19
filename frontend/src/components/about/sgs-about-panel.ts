@@ -1,11 +1,11 @@
 import { LitElement, css, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { ObservableController } from '../../lib/ObservableController';
-import { languageChanged$, t } from '../../i18n/i18n';
+import { currentLanguage, languageChanged$, t } from '../../i18n/i18n';
 import { panelBaseStyles } from '../panelStyles';
+import { termsUrl } from '../../terms';
 
 const REPO_URL = 'https://github.com/swisstopo/sgs-llm';
-const TERMS_URL = 'https://www.admin.ch/en/terms-and-conditions';
 const GEOADMIN_API_URL = 'https://api3.geo.admin.ch';
 const AGEOSPATIAL_URL = 'https://www.ageospatial.com';
 const ASKEARTH_URL = 'https://ask.earth';
@@ -150,7 +150,13 @@ export class SgsAboutPanel extends LitElement {
           <span class="role">${t('about.license')}</span>
         </li>
         <li>
-          <a href=${TERMS_URL} target="_blank" rel="noopener noreferrer">${t('about.terms')}</a>
+          <a
+            href=${termsUrl(currentLanguage())}
+            lang=${currentLanguage()}
+            target="_blank"
+            rel="noopener noreferrer"
+            >${t('about.terms')}</a
+          >
         </li>
       </ul>
 

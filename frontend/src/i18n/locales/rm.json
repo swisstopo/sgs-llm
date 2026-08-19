@@ -39,6 +39,48 @@
     },
     "newConversation": "Nova conversaziun",
     "cancel": "Interrumper",
+    "onboarding": {
+      "title": "Bainvegni en il chat per geodatas svizras",
+      "introduction": "Quest chatbot experimental As gida ad explorar geodatas federalas svizras cun lingua natirala.",
+      "personalDataWarning": "Na dai naginas infurmaziuns persunalas, confidenzialas u sensiblas sco nums, pleds-clav, datas da naschientscha u adressas dad e-mail.",
+      "accuracyWarning": "Las respostas vegnan generadas dad in model d’IA e pon esser incumplettas u incorrectas. Controllescha infurmaziuns impurtantas cun funtaunas uffizialas.",
+      "acknowledgement": "Cun cuntinuar confermas ti d’avair legì ed acceptà las",
+      "termsLink": "Infurmaziuns giuridicas.",
+      "accept": "Memorisar e cuntinuar",
+      "form": {
+        "choose": "Tscherna in’opziun",
+        "userGroup": {
+          "label": "Tge descriva tai il meglier?",
+          "options": {
+            "private_individual": "Persuna privata",
+            "public_administration": "Administraziun publica",
+            "research_education": "Perscrutaziun u furmaziun",
+            "private_sector": "Sectur privat",
+            "nonprofit_other": "Organisaziun d’util public u auter"
+          }
+        },
+        "experience": {
+          "label": "Quant bain enconuschas ti geodatas?",
+          "options": {
+            "new": "Geodatas èn novas per mai",
+            "occasional": "Jau dovrel geodatas mintgatant",
+            "advanced": "Jau hai experientscha avanzada"
+          }
+        },
+        "intendedUse": {
+          "label": "Tge vuls ti far principalmain?",
+          "options": {
+            "find_data": "Chattar datas adattadas",
+            "answer_question": "Respunder ina dumonda geografica",
+            "create_map": "Crear u cumplettar ina charta",
+            "professional_analysis": "Sustegnair analisas u decisiuns professiunalas",
+            "learning_other": "Emprender, explorar u far insatge auter"
+          }
+        },
+        "saving": "Memorisaziun …",
+        "saveError": "Nus n’avain betg pudì memorisar tias respostas. Emprova anc ina giada."
+      }
+    },
     "welcome": "Fai dumondas davart geodatas svizras – per exempel:",
     "exampleFlood": "Mussa ma ils privels d'inundaziun en il Vallais",
     "exampleSolar": "Quant adattads èn ils tetgs a Berna per panels solars?",
@@ -144,7 +186,7 @@
     "projectTitle": "Project",
     "github": "Code da funtauna sin GitHub",
     "license": "Open source, licenza BSD-3-Clause",
-    "terms": "Cundiziuns d'utilisaziun",
+    "terms": "Infurmaziuns giuridicas",
     "disclaimer": "Prototip – betg per diever operativ. Il cuntegn e la funcziunalitad pon midar da tut temp durant la fasa da prototip."
   },
   "locate": {

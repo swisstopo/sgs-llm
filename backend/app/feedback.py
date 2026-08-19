@@ -1,4 +1,4 @@
-"""POST /feedback - the feedback form endpoint.
+"""POST /feedback - feedback and first-use onboarding submissions.
 
 Status codes, CORS behavior and the accepted payload match
 mock-agent/server.mjs and frontend/src/feedback/submitFeedback.ts, so switching the
@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .protocol import coerce_lang
@@ -21,6 +22,20 @@ from .store.dynamo import Store
 logger = logging.getLogger(__name__)
 
 CATEGORIES = frozenset({"bug", "feature", "improvement", "question", "other"})
+USER_GROUPS = frozenset(
+    {
+        "private_individual",
+        "public_administration",
+        "research_education",
+        "private_sector",
+        "nonprofit_other",
+    }
+)
+GEODATA_EXPERIENCE_LEVELS = frozenset({"new", "occasional", "advanced"})
+INTENDED_USES = frozenset(
+    {"find_data", "answer_question", "create_map", "professional_analysis", "learning_other"}
+)
+ONBOARDING_CONSENT_VERSION = "v2"
 
 MAX_BODY_BYTES = 32_768
 MAX_MESSAGE_CHARS = 8_000
@@ -65,6 +80,29 @@ def _validate(data: Any) -> dict[str, Any] | None:
     }
 
 
+def _validate_onboarding(data: Any) -> dict[str, str] | None:
+    if not isinstance(data, dict) or data.get("type") != "onboarding":
+        return None
+    user_group = data.get("user_group")
+    geodata_experience = data.get("geodata_experience")
+    intended_use = data.get("intended_use")
+    consent_version = data.get("consent_version")
+    if (
+        user_group not in USER_GROUPS
+        or geodata_experience not in GEODATA_EXPERIENCE_LEVELS
+        or intended_use not in INTENDED_USES
+        or consent_version != ONBOARDING_CONSENT_VERSION
+    ):
+        return None
+    return {
+        "user_group": user_group,
+        "geodata_experience": geodata_experience,
+        "intended_use": intended_use,
+        "consent_version": consent_version,
+        "lang": coerce_lang(data.get("lang")),
+    }
+
+
 @router.options("/feedback")
 async def feedback_preflight() -> Response:
     return Response(status_code=204, headers=CORS_HEADERS)
@@ -85,6 +123,20 @@ async def submit_feedback(request: Request) -> Response:
         data = json.loads(raw)
     except (ValueError, TypeError):
         return Response(status_code=400, headers=CORS_HEADERS)
+
+    onboarding = _validate_onboarding(data)
+    if onboarding is not None:
+        try:
+            entry_id = await _store(request).record_onboarding(**onboarding)
+        except Exception:
+            logger.warning("failed to persist onboarding", exc_info=True)
+            entry_id = None
+        if entry_id is None:
+            return Response(status_code=503, headers=CORS_HEADERS)
+        logger.info("onboarding received")
+        return JSONResponse(
+            {"id": entry_id}, status_code=201, headers={**CORS_HEADERS, "cache-control": "no-store"}
+        )
 
     entry = _validate(data)
     if entry is None:

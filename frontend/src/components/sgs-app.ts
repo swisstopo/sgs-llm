@@ -36,6 +36,7 @@ import './sgs-header';
 import './shell/sgs-nav-rail';
 import './shell/sgs-flyout';
 import './chat/sgs-chat-panel';
+import './chat/sgs-chat-onboarding-dialog';
 import './chat/sgs-connection-badge';
 import './about/sgs-about-panel';
 import './catalog/sgs-geocatalog';
@@ -89,6 +90,7 @@ export class SgsApp extends LitElement {
 
   private activePanel?: ObservableController<PanelId | null>;
   private layerInfo?: ObservableController<LayerInfoRequest | null>;
+  private chatOnboarding?: ObservableController<boolean>;
 
   // Last panel shown; kept while closing so its content stays visible during
   // the slide-out, and so switching cross-fades from the previous panel.
@@ -105,6 +107,7 @@ export class SgsApp extends LitElement {
     super.connectedCallback();
     this.activePanel ??= new ObservableController(this, this.uiService.activePanel$);
     this.layerInfo ??= new ObservableController(this, this.uiService.layerInfo$);
+    this.chatOnboarding ??= new ObservableController(this, this.uiService.chatOnboarding$);
     this.restorePanelWidth();
   }
 
@@ -130,7 +133,7 @@ export class SgsApp extends LitElement {
           <sgs-locate-button></sgs-locate-button>
           <sgs-zoom-controls></sgs-zoom-controls>
         </div>
-        ${this.renderLayerInfoDialog()}
+        ${this.renderLayerInfoDialog()} ${this.renderChatOnboardingDialog()}
         <div class="flyout-layer ${active ? 'open' : ''}">
           ${shown
             ? html`
@@ -183,6 +186,16 @@ export class SgsApp extends LitElement {
         @sgs-close=${() => this.uiService.closeLayerInfo()}
       ></sgs-layer-info-dialog>`,
     );
+  }
+
+  private renderChatOnboardingDialog() {
+    const open = this.chatOnboarding?.value ?? this.uiService.chatOnboardingOpen;
+    if (!open) {
+      return nothing;
+    }
+    return html`<sgs-chat-onboarding-dialog
+      @sgs-accept=${() => this.uiService.acceptChatOnboarding()}
+    ></sgs-chat-onboarding-dialog>`;
   }
 
   private renderPanel(panel: PanelId) {

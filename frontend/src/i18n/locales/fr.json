@@ -39,6 +39,48 @@
     },
     "newConversation": "Nouvelle conversation",
     "cancel": "Annuler",
+    "onboarding": {
+      "title": "Bienvenue dans le chat des géodonnées suisses",
+      "introduction": "Ce chatbot expérimental vous aide à explorer les géodonnées fédérales suisses en langage naturel.",
+      "personalDataWarning": "Ne saisissez aucune information personnelle, confidentielle ou sensible, telle que des noms, mots de passe, dates de naissance ou adresses électroniques.",
+      "accuracyWarning": "Les réponses sont générées par un modèle d’IA et peuvent être incomplètes ou incorrectes. Vérifiez les informations importantes auprès de sources officielles.",
+      "acknowledgement": "En continuant, vous confirmez avoir lu et accepté les",
+      "termsLink": "Conditions d’utilisation.",
+      "accept": "Enregistrer et continuer",
+      "form": {
+        "choose": "Sélectionner une option",
+        "userGroup": {
+          "label": "Quelle description vous correspond le mieux ?",
+          "options": {
+            "private_individual": "Particulier",
+            "public_administration": "Administration publique",
+            "research_education": "Recherche ou enseignement",
+            "private_sector": "Secteur privé",
+            "nonprofit_other": "Organisation à but non lucratif ou autre"
+          }
+        },
+        "experience": {
+          "label": "Quel est votre niveau d’expérience avec les géodonnées ?",
+          "options": {
+            "new": "Je découvre les géodonnées",
+            "occasional": "J’utilise occasionnellement des géodonnées",
+            "advanced": "Je suis une personne expérimentée"
+          }
+        },
+        "intendedUse": {
+          "label": "Que souhaitez-vous faire principalement ?",
+          "options": {
+            "find_data": "Trouver des jeux de données adaptés",
+            "answer_question": "Répondre à une question géographique",
+            "create_map": "Créer ou enrichir une carte",
+            "professional_analysis": "Appuyer une analyse ou une décision professionnelle",
+            "learning_other": "Apprendre, explorer ou faire autre chose"
+          }
+        },
+        "saving": "Enregistrement …",
+        "saveError": "Nous n’avons pas pu enregistrer vos réponses. Veuillez réessayer."
+      }
+    },
     "welcome": "Posez des questions sur les géodonnées suisses – par exemple :",
     "exampleFlood": "Montre-moi les dangers de crues en Valais",
     "exampleSolar": "Les toits de Berne conviennent-ils aux installations solaires ?",
@@ -144,7 +186,7 @@
     "projectTitle": "Projet",
     "github": "Code source sur GitHub",
     "license": "Open source, licence BSD-3-Clause",
-    "terms": "Conditions générales",
+    "terms": "Conditions d’utilisation",
     "disclaimer": "Prototype – pas destiné à un usage opérationnel. Le contenu et les fonctionnalités peuvent changer à tout moment pendant la phase de prototype."
   },
   "locate": {

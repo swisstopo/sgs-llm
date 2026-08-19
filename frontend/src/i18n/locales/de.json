@@ -39,6 +39,48 @@
     },
     "newConversation": "Neue Unterhaltung",
     "cancel": "Abbrechen",
+    "onboarding": {
+      "title": "Willkommen beim Chat für Schweizer Geodaten",
+      "introduction": "Dieser experimentelle Chatbot hilft Ihnen, Geodaten des Bundes in natürlicher Sprache zu erkunden.",
+      "personalDataWarning": "Geben Sie keine persönlichen, vertraulichen oder sensiblen Informationen wie Namen, Passwörter, Geburtsdaten oder E-Mail-Adressen ein.",
+      "accuracyWarning": "Die Antworten werden von einem KI-Modell generiert und können unvollständig oder falsch sein. Überprüfen Sie wichtige Informationen anhand offizieller Quellen.",
+      "acknowledgement": "Indem Sie fortfahren, bestätigen Sie, dass Sie die folgenden Bestimmungen gelesen haben und akzeptieren:",
+      "termsLink": "Rechtliches.",
+      "accept": "Speichern und fortfahren",
+      "form": {
+        "choose": "Bitte auswählen",
+        "userGroup": {
+          "label": "Was beschreibt Sie am besten?",
+          "options": {
+            "private_individual": "Privatperson",
+            "public_administration": "Öffentliche Verwaltung",
+            "research_education": "Forschung oder Bildung",
+            "private_sector": "Privatwirtschaft",
+            "nonprofit_other": "Gemeinnützige Organisation oder anderes"
+          }
+        },
+        "experience": {
+          "label": "Wie vertraut sind Sie mit Geodaten?",
+          "options": {
+            "new": "Geodaten sind neu für mich",
+            "occasional": "Ich nutze Geodaten gelegentlich",
+            "advanced": "Ich bin fortgeschritten"
+          }
+        },
+        "intendedUse": {
+          "label": "Was möchten Sie hauptsächlich tun?",
+          "options": {
+            "find_data": "Passende Datensätze finden",
+            "answer_question": "Eine geografische Frage beantworten",
+            "create_map": "Eine Karte erstellen oder ergänzen",
+            "professional_analysis": "Berufliche Analysen oder Entscheidungen unterstützen",
+            "learning_other": "Lernen, erkunden oder etwas anderes"
+          }
+        },
+        "saving": "Wird gespeichert …",
+        "saveError": "Ihre Antworten konnten nicht gespeichert werden. Bitte versuchen Sie es erneut."
+      }
+    },
     "welcome": "Stellen Sie Fragen zu Schweizer Geodaten – zum Beispiel:",
     "exampleFlood": "Zeige mir Hochwassergefahren im Wallis",
     "exampleSolar": "Wie gut eignen sich Dächer in Bern für Solaranlagen?",
@@ -144,7 +186,7 @@
     "projectTitle": "Projekt",
     "github": "Quellcode auf GitHub",
     "license": "Open Source, BSD-3-Clause-Lizenz",
-    "terms": "Nutzungsbedingungen",
+    "terms": "Rechtliches",
     "disclaimer": "Prototyp – nicht für den operativen Gebrauch. Inhalte und Funktionalität können sich während der Prototypphase jederzeit ändern."
   },
   "locate": {

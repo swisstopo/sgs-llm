@@ -54,6 +54,77 @@ def test_a_valid_submission_is_stored(client: Any) -> None:
     assert entry["lang"] == "de"
 
 
+def test_a_valid_onboarding_submission_is_stored(client: Any) -> None:
+    response = client.post(
+        "/feedback",
+        json={
+            "type": "onboarding",
+            "user_group": "research_education",
+            "geodata_experience": "occasional",
+            "intended_use": "find_data",
+            "consent_version": "v2",
+            "lang": "fr",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json() == {"id": "onboarding-id"}
+    assert response.headers["cache-control"] == "no-store"
+    assert client.store.onboarding == [
+        {
+            "user_group": "research_education",
+            "geodata_experience": "occasional",
+            "intended_use": "find_data",
+            "consent_version": "v2",
+            "lang": "fr",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("user_group", "wizard"),
+        ("geodata_experience", "maximum"),
+        ("intended_use", "surveillance"),
+        ("consent_version", "outdated"),
+    ],
+)
+def test_invalid_onboarding_choices_are_rejected(client: Any, field: str, value: str) -> None:
+    payload = {
+        "type": "onboarding",
+        "user_group": "private_individual",
+        "geodata_experience": "new",
+        "intended_use": "learning_other",
+        "consent_version": "v2",
+        "lang": "en",
+    }
+    payload[field] = value
+    assert client.post("/feedback", json=payload).status_code == 400
+
+
+def test_onboarding_reports_storage_failure(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenStore(FakeStore):
+        async def record_onboarding(self, **kwargs: Any) -> None:
+            return None
+
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.feedback.get_settings", lambda: settings)
+    app = FastAPI()
+    app.include_router(router)
+    app.state.store = BrokenStore()
+    payload = {
+        "type": "onboarding",
+        "user_group": "private_individual",
+        "geodata_experience": "new",
+        "intended_use": "learning_other",
+        "consent_version": "v2",
+        "lang": "en",
+    }
+    assert TestClient(app).post("/feedback", json=payload).status_code == 503
+
+
 def test_email_is_optional(client: Any) -> None:
     response = client.post("/feedback", json={"category": "bug", "message": "x", "lang": "fr"})
     assert response.status_code == 204

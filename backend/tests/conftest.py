@@ -170,11 +170,16 @@ class FakeGateway:
 class FakeStore:
     def __init__(self) -> None:
         self.feedback: list[dict[str, Any]] = []
+        self.onboarding: list[dict[str, Any]] = []
         self.turns: list[dict[str, Any]] = []
 
     async def record_feedback(self, **kwargs: Any) -> str:
         self.feedback.append(kwargs)
         return "fake-id"
+
+    async def record_onboarding(self, **kwargs: Any) -> str:
+        self.onboarding.append(kwargs)
+        return "onboarding-id"
 
     async def record_turn(self, **kwargs: Any) -> None:
         self.turns.append(kwargs)

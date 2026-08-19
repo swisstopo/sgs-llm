@@ -23,6 +23,21 @@ const FEEDBACK_LOG =
   process.env.FEEDBACK_LOG ?? fileURLToPath(new URL('./feedback.log', import.meta.url));
 const SUPPORTED_LANGS = new Set(['de', 'fr', 'it', 'en', 'rm']);
 const FEEDBACK_CATEGORIES = new Set(['bug', 'feature', 'improvement', 'question', 'other']);
+const USER_GROUPS = new Set([
+  'private_individual',
+  'public_administration',
+  'research_education',
+  'private_sector',
+  'nonprofit_other',
+]);
+const GEODATA_EXPERIENCE_LEVELS = new Set(['new', 'occasional', 'advanced']);
+const INTENDED_USES = new Set([
+  'find_data',
+  'answer_question',
+  'create_map',
+  'professional_analysis',
+  'learning_other',
+]);
 const FEEDBACK_CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
@@ -71,7 +86,7 @@ const httpServer = createServer(async (req, res) => {
   }
 });
 
-/** Receives feedback form submissions and appends them to a JSONL log. */
+/** Receives feedback/onboarding submissions and appends them to a JSONL log. */
 function handleFeedback(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, FEEDBACK_CORS).end();
@@ -91,6 +106,32 @@ function handleFeedback(req, res) {
   req.on('end', async () => {
     try {
       const data = JSON.parse(body);
+      if (data.type === 'onboarding') {
+        const validOnboarding =
+          USER_GROUPS.has(data.user_group) &&
+          GEODATA_EXPERIENCE_LEVELS.has(data.geodata_experience) &&
+          INTENDED_USES.has(data.intended_use) &&
+          data.consent_version === 'v2';
+        if (!validOnboarding) {
+          res.writeHead(400, FEEDBACK_CORS).end();
+          return;
+        }
+        const entry = {
+          id: crypto.randomUUID(),
+          entry_type: 'onboarding',
+          ts: new Date().toISOString(),
+          ...data,
+        };
+        await appendFile(FEEDBACK_LOG, JSON.stringify(entry) + '\n');
+        console.log(`[${entry.ts}] onboarding received`);
+        res.writeHead(201, {
+          ...FEEDBACK_CORS,
+          'content-type': 'application/json',
+          'cache-control': 'no-store',
+        });
+        res.end(JSON.stringify({ id: entry.id }));
+        return;
+      }
       const valid =
         FEEDBACK_CATEGORIES.has(data.category) &&
         typeof data.message === 'string' &&

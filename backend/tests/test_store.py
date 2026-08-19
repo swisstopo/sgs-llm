@@ -11,7 +11,7 @@ from typing import Any
 
 from app.config import Settings
 from app.store.artifacts import ArtifactStore
-from app.store.dynamo import Store
+from app.store.dynamo import Store, _credential_options
 
 
 class FakeTable:
@@ -23,6 +23,9 @@ class FakeTable:
         if self._fail:
             raise RuntimeError("ProvisionedThroughputExceededException")
         self.items.append(Item)
+
+    def query(self, **kwargs: Any) -> dict[str, Any]:
+        return {"Items": self.items, "LastEvaluatedKey": None}
 
 
 def _store(settings: Settings, tables: dict[str, FakeTable]) -> Store:
@@ -37,6 +40,31 @@ SETTINGS = Settings(
     feedback_ttl_days=365,
     conversation_ttl_days=90,
 )
+
+
+def test_local_legacy_aws_access_key_is_passed_explicitly(monkeypatch: Any) -> None:
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
+    monkeypatch.setenv("AWS_ACCESS_KEY", "local-access")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "local-secret")
+
+    assert _credential_options() == {
+        "aws_access_key_id": "local-access",
+        "aws_secret_access_key": "local-secret",
+    }
+
+
+def test_standard_aws_access_key_takes_precedence(monkeypatch: Any) -> None:
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "standard-access")
+    monkeypatch.setenv("AWS_ACCESS_KEY", "legacy-access")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "token")
+
+    assert _credential_options() == {
+        "aws_access_key_id": "standard-access",
+        "aws_secret_access_key": "secret",
+        "aws_session_token": "token",
+    }
 
 
 class TestFeedback:
@@ -84,6 +112,13 @@ class TestFeedback:
         )
 
         await store.record_feedback(category="bug", message="x", lang="de")
+        await store.record_onboarding(
+            user_group="private_individual",
+            geodata_experience="new",
+            intended_use="learning_other",
+            consent_version="v2",
+            lang="de",
+        )
         await store.record_turn(
             conversation_id="c1",
             message_id="m1",
@@ -100,9 +135,11 @@ class TestFeedback:
         )
 
         assert "expires_at" not in feedback.items[0]
+        assert "expires_at" not in feedback.items[1]
         assert "expires_at" not in conversations.items[0]
         # The write moment stays recorded regardless.
         assert feedback.items[0]["ts"].endswith("Z")
+        assert feedback.items[1]["ts"].endswith("Z")
         assert conversations.items[0]["ts"].endswith("Z")
 
     async def test_an_absent_email_is_not_stored_as_empty(self) -> None:
@@ -119,6 +156,35 @@ class TestFeedback:
         """Unset table names disable persistence, so the image boots with no AWS."""
         store = Store(Settings())
         assert await store.record_feedback(category="bug", message="x", lang="de")
+
+    async def test_onboarding_is_distinct_and_requires_a_confirmed_write(self) -> None:
+        table = FakeTable()
+        store = _store(SETTINGS, {"sgs-llm-feedback": table})
+
+        entry_id = await store.record_onboarding(
+            user_group="public_administration",
+            geodata_experience="advanced",
+            intended_use="professional_analysis",
+            consent_version="v2",
+            lang="de",
+        )
+
+        assert entry_id == table.items[0]["id"]
+        assert table.items[0]["entry_type"] == "onboarding"
+        assert "message" not in table.items[0]
+        assert "email" not in table.items[0]
+
+        unavailable = Store(Settings())
+        assert (
+            await unavailable.record_onboarding(
+                user_group="private_individual",
+                geodata_experience="new",
+                intended_use="learning_other",
+                consent_version="v2",
+                lang="en",
+            )
+            is None
+        )
 
 
 class TestConversationTurns:
@@ -190,6 +256,18 @@ class TestConversationTurns:
         item = table.items[0]
         for field in ("latency_ms", "input_tokens", "output_tokens", "layer_count", "expires_at"):
             assert isinstance(item[field], int), field
+
+    async def test_admin_reads_use_the_by_day_index(self) -> None:
+        table = FakeTable()
+        table.items = [{"latency_ms": 12, "log_date": "2026-08-19"}]
+        store = _store(SETTINGS, {"sgs-llm-conversations": table})
+
+        items, cursor = await store.query_day(
+            table_name="sgs-llm-conversations", log_date="2026-08-19", limit=50
+        )
+
+        assert items == table.items
+        assert cursor is None
 
 
 class TestArtifacts:
