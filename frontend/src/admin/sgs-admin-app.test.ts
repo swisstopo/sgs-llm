@@ -1,16 +1,23 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AdminRecord } from './types';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { changeLanguage, initI18n } from '../i18n/i18n';
+import type { AdminMetrics, AdminRecord } from './types';
 import './sgs-admin-app';
 
 interface TestAdminElement extends HTMLElement {
   authenticated: boolean;
   kind: 'conversations' | 'profiles' | 'feedback';
   loading: boolean;
+  metrics?: AdminMetrics;
   records: AdminRecord[];
   updateComplete: Promise<boolean>;
 }
+
+beforeAll(async () => {
+  await initI18n();
+  await changeLanguage('en');
+});
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -99,5 +106,92 @@ describe('admin conversation records', () => {
     disclosure?.click();
     await element.updateComplete;
     expect(root?.querySelector('.inline-transcript')).toBeNull();
+  });
+});
+
+describe('admin profile records', () => {
+  it('renders each submitted onboarding form as one row with every answer in its column', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 401 })));
+    const element = document.createElement('sgs-admin-app') as unknown as TestAdminElement;
+    document.body.append(element);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    element.loading = false;
+    element.authenticated = true;
+    element.kind = 'profiles';
+    element.metrics = {
+      from: '2026-08-19',
+      to: '2026-08-19',
+      daily: [],
+      totals: { onboarding: 2 },
+      breakdowns: {
+        user_groups: { private_sector: 1, public_administration: 1 },
+        geodata_experience: { occasional: 1, advanced: 1 },
+        intended_uses: { create_map: 1, find_data: 1 },
+      },
+    };
+    element.records = [
+      {
+        id: 'profile-1',
+        entry_type: 'onboarding',
+        ts: '2026-08-19T10:00:00Z',
+        lang: 'en',
+        user_group: 'private_sector',
+        geodata_experience: 'occasional',
+        intended_use: 'create_map',
+        consent_version: 'v2',
+      },
+      {
+        id: 'profile-2',
+        entry_type: 'onboarding',
+        ts: '2026-08-19T11:00:00Z',
+        lang: 'de',
+        user_group: 'public_administration',
+        geodata_experience: 'advanced',
+        intended_use: 'find_data',
+        consent_version: 'v2',
+      },
+    ];
+    await element.updateComplete;
+
+    const root = element.shadowRoot;
+    const headers = [...(root?.querySelectorAll('.record-header.profile-grid span') ?? [])].map(
+      (cell) => cell.textContent?.trim(),
+    );
+    expect(headers).toEqual([
+      'Submitted',
+      'Language',
+      'User type',
+      'Geodata experience',
+      'Main purpose',
+      'Consent',
+    ]);
+
+    const rows = root?.querySelectorAll<HTMLButtonElement>('.profile-record');
+    expect(rows).toHaveLength(2);
+    const firstRow = rows?.[0]?.textContent ?? '';
+    expect(firstRow).toContain('Private sector');
+    expect(firstRow).toContain('I use geodata occasionally');
+    expect(firstRow).toContain('Create or enrich a map');
+    expect(firstRow).toContain('v2');
+    expect(firstRow).not.toContain('private_sector');
+    expect(firstRow).not.toContain('create_map');
+
+    expect(root?.querySelector('.survey-total')?.textContent).toContain('2 responses');
+    expect(root?.querySelectorAll('.survey-histogram')).toHaveLength(3);
+    expect(root?.querySelectorAll('.histogram-row')).toHaveLength(13);
+    expect(root?.querySelector('.survey-histogram h4')?.textContent).toBe(
+      'Which best describes you?',
+    );
+    const selectedOption = root
+      ?.querySelector('[title="Private sector"]')
+      ?.closest('.histogram-row');
+    expect(selectedOption?.querySelector('.histogram-count')?.textContent).toBe('1');
+    expect(selectedOption?.querySelector<HTMLElement>('.histogram-bar')?.style.width).toBe('100%');
+    const unselectedOption = root
+      ?.querySelector('[title="Private individual"]')
+      ?.closest('.histogram-row');
+    expect(unselectedOption?.querySelector('.histogram-count')?.textContent).toBe('0');
+    expect(unselectedOption?.querySelector<HTMLElement>('.histogram-bar')?.style.width).toBe('0%');
   });
 });

@@ -4,6 +4,11 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { SUPPORTED_LANGUAGES, changeLanguage, currentLanguage, t } from '../i18n/i18n';
 import type { AppLanguage } from '../i18n/i18n';
 import { renderMarkdown } from '../markdown/renderMarkdown';
+import {
+  GEODATA_EXPERIENCE_LEVELS,
+  INTENDED_USES,
+  USER_GROUPS,
+} from '../onboarding/submitOnboarding';
 import { adminFetch, logout, signIn } from './auth';
 import type { AdminMetrics, AdminRecord, RecordPage } from './types';
 
@@ -37,19 +42,26 @@ const copy = {
     layers: 'Layers',
     input: 'input',
     output: 'output',
-    profiles: 'Profiles',
+    profiles: 'Surveys',
     feedback: 'Feedback',
     errors: 'Errors',
     latency: 'Latency',
     averageLatency: 'Average latency',
     totalLatency: 'Total latency',
     activity: 'Message activity',
-    breakdowns: 'Audience',
+    breakdowns: 'Usage details',
     records: 'Records',
     export: 'Export CSV',
     loadMore: 'Load more',
     empty: 'No records in this period.',
-    profileNote: 'Profiles are anonymous and cannot be linked to conversations.',
+    profileNote: 'Survey responses are anonymous and cannot be linked to conversations.',
+    surveyStatistics: 'Survey statistics',
+    responses: 'responses',
+    submitted: 'Submitted',
+    userType: 'User type',
+    geodataExperience: 'Geodata experience',
+    intendedUse: 'Main purpose',
+    consent: 'Consent',
     details: 'Open details',
     close: 'Close',
     metadata: 'Metadata',
@@ -86,19 +98,26 @@ const copy = {
     layers: 'Ebenen',
     input: 'Eingabe',
     output: 'Ausgabe',
-    profiles: 'Profile',
+    profiles: 'Umfragen',
     feedback: 'Feedback',
     errors: 'Fehler',
     latency: 'Latenz',
     averageLatency: 'Mittlere Latenz',
     totalLatency: 'Gesamtlatenz',
     activity: 'Nachrichtenaktivität',
-    breakdowns: 'Zielgruppe',
+    breakdowns: 'Nutzungsdetails',
     records: 'Einträge',
     export: 'CSV exportieren',
     loadMore: 'Mehr laden',
     empty: 'Keine Einträge in diesem Zeitraum.',
-    profileNote: 'Profile sind anonym und nicht mit Gesprächen verknüpfbar.',
+    profileNote: 'Umfrageantworten sind anonym und nicht mit Gesprächen verknüpfbar.',
+    surveyStatistics: 'Umfragestatistik',
+    responses: 'Antworten',
+    submitted: 'Eingegangen',
+    userType: 'Nutzertyp',
+    geodataExperience: 'Geodatenkenntnisse',
+    intendedUse: 'Hauptzweck',
+    consent: 'Einwilligung',
     details: 'Details öffnen',
     close: 'Schliessen',
     metadata: 'Metadaten',
@@ -135,19 +154,26 @@ const copy = {
     layers: 'Couches',
     input: 'entrée',
     output: 'sortie',
-    profiles: 'Profils',
+    profiles: 'Enquêtes',
     feedback: 'Feedback',
     errors: 'Erreurs',
     latency: 'Latence',
     averageLatency: 'Latence moyenne',
     totalLatency: 'Latence totale',
     activity: 'Activité des messages',
-    breakdowns: 'Public',
+    breakdowns: 'Détails d’utilisation',
     records: 'Données',
     export: 'Exporter CSV',
     loadMore: 'Charger plus',
     empty: 'Aucune donnée pour cette période.',
-    profileNote: 'Les profils sont anonymes et ne peuvent pas être liés aux conversations.',
+    profileNote: 'Les réponses sont anonymes et ne peuvent pas être liées aux conversations.',
+    surveyStatistics: 'Statistiques de l’enquête',
+    responses: 'réponses',
+    submitted: 'Envoyé',
+    userType: 'Type d’utilisateur',
+    geodataExperience: 'Expérience en géodonnées',
+    intendedUse: 'Objectif principal',
+    consent: 'Consentement',
     details: 'Ouvrir les détails',
     close: 'Fermer',
     metadata: 'Métadonnées',
@@ -184,19 +210,26 @@ const copy = {
     layers: 'Livelli',
     input: 'input',
     output: 'output',
-    profiles: 'Profili',
+    profiles: 'Sondaggi',
     feedback: 'Feedback',
     errors: 'Errori',
     latency: 'Latenza',
     averageLatency: 'Latenza media',
     totalLatency: 'Latenza totale',
     activity: 'Attività dei messaggi',
-    breakdowns: 'Pubblico',
+    breakdowns: 'Dettagli di utilizzo',
     records: 'Dati',
     export: 'Esporta CSV',
     loadMore: 'Carica altro',
     empty: 'Nessun dato nel periodo.',
-    profileNote: 'I profili sono anonimi e non possono essere collegati alle conversazioni.',
+    profileNote: 'Le risposte sono anonime e non possono essere collegate alle conversazioni.',
+    surveyStatistics: 'Statistiche del sondaggio',
+    responses: 'risposte',
+    submitted: 'Inviato',
+    userType: 'Tipo di utente',
+    geodataExperience: 'Esperienza con i geodati',
+    intendedUse: 'Scopo principale',
+    consent: 'Consenso',
     details: 'Apri dettagli',
     close: 'Chiudi',
     metadata: 'Metadati',
@@ -233,19 +266,26 @@ const copy = {
     layers: 'Stresas',
     input: 'entrada',
     output: 'sortida',
-    profiles: 'Profils',
+    profiles: 'Retschertgas',
     feedback: 'Resuns',
     errors: 'Errors',
     latency: 'Latenza',
     averageLatency: 'Latenza media',
     totalLatency: 'Latenza totala',
     activity: 'Activitad dals messadis',
-    breakdowns: 'Public',
+    breakdowns: 'Detagls dal diever',
     records: 'Datas',
     export: 'Exportar CSV',
     loadMore: 'Chargiar dapli',
     empty: 'Naginas datas en questa perioda.',
-    profileNote: 'Ils profils èn anonims e na pon betg vegnir colliads cun conversaziuns.',
+    profileNote: 'Las respostas èn anonimas e na pon betg vegnir colliadas cun conversaziuns.',
+    surveyStatistics: 'Statistica da la retschertga',
+    responses: 'respostas',
+    submitted: 'Tramess',
+    userType: 'Tip d’utilisader',
+    geodataExperience: 'Experientscha cun geodatas',
+    intendedUse: 'Intent principal',
+    consent: 'Consentiment',
     details: 'Avrir detagls',
     close: 'Serrar',
     metadata: 'Metadatas',
@@ -521,6 +561,12 @@ export class SgsAdminApp extends LitElement {
       gap: 0.3rem 0.75rem;
       font-size: 0.78rem;
     }
+    .rank > span:nth-child(odd) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .rank .value {
       font-variant-numeric: tabular-nums;
       font-weight: 650;
@@ -562,6 +608,85 @@ export class SgsAdminApp extends LitElement {
       color: #687581;
       font-size: 0.76rem;
     }
+    .survey-statistics {
+      border-bottom: 1px solid #e3e7ea;
+      background: #fafbfb;
+    }
+    .survey-statistics-head {
+      min-height: 2.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.65rem 1rem;
+    }
+    .survey-statistics-head h3 {
+      margin: 0;
+      color: #34424e;
+      font-size: 0.78rem;
+      font-weight: 650;
+    }
+    .survey-total {
+      color: #64717c;
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .survey-histograms {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid #e8ebed;
+    }
+    .survey-histogram {
+      min-width: 0;
+      padding: 0.85rem 1rem 1rem;
+    }
+    .survey-histogram + .survey-histogram {
+      border-left: 1px solid #e3e7ea;
+    }
+    .survey-histogram h4 {
+      min-height: 2rem;
+      margin: 0 0 0.65rem;
+      color: #53616d;
+      font-size: 0.7rem;
+      font-weight: 650;
+      line-height: 1.4;
+    }
+    .histogram-rows {
+      display: grid;
+      gap: 0.55rem;
+    }
+    .histogram-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.22rem;
+      color: #4d5b67;
+      font-size: 0.7rem;
+      line-height: 1.3;
+    }
+    .histogram-label span:first-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .histogram-count {
+      flex: 0 0 auto;
+      color: #25333e;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .histogram-track {
+      height: 0.35rem;
+      overflow: hidden;
+      background: #e4e8eb;
+    }
+    .histogram-bar {
+      display: block;
+      height: 100%;
+      background: #d8232a;
+    }
     .record-header,
     .record-row {
       display: grid;
@@ -571,6 +696,16 @@ export class SgsAdminApp extends LitElement {
     }
     .conversation-grid {
       grid-template-columns: 10.5rem 4rem minmax(0, 1fr) 5.5rem;
+    }
+    .profile-table {
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+    }
+    .profile-grid {
+      min-width: 68rem;
+      grid-template-columns:
+        10.5rem 4rem minmax(10rem, 1fr) minmax(13rem, 1.25fr) minmax(13rem, 1.25fr)
+        5rem;
     }
     .record-header {
       min-height: 2.3rem;
@@ -698,6 +833,22 @@ export class SgsAdminApp extends LitElement {
       white-space: nowrap;
       font-size: 0.8rem;
       font-weight: 600;
+    }
+    .profile-cell {
+      min-width: 0;
+      overflow: hidden;
+      color: #34424e;
+      font-size: 0.78rem;
+      font-weight: 550;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .profile-consent {
+      color: #63717c;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.7rem;
+      font-weight: 500;
     }
     .empty {
       padding: 3rem 1rem;
@@ -969,6 +1120,16 @@ export class SgsAdminApp extends LitElement {
       .overview {
         grid-template-columns: 1fr;
       }
+      .survey-histograms {
+        grid-template-columns: 1fr;
+      }
+      .survey-histogram + .survey-histogram {
+        border-top: 1px solid #e3e7ea;
+        border-left: 0;
+      }
+      .survey-histogram h4 {
+        min-height: auto;
+      }
       .record-header {
         display: none;
       }
@@ -986,6 +1147,20 @@ export class SgsAdminApp extends LitElement {
       }
       .record-row.conversation-grid {
         grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .profile-table .record-header.profile-grid,
+      .profile-table .record-row.profile-grid {
+        grid-template-columns:
+          10.5rem 4rem minmax(10rem, 1fr) minmax(13rem, 1.25fr) minmax(13rem, 1.25fr)
+          5rem;
+      }
+      .profile-table .record-header.profile-grid {
+        display: grid;
+      }
+      .profile-table .profile-grid time,
+      .profile-table .profile-grid .lang {
+        grid-column: auto;
+        grid-row: auto;
       }
       .conversation-count {
         grid-column: 2;
@@ -1206,17 +1381,18 @@ export class SgsAdminApp extends LitElement {
   private renderBreakdowns() {
     const breakdowns = this.metrics?.breakdowns ?? {};
     return html`<div class="breakdowns">
-      ${['user_groups', 'geodata_experience', 'languages'].map(
+      ${['languages', 'models'].map(
         (name) =>
           html`<section class="breakdown">
-            <h3>${name.replaceAll('_', ' ')}</h3>
+            <h3>${name === 'languages' ? this.text.language : this.text.model}</h3>
             <div class="rank">
               ${Object.entries(breakdowns[name] ?? {})
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 4)
                 .map(
                   ([key, value]) =>
-                    html`<span>${this.optionLabel(name, key)}</span
+                    html`<span title=${this.optionLabel(name, key)}
+                        >${this.optionLabel(name, key)}</span
                       ><span class="value">${value}</span>`,
                 )}
             </div>
@@ -1253,19 +1429,18 @@ export class SgsAdminApp extends LitElement {
         </div>
       </header>
       ${this.kind === 'profiles'
-        ? html`<p class="note">${this.text.profileNote}</p>`
+        ? html`${this.renderSurveyStatistics()}
+            <p class="note">${this.text.profileNote}</p>`
         : nothing}${this.records.length === 0
         ? html`<div class="empty">${this.text.empty}</div>`
         : html`<div
-              class="record-header ${this.kind === 'conversations' ? 'conversation-grid' : ''}"
-              aria-hidden="true"
-            >
-              <span>Date</span><span>Lang.</span><span>${this.recordContentLabel()}</span>${this
-                .kind === 'conversations'
-                ? html`<span>${this.text.messages}</span>`
-                : nothing}
-            </div>
-            <div>${this.records.map((record) => this.renderRecord(record))}</div>`}${this.nextCursor
+            class=${this.kind === 'profiles' ? 'profile-table' : ''}
+            aria-label=${this.kind === 'profiles' ? this.text.profiles : nothing}
+            tabindex=${this.kind === 'profiles' ? '0' : nothing}
+          >
+            ${this.renderRecordHeader()}
+            <div>${this.records.map((record) => this.renderRecord(record))}</div>
+          </div>`}${this.nextCursor
         ? html`<div class="load-more">
             <button class="button" @click=${() => this.loadRecords(true)}>
               ${this.text.loadMore}
@@ -1275,8 +1450,69 @@ export class SgsAdminApp extends LitElement {
     </section>`;
   }
 
+  private renderSurveyStatistics() {
+    const breakdowns = this.metrics?.breakdowns ?? {};
+    const groups = [
+      {
+        name: 'user_groups',
+        title: t('chat.onboarding.form.userGroup.label'),
+        options: USER_GROUPS,
+      },
+      {
+        name: 'geodata_experience',
+        title: t('chat.onboarding.form.experience.label'),
+        options: GEODATA_EXPERIENCE_LEVELS,
+      },
+      {
+        name: 'intended_uses',
+        title: t('chat.onboarding.form.intendedUse.label'),
+        options: INTENDED_USES,
+      },
+    ] as const;
+    const total = this.metrics?.totals.onboarding ?? 0;
+    return html`<section class="survey-statistics" aria-label=${this.text.surveyStatistics}>
+      <header class="survey-statistics-head">
+        <h3>${this.text.surveyStatistics}</h3>
+        <span class="survey-total">${this.formatNumber(total)} ${this.text.responses}</span>
+      </header>
+      <div class="survey-histograms">
+        ${groups.map(({ name, title, options }) =>
+          this.renderSurveyHistogram(name, String(title), options, breakdowns[name] ?? {}),
+        )}
+      </div>
+    </section>`;
+  }
+
+  private renderSurveyHistogram(
+    name: string,
+    title: string,
+    options: readonly string[],
+    counts: Record<string, number>,
+  ) {
+    const maximum = Math.max(1, ...options.map((option) => counts[option] ?? 0));
+    return html`<section class="survey-histogram">
+      <h4>${title}</h4>
+      <div class="histogram-rows">
+        ${options.map((option) => {
+          const count = counts[option] ?? 0;
+          const width = (count / maximum) * 100;
+          return html`<div class="histogram-row">
+            <div class="histogram-label">
+              <span title=${this.optionLabel(name, option)}>${this.optionLabel(name, option)}</span>
+              <span class="histogram-count">${this.formatNumber(count)}</span>
+            </div>
+            <div class="histogram-track" aria-hidden="true">
+              <span class="histogram-bar" style=${`width:${width}%`}></span>
+            </div>
+          </div>`;
+        })}
+      </div>
+    </section>`;
+  }
+
   private renderRecord(record: AdminRecord) {
     if (this.kind === 'conversations') return this.renderConversationRecord(record);
+    if (this.kind === 'profiles') return this.renderProfileRecord(record);
     return html`<button
       class="record-row ${this.selected === record ? 'selected' : ''}"
       aria-label=${this.text.details}
@@ -1285,6 +1521,48 @@ export class SgsAdminApp extends LitElement {
       <time>${this.formatDate(record.started_at ?? record.ts ?? record.log_date)}</time
       ><span class="lang">${String(record.lang ?? '—')}</span
       ><span class="record-copy"><strong>${this.recordContent(record)}</strong></span>
+    </button>`;
+  }
+
+  private renderRecordHeader() {
+    if (this.kind === 'profiles')
+      return html`<div class="record-header profile-grid" aria-hidden="true">
+        <span>${this.text.submitted}</span>
+        <span>${this.text.language}</span>
+        <span>${this.text.userType}</span>
+        <span>${this.text.geodataExperience}</span>
+        <span>${this.text.intendedUse}</span>
+        <span>${this.text.consent}</span>
+      </div>`;
+    return html`<div
+      class="record-header ${this.kind === 'conversations' ? 'conversation-grid' : ''}"
+      aria-hidden="true"
+    >
+      <span>Date</span><span>Lang.</span><span>${this.recordContentLabel()}</span>${this.kind ===
+      'conversations'
+        ? html`<span>${this.text.messages}</span>`
+        : nothing}
+    </div>`;
+  }
+
+  private renderProfileRecord(record: AdminRecord) {
+    const userType = this.optionLabel('user_groups', String(record.user_group ?? 'unknown'));
+    const experience = this.optionLabel(
+      'geodata_experience',
+      String(record.geodata_experience ?? 'unknown'),
+    );
+    const intendedUse = this.optionLabel('intended_uses', String(record.intended_use ?? 'unknown'));
+    return html`<button
+      class="record-row profile-grid profile-record ${this.selected === record ? 'selected' : ''}"
+      aria-label=${`${this.text.details}: ${userType}, ${experience}, ${intendedUse}`}
+      @click=${() => (this.selected = record)}
+    >
+      <time>${this.formatDate(record.ts ?? record.log_date)}</time>
+      <span class="lang">${String(record.lang ?? '—')}</span>
+      <span class="profile-cell" title=${userType}>${userType}</span>
+      <span class="profile-cell" title=${experience}>${experience}</span>
+      <span class="profile-cell" title=${intendedUse}>${intendedUse}</span>
+      <span class="profile-cell profile-consent">${String(record.consent_version ?? '—')}</span>
     </button>`;
   }
 
@@ -1677,7 +1955,7 @@ export class SgsAdminApp extends LitElement {
     const section: Record<string, string> = {
       user_groups: 'userGroup',
       geodata_experience: 'experience',
-      intended_uses: 'use',
+      intended_uses: 'intendedUse',
     };
     return section[group]
       ? t(`chat.onboarding.form.${section[group]}.options.${key}`, {
