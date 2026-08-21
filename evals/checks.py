@@ -218,7 +218,11 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         return Verdict(
             question_id=question["id"],
             passed=False,
-            failures=[Failure("exchange_error", f"turn ended with error={observed.error_code}")],
+            failures=[
+                Failure(
+                    "exchange_error", f"turn ended with error={observed.error_code}"
+                )
+            ],
         )
 
     if not observed.answer.strip():
@@ -229,25 +233,33 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         stage = "no_tool_call" if not observed.tool_calls else "wrong_tool"
         failures.append(
             Failure(
-                stage, f"expected one of {wanted_any}, called {observed.tool_calls or 'nothing'}"
+                stage,
+                f"expected one of {wanted_any}, called {observed.tool_calls or 'nothing'}",
             )
         )
 
     chain = expect.get("must_chain_tools")
     if chain and not _chain_in_order(observed.tool_calls, chain):
         stage = "no_tool_call" if not observed.tool_calls else "chain_broken"
-        failures.append(Failure(stage, f"expected {chain} in order, called {observed.tool_calls}"))
+        failures.append(
+            Failure(stage, f"expected {chain} in order, called {observed.tool_calls}")
+        )
 
     if expect.get("must_produce_layer") and not observed.layers:
         failures.append(Failure("no_layer", "expected a map layer, none produced"))
 
     if expect.get("no_layer") and observed.layers:
-        failures.append(Failure("unexpected_layer", f"put {observed.layers} on the map"))
+        failures.append(
+            Failure("unexpected_layer", f"put {observed.layers} on the map")
+        )
 
     ceiling = expect.get("max_tools")
     if isinstance(ceiling, int) and len(observed.tool_calls) > ceiling:
         failures.append(
-            Failure("too_many_tools", f"{len(observed.tool_calls)} tool calls, ceiling {ceiling}")
+            Failure(
+                "too_many_tools",
+                f"{len(observed.tool_calls)} tool calls, ceiling {ceiling}",
+            )
         )
 
     wanted_lang = expect.get("answer_lang")
@@ -255,12 +267,16 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         detected = detect_language(observed.answer)
         if detected is not None and detected != wanted_lang:
             failures.append(
-                Failure("wrong_language", f"asked in {wanted_lang}, answered in {detected}")
+                Failure(
+                    "wrong_language", f"asked in {wanted_lang}, answered in {detected}"
+                )
             )
 
     for needle in expect.get("must_mention") or []:
         if not _contains(observed.answer, needle):
-            failures.append(Failure("missing_mention", f"answer never mentions {needle!r}"))
+            failures.append(
+                Failure("missing_mention", f"answer never mentions {needle!r}")
+            )
 
     for needle in expect.get("must_not_contain") or []:
         if _contains(observed.answer, needle):
@@ -277,7 +293,9 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
             for call in observed.tool_calls
         )
         if not asked:
-            failures.append(Failure("no_clarification", "expected a clarifying question"))
+            failures.append(
+                Failure("no_clarification", "expected a clarifying question")
+            )
         elif answered_anyway:
             failures.append(
                 Failure(
@@ -302,9 +320,12 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         # explains a thin answer.
         failures.append(
             Failure(
-                "tool_error", f"tool(s) failed: {', '.join(sorted(set(observed.failed_tools)))}"
+                "tool_error",
+                f"tool(s) failed: {', '.join(sorted(set(observed.failed_tools)))}",
             )
         )
 
     hard_failures = [f for f in failures if f.stage != "tool_error"]
-    return Verdict(question_id=question["id"], passed=not hard_failures, failures=failures)
+    return Verdict(
+        question_id=question["id"], passed=not hard_failures, failures=failures
+    )

@@ -110,7 +110,9 @@ class InjectingSwisstopo(Swisstopo):
 
 
 def load_questions(only: str | None, ids: list[str] | None) -> list[dict[str, Any]]:
-    questions: list[dict[str, Any]] = yaml.safe_load(QUESTIONS.read_text(encoding="utf-8"))
+    questions: list[dict[str, Any]] = yaml.safe_load(
+        QUESTIONS.read_text(encoding="utf-8")
+    )
     if only:
         questions = [q for q in questions if q.get("category") == only]
     if ids:
@@ -206,7 +208,10 @@ async def ask(
     try:
         # aclosing: run_turn holds the MCP session open across its yields, and abandoning
         # it on timeout finalizes the transport's cancel scope in the wrong task.
-        async with asyncio.timeout(settings.turn_timeout_seconds), contextlib.aclosing(turn):
+        async with (
+            asyncio.timeout(settings.turn_timeout_seconds),
+            contextlib.aclosing(turn),
+        ):
             async for event in turn:
                 if event.type == "final":
                     observed.answer = event.content_markdown
@@ -227,7 +232,9 @@ async def ask(
     observed.tool_calls = stats.tool_calls
     # A failed step's label is localized progress text, not the tool name, so the report
     # would otherwise read "tool(s) failed: t1". Step `tN` is the Nth tool call.
-    observed.failed_tools = [_tool_for_step(step, stats.tool_calls) for step in failed_steps]
+    observed.failed_tools = [
+        _tool_for_step(step, stats.tool_calls) for step in failed_steps
+    ]
     observed.model_id = stats.model_id or str(handle)
     observed.latency_ms = int((time.monotonic() - started) * 1000)
     observed.input_tokens = stats.input_tokens
@@ -281,16 +288,28 @@ async def run_model(
     # Questions needing the injection fixture run against their own server instance, so
     # the hostile data cannot leak into the other questions' results.
     for inject in (False, True):
-        batch = [q for q in questions if bool(q.get("fixture") == "injected_features") is inject]
+        batch = [
+            q
+            for q in questions
+            if bool(q.get("fixture") == "injected_features") is inject
+        ]
         if not batch:
             continue
         if inject and mcp_url:
-            print(f"  ({len(batch)} injection questions run against mcp_dummy, not {mcp_url})")
+            print(
+                f"  ({len(batch)} injection questions run against mcp_dummy, not {mcp_url})"
+            )
         async with tool_gateway(inject, mcp_url) as gateway:
             for index, question in enumerate(batch, start=1):
-                print(f"  [{index}/{len(batch)}] {question['id']} … ", end="", flush=True)
+                print(
+                    f"  [{index}/{len(batch)}] {question['id']} … ", end="", flush=True
+                )
                 observed = await ask(
-                    question, models=models, handle=handle, gateway=gateway, settings=settings
+                    question,
+                    models=models,
+                    handle=handle,
+                    gateway=gateway,
+                    settings=settings,
                 )
                 verdict = evaluate(question, observed)
 
@@ -334,9 +353,13 @@ def summarise(rows: list[dict[str, Any]]) -> str:
         by_key[(row["category"], row["model"])].append(row)
 
     lines = ["# SGS LLM evaluation", ""]
-    lines.append(f"{len(rows)} runs · {len(models)} model(s) · {len(categories)} categories")
+    lines.append(
+        f"{len(rows)} runs · {len(models)} model(s) · {len(categories)} categories"
+    )
     sets = sorted({row.get("question_set", "?") for row in rows})
-    variants = sorted({f"{row['model']}={row.get('prompt_variant', '?')}" for row in rows})
+    variants = sorted(
+        {f"{row['model']}={row.get('prompt_variant', '?')}" for row in rows}
+    )
     servers = sorted({row.get("mcp", "mcp_dummy") for row in rows})
     lines.append(f"question set `{', '.join(sets)}` · prompt {', '.join(variants)}")
     lines.append(f"MCP server `{', '.join(servers)}`")
@@ -411,8 +434,12 @@ def summarise(rows: list[dict[str, Any]]) -> str:
                 lines.append(f"- **{failure['stage']}**: {failure['detail']}")
             if row["verdict"]["judged_score"] is not None:
                 verdict = row["verdict"]
-                lines.append(f"- judge: {verdict['judged_score']}/5 - {verdict['judged_reason']}")
-            answer = (row["observed"]["answer"] or "(no answer)").strip().replace("\n", " ")
+                lines.append(
+                    f"- judge: {verdict['judged_score']}/5 - {verdict['judged_reason']}"
+                )
+            answer = (
+                (row["observed"]["answer"] or "(no answer)").strip().replace("\n", " ")
+            )
             lines.append(f"- answer: {answer[:300]}")
             lines.append("")
 
@@ -437,7 +464,9 @@ def resolve_handles(args: argparse.Namespace, settings: Settings) -> list[ModelH
     if args.model:
         return [
             ModelHandle(
-                model_id=args.model, region=args.region or settings.bedrock_region, role="primary"
+                model_id=args.model,
+                region=args.region or settings.bedrock_region,
+                role="primary",
             )
         ]
     handles = list(BedrockModels(settings).handles)
@@ -457,9 +486,15 @@ async def main() -> None:
     parser.add_argument("--region", help="Region for --model")
     parser.add_argument("--all", action="store_true", help="Run every configured model")
     parser.add_argument("--only", help="Run one category only")
-    parser.add_argument("--id", action="append", dest="ids", help="Run specific question ids")
-    parser.add_argument("--judge", action="store_true", help="Also model-grade the judge questions")
-    parser.add_argument("--list", action="store_true", help="List the question set and exit")
+    parser.add_argument(
+        "--id", action="append", dest="ids", help="Run specific question ids"
+    )
+    parser.add_argument(
+        "--judge", action="store_true", help="Also model-grade the judge questions"
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="List the question set and exit"
+    )
     parser.add_argument(
         "--mcp-url",
         default="",
@@ -467,7 +502,9 @@ async def main() -> None:
         "on http://127.0.0.1:8790/mcp) instead of the bundled stand-in. Required for the "
         "questions covering tools the stand-in does not implement.",
     )
-    parser.add_argument("--timeout", type=float, default=120.0, help="Per-question budget")
+    parser.add_argument(
+        "--timeout", type=float, default=120.0, help="Per-question budget"
+    )
     parser.add_argument(
         "--catalog-layers",
         action="store_true",

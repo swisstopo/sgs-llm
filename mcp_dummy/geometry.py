@@ -84,7 +84,10 @@ def measure(features: list[dict[str, Any]]) -> dict[str, float]:
             continue
         area_m2 += float(getattr(projected, "area", 0.0) or 0.0)
         length_m += float(getattr(projected, "length", 0.0) or 0.0)
-    return {"area_km2": round(area_m2 / 1_000_000, 4), "length_km": round(length_m / 1_000, 4)}
+    return {
+        "area_km2": round(area_m2 / 1_000_000, 4),
+        "length_km": round(length_m / 1_000, 4),
+    }
 
 
 def summarise_properties(

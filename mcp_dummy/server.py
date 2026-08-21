@@ -95,7 +95,9 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         map.
         """
         if len(bbox) != 4:
-            return {"error": "bbox must be [min_lon, min_lat, max_lon, max_lat] in WGS84."}
+            return {
+                "error": "bbox must be [min_lon, min_lat, max_lon, max_lat] in WGS84."
+            }
 
         try:
             features = await api.identify_features(
@@ -118,7 +120,10 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
             features = [
                 f
                 for f in features
-                if any(needle in str(v).lower() for v in (f.get("properties") or {}).values())
+                if any(
+                    needle in str(v).lower()
+                    for v in (f.get("properties") or {}).values()
+                )
             ]
 
         if not features:
@@ -173,7 +178,9 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         """
         caps = await api.layer_capabilities(layer_id, lang)
         if not caps["known"]:
-            return {"error": f"'{layer_id}' is not an official layer id. Use search_layers first."}
+            return {
+                "error": f"'{layer_id}' is not an official layer id. Use search_layers first."
+            }
         if not caps["displayable"]:
             return {"error": f"'{layer_id}' cannot be rendered as a map layer."}
 
@@ -184,13 +191,18 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         }
         if opacity is not None:
             layer["opacity"] = opacity
-        result: dict[str, Any] = {"catalog_layer": layer, "layer_type": caps.get("type")}
+        result: dict[str, Any] = {
+            "catalog_layer": layer,
+            "layer_type": caps.get("type"),
+        }
         if focus_bbox and len(focus_bbox) == 4:
             result["focus_bbox"] = focus_bbox
         return result
 
     @server.tool()
-    async def analyze_features(result_id: str, operation: str = "summary") -> dict[str, Any]:
+    async def analyze_features(
+        result_id: str, operation: str = "summary"
+    ) -> dict[str, Any]:
         """Compute figures over a fetched feature set.
 
         `operation` is one of: "count", "area" (total km²), "length" (total km),
@@ -199,7 +211,9 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         """
         entry = cache.get(result_id)
         if entry is None:
-            return {"error": f"Unknown result_id '{result_id}'. Call filter_features first."}
+            return {
+                "error": f"Unknown result_id '{result_id}'. Call filter_features first."
+            }
 
         features = entry.features
         wanted = operation.strip().lower()
@@ -232,7 +246,9 @@ def build_server(artifacts: Any, swisstopo: Swisstopo) -> MCPServer:
         """
         entry = cache.get(result_id)
         if entry is None:
-            return {"error": f"Unknown result_id '{result_id}'. Call filter_features first."}
+            return {
+                "error": f"Unknown result_id '{result_id}'. Call filter_features first."
+            }
 
         collection = {"type": "FeatureCollection", "features": entry.features}
         url = await artifacts.publish_geojson(f"{result_id}.geojson", collection)
@@ -270,8 +286,12 @@ class LocalArtifacts:
         self._limit = limit
         self._files: OrderedDict[str, bytes] = OrderedDict()
 
-    async def publish_geojson(self, name: str, feature_collection: dict[str, Any]) -> str | None:
-        self._files[name] = json.dumps(feature_collection, ensure_ascii=False).encode("utf-8")
+    async def publish_geojson(
+        self, name: str, feature_collection: dict[str, Any]
+    ) -> str | None:
+        self._files[name] = json.dumps(feature_collection, ensure_ascii=False).encode(
+            "utf-8"
+        )
         self._files.move_to_end(name)
         while len(self._files) > self._limit:
             self._files.popitem(last=False)
@@ -287,7 +307,9 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8788)
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
 
     import uvicorn
     from starlette.responses import Response
