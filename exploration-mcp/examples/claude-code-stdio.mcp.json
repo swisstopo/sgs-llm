@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "swisstopo-search": {
+      "type": "stdio",
+      "command": "${SWISSTOPO_SEARCH_MCP_PYTHON}",
+      "args": ["-m", "swisstopo_mcp", "--transport", "stdio"],
+      "env": {}
+    }
+  }
+}

@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     mcp_server_url: str = ""
     mcp_server_token: str = ""
 
+    # The public, read-only exploration MCP is served by this same process at /mcp.
+    # It has no model or AWS calls, but it does call public geo.admin.ch APIs, so its
+    # limits are independent from the Bedrock-backed chat limits below.
+    exploration_mcp_allowed_origins: str = "https://claude.ai,https://claude.com"
+    exploration_mcp_requests_per_minute: int = 120
+    exploration_mcp_max_concurrent_requests: int = 8
+
     # Official layers travel as small references and the browser resolves their current
     # WMS/WMTS/GeoJSON configuration directly from geo.admin.ch. Kept as an emergency
     # rollout switch, but enabled now that protocol v1 renders inline layer actions.
@@ -71,6 +78,15 @@ class Settings(BaseSettings):
     def origin_allowlist(self) -> tuple[str, ...]:
         """Accepted WebSocket origins. Empty means "allow any" (local development)."""
         return tuple(o.strip() for o in self.allowed_origins.split(",") if o.strip())
+
+    @property
+    def exploration_mcp_origin_allowlist(self) -> tuple[str, ...]:
+        """Browser origins allowed to call the public MCP; non-browser clients omit it."""
+        return tuple(
+            origin.strip()
+            for origin in self.exploration_mcp_allowed_origins.split(",")
+            if origin.strip()
+        )
 
 
 @lru_cache(maxsize=1)

@@ -1,0 +1,4 @@
+# Agno 2.9.0 imports mcp.shared.exceptions.McpError, which exists in MCP 1.x.
+# Keep this remote client environment separate from the MCP 2.0 server environment.
+agno==2.9.0
+mcp==1.29.0

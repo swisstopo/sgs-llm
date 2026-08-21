@@ -24,6 +24,7 @@ Metadata:
           - PublicBaseUrl
           - McpServerUrl
           - ServiceConnectNamespace
+          - ExplorationMcpAllowedOrigins
           - DataLayerPresignTtl
           - LogLevel
       - Label: { default: Limits and optional key }
@@ -32,6 +33,8 @@ Metadata:
           - TurnTimeoutSeconds
           - RateLimitMessagesPerMinute
           - MaxConnectionsPerIp
+          - ExplorationMcpRequestsPerMinute
+          - ExplorationMcpMaxConcurrentRequests
 
 Parameters:
   FoundationStackName:
@@ -141,6 +144,12 @@ Parameters:
       http://sgs-llm-geosearch:8790/mcp: that name exists only inside the namespace,
       so without this the backend resolves nothing and every tool call fails. Leave
       empty for an externally hosted MCP server, or none at all.
+  ExplorationMcpAllowedOrigins:
+    Type: String
+    Default: https://claude.ai,https://claude.com
+    Description: >-
+      Comma-separated browser origins allowed to call the public exploration MCP at
+      /mcp. Server-side MCP clients normally omit Origin and are unaffected.
   ApiKey:
     Type: String
     Default: ''
@@ -170,6 +179,18 @@ Parameters:
     Type: Number
     Default: 8
     Description: Concurrent WebSocket connections allowed from one client address.
+  ExplorationMcpRequestsPerMinute:
+    Type: Number
+    Default: 120
+    MinValue: 1
+    MaxValue: 10000
+    Description: Public exploration MCP request allowance per viewer address.
+  ExplorationMcpMaxConcurrentRequests:
+    Type: Number
+    Default: 8
+    MinValue: 1
+    MaxValue: 64
+    Description: Global public exploration MCP concurrency cap for the shared task.
   DataLayerPresignTtl:
     Type: Number
     Default: 3600
@@ -266,6 +287,9 @@ Resources:
             - { Name: ALLOWED_ORIGINS, Value: !Ref PublicBaseUrl }
             - Name: MCP_SERVER_URL
               Value: !If [HasMcpServer, !Ref McpServerUrl, '']
+            - { Name: EXPLORATION_MCP_ALLOWED_ORIGINS, Value: !Ref ExplorationMcpAllowedOrigins }
+            - { Name: EXPLORATION_MCP_REQUESTS_PER_MINUTE, Value: !Ref ExplorationMcpRequestsPerMinute }
+            - { Name: EXPLORATION_MCP_MAX_CONCURRENT_REQUESTS, Value: !Ref ExplorationMcpMaxConcurrentRequests }
             - { Name: API_KEY, Value: !Ref ApiKey }
             - { Name: TURN_TIMEOUT_SECONDS, Value: !Ref TurnTimeoutSeconds }
             - { Name: RATE_LIMIT_MESSAGES_PER_MINUTE, Value: !Ref RateLimitMessagesPerMinute }

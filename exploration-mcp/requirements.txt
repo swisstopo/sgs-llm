@@ -1,0 +1,7 @@
+# Exact runtime pins for reproducible local and container installs.
+mcp==2.0.0
+uvicorn[standard]==0.52.0
+# The MCP 2 SDK also installs the separate httpx2 package. This server deliberately
+# uses the original httpx API for geo.admin.ch, so both packages coexist.
+httpx==0.28.1
+pyproj==3.7.2

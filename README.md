@@ -29,6 +29,13 @@ directly for map interactivity.
   administrative boundaries from swissBOUNDARIES3D, schema-validated filtering, spatial
   analysis, and map-ready official or personalized layers.
   Deployed as its own service ([`geosearch/README.md`](geosearch/README.md)).
+- **`exploration-mcp/`** - a portable, stateless and read-only **public MCP server** for
+  dataset discovery, administrative divisions, geocoding, GeoAdmin preview links, and
+  parcel/ÖREB point exploration. It has no model or AWS-service dependency and is mounted
+  into the existing backend task for general MCP clients at
+  [`https://denpw8uo5zpkl.cloudfront.net/mcp`](https://denpw8uo5zpkl.cloudfront.net/mcp)
+  ([`exploration-mcp/README.md`](exploration-mcp/README.md),
+  [`deployment`](docs/exploration-mcp-deployment.md)).
 - **`mcp_dummy/`** - a stand-in geodata MCP server whose tools are backed by the **real**
   geo.admin.ch APIs. It predates `geosearch/` and now serves development and evaluation
   only - **not** production traffic ([`mcp_dummy/README.md`](mcp_dummy/README.md)).
@@ -289,13 +296,15 @@ docker run -p 8080:80 sgs-llm-frontend
 
 A POC is deployed on AWS at **https://denpw8uo5zpkl.cloudfront.net/** — the static
 frontend is on **S3 + CloudFront**; `/ws/v1`, `/feedback`, and `/data/*` route through an
-**ALB** to the agent backend on **ECS Fargate**. The backend reaches the private geosearch
-MCP service through ECS Service Connect, so the browser never calls MCP directly.
+**ALB** to the agent backend on **ECS Fargate**. The public exploration MCP is mounted at
+`/mcp` in that same backend process. The backend reaches the separate private geosearch
+MCP service through ECS Service Connect.
 
 ```text
                  ┌────────────── CloudFront (HTTPS / wss) ──────────────┐
  browser ──────► │  /                           → S3 (private, OAC)       │
-                 │  /ws/v1, /feedback, /data/*  → ALB → agent (Fargate) │
+                 │  /ws/v1, /feedback, /data/*                         │
+                 │  /mcp                       → ALB → agent + MCP       │
                  └───────────────────────────────────────────────────────┘
                                                        │ Service Connect
                                                        ▼

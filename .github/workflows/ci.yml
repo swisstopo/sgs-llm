@@ -35,15 +35,21 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
-      - run: ruff check app tests ../mcp_dummy ../evals
-      - run: ruff format --check app tests ../mcp_dummy ../evals
+          cache-dependency-path: |
+            backend/requirements-dev.txt
+            exploration-mcp/pyproject.toml
+            exploration-mcp/requirements.txt
+            exploration-mcp/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt -e ../exploration-mcp
+      - run: ruff check app tests ../mcp_dummy ../evals ../exploration-mcp
+      - run: ruff format --check app tests ../mcp_dummy ../evals ../exploration-mcp
       # Scope comes from pyproject's `files`: app, mcp_dummy, evals, and geosearch
       # production modules. Test modules are excluded there.
       - run: mypy
       # The suite stubs AWS and the MCP server, so no credentials are needed.
       - run: pytest
+      - run: pytest ../exploration-mcp -q
+      - run: python ../exploration-mcp/scripts/smoke_stdio.py
 
   mock-agent:
     runs-on: ubuntu-latest
@@ -86,4 +92,4 @@ jobs:
           role-to-assume: arn:aws:iam::259789526488:role/github-actions-sgs-llm-deploy
           aws-region: eu-central-1
       - name: Deploy frontend
-        run: PROFILE= ./scripts/deploy-frontend.sh
+        run: PROFILE='' ./scripts/deploy-frontend.sh

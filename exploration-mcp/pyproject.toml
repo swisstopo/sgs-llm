@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "swisstopo-search-mcp"
+version = "2.3.0"
+description = "Read-only MCP server for Swiss federal geodata discovery, divisions, geocoding, and point lookup"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+license = { text = "MIT" }
+authors = [{ name = "Ageospatial" }]
+dependencies = [
+  "httpx==0.28.1",
+  "mcp==2.0.0",
+  "pyproj==3.7.2",
+  "uvicorn[standard]==0.52.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "duckdb==1.5.5",
+  "pytest==9.0.1",
+  "ruff==0.15.1",
+]
+
+[project.scripts]
+swisstopo-search-mcp = "swisstopo_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/swisstopo_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/swisstopo_mcp/data" = "swisstopo_mcp/data"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG"]

@@ -14,6 +14,7 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
+COPY exploration-mcp/src/swisstopo_mcp ./swisstopo_mcp
 # mcp_dummy/ is deliberately NOT copied: the stand-in geodata server is a development and
 # evaluation tool and must not ship to production.
 
@@ -34,6 +35,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD ["python", "-c", "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8787')+'/health').read()"]
 
 # `exec` makes uvicorn PID 1, so it receives ECS's SIGTERM directly and drains its
-# WebSocket connections within the 30 s stop timeout instead of being killed.
+# WebSocket and MCP requests within the 30 s stop timeout instead of being killed.
 # ws-ping keeps quiet chats alive under the ALB's 3600 s idle timeout.
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8787} --log-level ${LOG_LEVEL:-info} --ws-ping-interval 20 --ws-ping-timeout 20 --timeout-graceful-shutdown 25"]

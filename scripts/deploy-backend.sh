@@ -57,8 +57,9 @@ if [[ -z "$REPO_URI" || "$REPO_URI" == "None" ]]; then
 fi
 REGISTRY="${REPO_URI%%/*}"
 
-echo ">> Building $DOCKERFILE  [source: $SOURCE]  tag: $TAG"
-docker build -f "$DOCKERFILE" -t "$REPO_URI:$TAG" -t "$REPO_URI:latest" .
+echo ">> Building linux/amd64 $DOCKERFILE  [source: $SOURCE]  tag: $TAG"
+docker build --platform linux/amd64 -f "$DOCKERFILE" \
+  -t "$REPO_URI:$TAG" -t "$REPO_URI:latest" .
 
 echo ">> Pushing to $REPO_URI"
 "${AWS[@]}" ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"

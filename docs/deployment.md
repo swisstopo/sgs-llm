@@ -8,19 +8,20 @@ where credentials are needed, only the file *structure* is shown.
 
 The frontend is a static single-page app on **S3 + CloudFront**; the agent path is
 served by the **ECS Fargate backend behind an ALB** through the *same* CloudFront
-distribution. One HTTPS domain serves everything, so the browser only ever talks
-to a single TLS origin — no mixed-content, no CORS, and `wss://` works.
+distribution. One HTTPS domain serves the application and the public exploration MCP,
+so there is no mixed content and `wss://` works. The cross-origin Claude web connector
+is covered by the MCP's narrow CORS policy.
 
 ```
                  ┌──────────────── CloudFront (HTTPS / wss, *.cloudfront.net) ──────────────┐
  browser ──────▶ │  default behavior            ── S3 origin (private, OAC) → dist/ + config.json │
- (https + wss)   │  /ws/v1, /feedback, /data/*  ── ALB origin (http :80) → ECS Fargate task      │
+ (https + wss)   │  /ws/v1, /feedback, /data/*, /admin/api/*, /mcp                              │
+                 │                               ── ALB origin (http :80) → ECS Fargate task      │
                  └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The **EC2 mock-agent origin is retained but no longer in the path** — the agent
-behaviors point at `alb-agent`, so rolling back is flipping three
-`TargetOriginId` values. The Fargate service runs the production image from
+behaviors point at `alb-agent`. The Fargate service runs the production image from
 `backend/Dockerfile`; the mock-agent image remains a deterministic protocol reference and
 emergency rollback option.
 See [Backend deployment](#backend-deployment).
@@ -483,7 +484,7 @@ becomes healthy.
 ```text
                  ┌──────────────── CloudFront (HTTPS / wss) ────────────────────┐
  browser ──────▶ │  default               → S3 (private, OAC) → dist/ + config   │
- (https + wss)   │  /ws/v1 · /feedback · /data/*  → ALB origin (WebSocket upgrade)│
+ (https + wss)   │  /ws/v1 · /feedback · /data/* · /admin/api/* · /mcp → ALB       │
                  └───────────────────────────────────┬───────────────────────────┘
                                                      ▼
                               Application Load Balancer (public subnets, idle timeout 3600s,
@@ -495,6 +496,7 @@ becomes healthy.
                                      ├─► Amazon Bedrock — Claude + Mistral, EU profiles (task IAM role)
                                      ├─► DynamoDB — user feedback + conversation turns
                                      ├─► S3 — data-layer artifacts; backend relays presigned URLs
+                                     ├─► public exploration MCP — mounted at /mcp, no model calls
                                      └─► geosearch — the geodata MCP server, a second Fargate
                                          service in the SAME cluster, reached over Service Connect
                                          (see "Geodata MCP server" below)
@@ -666,6 +668,7 @@ The image is the only contract between the backend code and this infrastructure:
 | `GET /health` → `200` | ALB health check; an unhealthy task is replaced and a bad deploy rolls back |
 | `WebSocket /ws/v1` | Protocol v1 ([`protocol.md`](./protocol.md)) |
 | `POST /feedback` | Feedback form and onboarding survey endpoint |
+| Streamable HTTP `/mcp` | Public, stateless Swisstopo exploration tools |
 | `POST /admin/api/login` / `logout` | Local administrator session endpoints |
 | `GET` / `POST /admin/api/users` | List or create local administrator accounts |
 | `GET /admin/api/metrics` | Admin-only daily metrics (maximum 31-day range) |
@@ -740,6 +743,9 @@ ECS from Secrets Manager at task start.
 | `ALLOWED_ORIGINS` | parameter | Accepted WebSocket origin (comma-separated; empty allows any, for local development) |
 | `MCP_SERVER_URL` | parameter (empty) | MCP endpoint, and **the switch that enables the chat**. Empty means no production geodata server, so `/ws/v1` accepts connections and refuses every turn ([`protocol.md`](./protocol.md#waiting-for-the-production-mcp-server)). Set it to `http://sgs-llm-geosearch:8790/mcp` — the geosearch foundation stack's `McpServerUrl` output, together with `ServiceConnectNamespace` — to turn the chat on ([Geodata MCP server](#geodata-mcp-server-geosearch-deployment)) |
 | `MCP_SERVER_TOKEN` | **Secrets Manager** `sgs-llm/backend` | MCP credential; never in git, never in CI logs |
+| `EXPLORATION_MCP_ALLOWED_ORIGINS` | environment (`https://claude.ai,https://claude.com`) | Browser origins allowed to call the public `/mcp`; server-side clients omit Origin |
+| `EXPLORATION_MCP_REQUESTS_PER_MINUTE` | environment (120) | Public MCP requests allowed per viewer address per minute |
+| `EXPLORATION_MCP_MAX_CONCURRENT_REQUESTS` | environment (8) | Global public MCP concurrency cap protecting the shared task |
 | `API_KEY` | parameter (**empty**) | Optional shared key for `/ws/v1` and `/feedback`. Empty leaves them open, as [`protocol.md`](./protocol.md#limits-and-the-optional-key) describes - read that before enabling it, it is not a security boundary |
 | `TURN_TIMEOUT_SECONDS` | parameter (90) | Wall-clock budget per turn, then `error` `timeout` |
 | `RATE_LIMIT_MESSAGES_PER_MINUTE` | parameter (20) | Per-client allowance; every turn spends Bedrock tokens |
@@ -895,10 +901,11 @@ Checks before pushing - the same ones CI runs:
 
 ```bash
 cd backend
-.venv/bin/python -m ruff check app tests ../mcp_dummy ../evals
-.venv/bin/python -m ruff format --check app tests ../mcp_dummy ../evals
-.venv/bin/python -m mypy          # app, mcp_dummy, evals and geosearch (see pyproject.toml)
+.venv/bin/python -m ruff check app tests ../mcp_dummy ../evals ../exploration-mcp
+.venv/bin/python -m ruff format --check app tests ../mcp_dummy ../evals ../exploration-mcp
+.venv/bin/python -m mypy          # also follows the mounted exploration package
 .venv/bin/python -m pytest
+.venv/bin/python -m pytest ../exploration-mcp -q
 ```
 
 The gate that decides whether the image may deploy - build from the **repository root**,
@@ -914,6 +921,7 @@ curl -s -o /dev/null -w '%{http_code}\n' --http1.1 \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
   -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
   --max-time 5 http://127.0.0.1:8787/ws/v1            # → 101
+python exploration-mcp/scripts/smoke_http.py http://127.0.0.1:8787/mcp
 docker rm -f smoke
 ```
 
@@ -921,9 +929,9 @@ docker rm -f smoke
 
 **Automatic (default).** Pushing to `main` runs
 [`.github/workflows/backend.yml`](../.github/workflows/backend.yml) when
-`backend/**`, `mock-agent/**` or the deploy script changed — frontend-only commits
+`backend/**`, `exploration-mcp/**`, `mock-agent/**` or the deploy script changed — frontend-only commits
 do not restart the service. The workflow builds the image, **smoke-tests it
-locally** (health check plus a real `101 Switching Protocols` upgrade) before any
+locally** (health, a real `101 Switching Protocols` upgrade, and MCP initialization) before any
 AWS call, then assumes
 `arn:aws:iam::259789526488:role/github-actions-sgs-llm-backend-deploy` through
 GitHub's OIDC provider — no stored AWS keys — and publishes:
@@ -1045,7 +1053,7 @@ for the models in use and request increases early — they are not instant.
 
 ### Cut CloudFront over to the backend
 
-The distribution's `/ws/v1`, `/feedback` and `/data/*` behaviors already carry the
+The distribution's `/ws/v1`, `/feedback`, `/data/*`, `/admin/api/*`, and `/mcp` behaviors carry the
 right cache/origin-request policies and allowed methods
 ([appendix](#appendix-cloudfront-distribution-config)); only the origin's
 `DomainName` changes, from the EC2 public DNS to the ALB DNS name. Keep
@@ -1060,15 +1068,15 @@ ALB=$(aws cloudformation describe-stacks --profile swisstopo --region eu-central
 
 aws cloudfront get-distribution-config --id E2AEIO5QX64WCY --profile swisstopo \
   > /tmp/dist.json                       # contains the config and its ETag
-# Add the ALB as a SECOND origin (`alb-agent`, HTTPPort 80) and repoint the three
-# agent behaviors' TargetOriginId to it. Keep the `ec2-agent` origin in place.
+# Add the ALB as a SECOND origin (`alb-agent`, HTTPPort 80) and repoint the
+# application behaviors' TargetOriginId to it. Keep the `ec2-agent` origin in place.
 aws cloudfront update-distribution --id E2AEIO5QX64WCY --profile swisstopo \
   --distribution-config file:///tmp/dist-config.json --if-match <ETag>
 aws cloudfront wait distribution-deployed --id E2AEIO5QX64WCY --profile swisstopo
 ```
 
-Keeping the old origin is deliberate: **rollback is flipping three
-`TargetOriginId` values back to `ec2-agent`**, with no origin to recreate. The
+Keeping the old origin is deliberate: rollback can repoint the legacy application
+behaviors to `ec2-agent`, with no origin to recreate. The
 distribution now carries both (`ec2-agent` → EC2, `alb-agent` → ALB, port 80).
 
 Re-run the [verification block](#6-verify) afterwards — including the WebSocket
@@ -1126,6 +1134,7 @@ Approximate, at pilot scale in eu-central-1, excluding Bedrock usage:
 | Application Load Balancer | ~$20 + LCU |
 | NAT gateway | **$0** — cannot be created in this account, so egress uses the subnets' internet gateway |
 | ECR, DynamoDB on-demand, CloudWatch, Secrets Manager | a few dollars |
+| Public exploration MCP mounted in the same task | **~$0 incremental compute** |
 | **Total** | **~$190** |
 
 Fargate is the dominant cost and scales with the task size, so
@@ -1539,11 +1548,11 @@ CachingDisabled `4135ea2d-6df8-44a3-9df3-4b5a84be39ad`, AllViewer origin-request
     "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6"
   },
   "CacheBehaviors": {
-    "Quantity": 3,
+    "Quantity": 5,
     "Items": [
       {
         "PathPattern": "/ws/v1",
-        "TargetOriginId": "ec2-agent",
+        "TargetOriginId": "alb-agent",
         "ViewerProtocolPolicy": "redirect-to-https",
         "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
         "Compress": false,
@@ -1552,7 +1561,7 @@ CachingDisabled `4135ea2d-6df8-44a3-9df3-4b5a84be39ad`, AllViewer origin-request
       },
       {
         "PathPattern": "/feedback",
-        "TargetOriginId": "ec2-agent",
+        "TargetOriginId": "alb-agent",
         "ViewerProtocolPolicy": "redirect-to-https",
         "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
         "Compress": false,
@@ -1561,10 +1570,28 @@ CachingDisabled `4135ea2d-6df8-44a3-9df3-4b5a84be39ad`, AllViewer origin-request
       },
       {
         "PathPattern": "/data/*",
-        "TargetOriginId": "ec2-agent",
+        "TargetOriginId": "alb-agent",
         "ViewerProtocolPolicy": "redirect-to-https",
         "AllowedMethods": { "Quantity": 3, "Items": ["GET","HEAD","OPTIONS"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
         "Compress": true,
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+      },
+      {
+        "PathPattern": "/admin/api/*",
+        "TargetOriginId": "alb-agent",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
+        "Compress": false,
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+      },
+      {
+        "PathPattern": "/mcp",
+        "TargetOriginId": "alb-agent",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": { "Quantity": 7, "Items": ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"], "CachedMethods": { "Quantity": 2, "Items": ["GET","HEAD"] } },
+        "Compress": false,
         "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
         "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
       }

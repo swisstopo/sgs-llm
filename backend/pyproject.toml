@@ -27,7 +27,7 @@ strict = true
 # module under the explicitly included geosearch tree, not one obsolete filename.
 exclude = "(^|/)test_.*\\.py$"
 # All live at the repo root, next to backend/.
-mypy_path = ".."
+mypy_path = "../exploration-mcp/src:.."
 # boto3 ships no bundled stubs; the AWS surface is exercised by tests instead.
 [[tool.mypy.overrides]]
 module = ["boto3.*", "botocore.*", "shapely.*", "pyproj.*", "duckdb.*", "faiss.*", "moto.*", "pyarrow.*"]
@@ -39,4 +39,4 @@ asyncio_mode = "auto"
 filterwarnings = ["error::DeprecationWarning"]
 # "." is backend/ (the app package); ".." is the repo root, which is where mcp_dummy
 # lives - the same two roots the Dockerfile puts on the path.
-pythonpath = [".", ".."]
+pythonpath = [".", "..", "../exploration-mcp/src"]

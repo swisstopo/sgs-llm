@@ -21,6 +21,7 @@ from .admin import router as admin_router
 from .admin_users import AdminUserStore
 from .agent.bedrock import BedrockModels
 from .config import Settings, get_settings
+from .exploration_mcp import build_public_exploration_mcp
 from .feedback import router as feedback_router
 from .limits import ConnectionRegistry, RateLimiter
 from .mcp.client import ToolGateway
@@ -29,6 +30,7 @@ from .store.dynamo import Store
 from .ws import router as ws_router
 
 logger = logging.getLogger(__name__)
+public_exploration_mcp = build_public_exploration_mcp(get_settings())
 
 
 def _configure_logging(settings: Settings) -> None:
@@ -56,21 +58,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # it themselves. Locally, point MCP_SERVER_URL at `python -m mcp_dummy.server`.
     app.state.gateway = ToolGateway(settings.mcp_server_url, settings.mcp_server_token)
 
-    logger.info(
-        "backend ready: models=%s mcp=%s (%s) submissions_table=%s data_bucket=%s",
-        ", ".join(str(h) for h in app.state.models.handles) or "(none configured)",
-        settings.mcp_server_url or "NOT CONFIGURED (refusing turns)",
-        app.state.gateway.transport,
-        settings.feedback_table or "(disabled)",
-        settings.data_layer_bucket or "(in-memory)",
-    )
-    if not app.state.gateway.is_production:
-        logger.warning(
-            "no production MCP server: set MCP_SERVER_URL to swisstopo's endpoint to "
-            "enable the chat. Until then /ws/v1 accepts connections and refuses every "
-            "turn; the map (Track A) is unaffected."
+    async with public_exploration_mcp.run():
+        logger.info(
+            "backend ready: models=%s mcp=%s (%s) public_exploration_mcp=/mcp "
+            "datasets=%d divisions=%d submissions_table=%s data_bucket=%s",
+            ", ".join(str(h) for h in app.state.models.handles) or "(none configured)",
+            settings.mcp_server_url or "NOT CONFIGURED (refusing turns)",
+            app.state.gateway.transport,
+            public_exploration_mcp.catalog.counts["datasets"],
+            public_exploration_mcp.catalog.counts["divisions"],
+            settings.feedback_table or "(disabled)",
+            settings.data_layer_bucket or "(in-memory)",
         )
-    yield
+        if not app.state.gateway.is_production:
+            logger.warning(
+                "no production MCP server: set MCP_SERVER_URL to swisstopo's endpoint to "
+                "enable the chat. Until then /ws/v1 accepts connections and refuses every "
+                "turn; the map (Track A) is unaffected."
+            )
+        yield
 
 
 app = FastAPI(title="SGS LLM agent backend", version="1", lifespan=lifespan)
@@ -104,3 +110,8 @@ async def data_artifact(name: str) -> Response:
         # Mirrors the presigned-URL behavior: any origin may fetch.
         headers={"access-control-allow-origin": "*"},
     )
+
+
+# Registered last so every existing backend route keeps precedence. The child app owns
+# only /mcp; unmatched paths still receive an ordinary 404 from Starlette.
+app.mount("/", public_exploration_mcp.app, name="public-exploration-mcp")

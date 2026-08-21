@@ -13,3 +13,8 @@ httpx2==2.9.1
 # MCP 2.0 renamed the client entry point and moved to snake_case model fields;
 # it also supersedes FastMCP with MCPServer. Do not "upgrade" from a 1.x recipe.
 mcp==2.0.0
+
+# Public Swisstopo exploration MCP, bundled into the existing backend task. The MCP 2
+# client uses httpx2, while the geo.admin.ch API wrapper intentionally uses httpx 0.28.
+httpx==0.28.1
+pyproj==3.7.2

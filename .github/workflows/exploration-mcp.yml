@@ -1,0 +1,42 @@
+name: Exploration MCP validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'exploration-mcp/**'
+      - '.github/workflows/exploration-mcp.yml'
+  pull_request:
+    paths:
+      - 'exploration-mcp/**'
+      - '.github/workflows/exploration-mcp.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            exploration-mcp/pyproject.toml
+            exploration-mcp/requirements*.txt
+      - run: pip install -e './exploration-mcp[dev]'
+      - run: ruff check exploration-mcp
+      - run: pytest exploration-mcp -q
+      - run: python exploration-mcp/scripts/smoke_stdio.py
+      - name: Build and smoke-test the container
+        run: |
+          docker build -t sgs-llm-exploration-mcp exploration-mcp
+          docker run --detach --name exploration-mcp-smoke --publish 8000:8000 \
+            --env SWISSTOPO_MCP_ALLOWED_HOSTS=127.0.0.1:8000,localhost:8000 \
+            sgs-llm-exploration-mcp
+          for _ in {1..12}; do
+            curl --fail --silent http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          docker logs exploration-mcp-smoke
+          exit 1
