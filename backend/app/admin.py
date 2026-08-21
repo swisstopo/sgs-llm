@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
@@ -204,7 +205,13 @@ def _group_conversations(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 async def _paged(
-    store: Store, table: str, days: list[str], limit: int, cursor_raw: str | None
+    store: Store,
+    table: str,
+    days: list[str],
+    limit: int,
+    cursor_raw: str | None,
+    *,
+    accept: Callable[[dict[str, Any]], bool] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     day_index, key = _decode_cursor(cursor_raw)
     records: list[dict[str, Any]] = []
@@ -215,12 +222,23 @@ async def _paged(
             limit=limit - len(records),
             exclusive_start_key=key,
         )
-        records.extend(page)
+        records.extend(item for item in page if accept is None or accept(item))
         if last_key:
-            return records, _encode_cursor(day_index, last_key)
+            key = last_key
+            if len(records) >= limit:
+                return records, _encode_cursor(day_index, key)
+            continue
         day_index += 1
         key = None
     return records, _encode_cursor(day_index, None) if day_index < len(days) else None
+
+
+def _is_profile(item: dict[str, Any]) -> bool:
+    return item.get("entry_type") == "onboarding"
+
+
+def _is_feedback(item: dict[str, Any]) -> bool:
+    return not _is_profile(item)
 
 
 @router.options("/{path:path}")
@@ -472,22 +490,20 @@ async def records(request: Request, kind: str) -> Response:
             next_offset = offset + len(items)
             cursor = _encode_offset(next_offset) if next_offset < len(conversations) else None
         else:
+            accept = _is_profile if kind == "profiles" else _is_feedback
             items, cursor = await _paged(
                 request.app.state.store,
                 settings.feedback_table,
                 newest_days,
                 limit,
                 request.query_params.get("cursor"),
+                accept=accept,
             )
     except (ValueError, TypeError):
         return _error(request, 400, "Invalid pagination")
     except Exception:
         logger.exception("admin_read_failed principal=%s resource=%s", principal, kind)
         return _error(request, 503, "Analytics storage is temporarily unavailable")
-    if kind == "profiles":
-        items = [item for item in items if item.get("entry_type") == "onboarding"]
-    elif kind == "feedback":
-        items = [item for item in items if item.get("entry_type") != "onboarding"]
     # Do not return retention internals or database pagination keys as content fields.
     for item in items:
         item.pop("expires_at", None)

@@ -45,6 +45,7 @@ class AdminStore:
                     "user_group": "research_education",
                     "geodata_experience": "advanced",
                     "intended_use": "find_data",
+                    "consent_version": "v2",
                     "expires_at": 999,
                 }
             ],
@@ -106,6 +107,64 @@ class GroupedConversationStore(AdminStore):
             ],
             None,
         )
+
+
+class MixedSubmissionStore(AdminStore):
+    async def query_day(
+        self,
+        *,
+        table_name: str,
+        log_date: str,
+        limit: int = 50,
+        exclusive_start_key: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> Any:
+        if table_name == "turns":
+            return await super().query_day(table_name=table_name, log_date=log_date)
+        submissions = [
+            {
+                "id": "f1",
+                "log_date": log_date,
+                "ts": f"{log_date}T12:00:00Z",
+                "category": "other",
+                "message": "First feedback",
+                "lang": "en",
+            },
+            {
+                "id": "p1",
+                "entry_type": "onboarding",
+                "log_date": log_date,
+                "ts": f"{log_date}T11:00:00Z",
+                "lang": "en",
+                "user_group": "private_sector",
+                "geodata_experience": "occasional",
+                "intended_use": "create_map",
+                "consent_version": "v2",
+            },
+            {
+                "id": "f2",
+                "log_date": log_date,
+                "ts": f"{log_date}T10:00:00Z",
+                "category": "question",
+                "message": "Second feedback",
+                "lang": "de",
+            },
+            {
+                "id": "p2",
+                "entry_type": "onboarding",
+                "log_date": log_date,
+                "ts": f"{log_date}T09:00:00Z",
+                "lang": "de",
+                "user_group": "public_administration",
+                "geodata_experience": "advanced",
+                "intended_use": "find_data",
+                "consent_version": "v2",
+            },
+        ]
+        start = int((exclusive_start_key or {}).get("offset", 0))
+        end = min(start + limit, len(submissions))
+        next_key = {"offset": end} if end < len(submissions) else None
+        return submissions[start:end], next_key
 
 
 @pytest.fixture
@@ -177,13 +236,54 @@ def test_records_hide_ttl_and_reject_long_or_future_ranges(
 ) -> None:
     response = authorized_client.get("/admin/api/records/profiles?from=2026-08-19&to=2026-08-19")
     assert response.status_code == 200
-    assert "expires_at" not in response.json()["items"][0]
+    profiles = response.json()["items"]
+    assert len(profiles) == 1
+    assert {
+        "user_group": profiles[0]["user_group"],
+        "geodata_experience": profiles[0]["geodata_experience"],
+        "intended_use": profiles[0]["intended_use"],
+        "consent_version": profiles[0]["consent_version"],
+    } == {
+        "user_group": "research_education",
+        "geodata_experience": "advanced",
+        "intended_use": "find_data",
+        "consent_version": "v2",
+    }
+    assert "expires_at" not in profiles[0]
     assert (
         authorized_client.get("/admin/api/metrics?from=2026-01-01&to=2026-08-19").status_code == 400
     )
     assert (
         authorized_client.get("/admin/api/metrics?from=2099-01-01&to=2099-01-01").status_code == 400
     )
+
+
+def test_submission_pagination_returns_complete_forms_as_single_records(
+    authorized_client: TestClient,
+) -> None:
+    authorized_client.app.state.store = MixedSubmissionStore()
+    query = "?from=2026-08-19&to=2026-08-19&limit=2"
+
+    profiles = authorized_client.get(f"/admin/api/records/profiles{query}").json()
+    assert [item["id"] for item in profiles["items"]] == ["p1", "p2"]
+    assert profiles["next_cursor"] is None
+    assert all(
+        {
+            "user_group",
+            "geodata_experience",
+            "intended_use",
+            "consent_version",
+        }
+        <= item.keys()
+        for item in profiles["items"]
+    )
+
+    feedback = authorized_client.get(f"/admin/api/records/feedback{query}").json()
+    assert [item["id"] for item in feedback["items"]] == ["f1", "f2"]
+    final_feedback_page = authorized_client.get(
+        f"/admin/api/records/feedback{query}&cursor={feedback['next_cursor']}"
+    ).json()
+    assert final_feedback_page == {"items": [], "next_cursor": None}
 
 
 def test_conversation_records_group_and_page_whole_ordered_threads(
