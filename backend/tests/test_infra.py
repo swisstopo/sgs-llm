@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -53,3 +55,11 @@ def test_backend_image_gives_the_non_root_user_a_writable_admin_database() -> No
     dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     assert "ADMIN_USER_DB_PATH=/var/lib/sgs-llm/admin-users.sqlite3" in dockerfile
     assert "install -d -o sgs -g sgs /var/lib/sgs-llm" in dockerfile
+
+
+def test_local_runtime_endpoints_share_one_hostname_for_strict_admin_cookies() -> None:
+    config = json.loads((REPO_ROOT / "frontend" / "public" / "config.json").read_text())
+    hostnames = {
+        urlparse(config[name]).hostname for name in ("agentWsUrl", "feedbackUrl", "adminApiUrl")
+    }
+    assert hostnames == {"127.0.0.1"}
