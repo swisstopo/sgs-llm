@@ -1556,7 +1556,10 @@ export class SgsAdminApp extends LitElement {
       'geodata_experience',
       String(record.geodata_experience ?? UNANSWERED),
     );
-    const intendedUse = this.optionLabel('intended_uses', String(record.intended_use ?? UNANSWERED));
+    const intendedUse = this.optionLabel(
+      'intended_uses',
+      String(record.intended_use ?? UNANSWERED),
+    );
     return html`<button
       class="record-row profile-grid profile-record ${this.selected === record ? 'selected' : ''}"
       aria-label=${`${this.text.details}: ${userType}, ${experience}, ${intendedUse}`}

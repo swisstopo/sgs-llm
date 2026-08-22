@@ -22,7 +22,10 @@ import { termsUrl } from '../../terms';
 
 /** Required first-use information shown before the chat panel can open. */
 /** Survey answers are optional: an unselected question is omitted from the payload. */
-function answered<K extends string, V extends string>(key: K, value: V | ''): Partial<Record<K, V>> {
+function answered<K extends string, V extends string>(
+  key: K,
+  value: V | '',
+): Partial<Record<K, V>> {
   return value ? ({ [key]: value } as Record<K, V>) : {};
 }
 
