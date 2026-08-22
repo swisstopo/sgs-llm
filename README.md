@@ -34,7 +34,7 @@ directly for map interactivity.
   parcel/ÖREB point exploration. It has no model or AWS-service dependency and is mounted
   into the existing backend task for general MCP clients at
   [`https://denpw8uo5zpkl.cloudfront.net/mcp`](https://denpw8uo5zpkl.cloudfront.net/mcp)
-  ([`exploration-mcp/README.md`](exploration-mcp/README.md),
+  ([agent tutorial, tool inputs/outputs, and test queries](exploration-mcp/README.md#agent-tutorial),
   [`deployment`](docs/exploration-mcp-deployment.md)).
 - **`mcp_dummy/`** - a stand-in geodata MCP server whose tools are backed by the **real**
   geo.admin.ch APIs. It predates `geosearch/` and now serves development and evaluation
