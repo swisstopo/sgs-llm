@@ -117,9 +117,7 @@ class Swisstopo:
         """
         if not self._layers_config.get(lang):
             try:
-                self._layers_config[lang] = await self._get(
-                    LAYERS_CONFIG, {"lang": lang}
-                )
+                self._layers_config[lang] = await self._get(LAYERS_CONFIG, {"lang": lang})
             except Exception:
                 logger.warning("layersConfig unavailable for %s", lang, exc_info=True)
                 return {}
@@ -141,8 +139,7 @@ class Swisstopo:
             "label": config.get("label"),
             # Everything layersConfig describes can be rendered by the client; only
             # background-less entries with no service type cannot.
-            "displayable": config.get("type")
-            in ("wmts", "wms", "geojson", "aggregate"),
+            "displayable": config.get("type") in ("wmts", "wms", "geojson", "aggregate"),
             # `tooltip`, not `queryable`: layersConfig has no `queryable` key at all (0 of
             # 896 entries), so reading it reported every layer as unqueryable and the agent
             # never fetched any features. `tooltip` is the flag map.geo.admin.ch uses, and
@@ -151,9 +148,7 @@ class Swisstopo:
             "queryable": bool(config.get("tooltip")),
         }
 
-    async def search_layers(
-        self, query: str, lang: str, limit: int = 8
-    ) -> list[dict[str, Any]]:
+    async def search_layers(self, query: str, lang: str, limit: int = 8) -> list[dict[str, Any]]:
         """Official datasets matching a free-text query, with how each can be used."""
         payload = await self._get(
             f"{API3}/ech/SearchServer",
@@ -180,9 +175,7 @@ class Swisstopo:
             )
         return found
 
-    async def search_locations(
-        self, query: str, lang: str, limit: int = 5
-    ) -> list[dict[str, Any]]:
+    async def search_locations(self, query: str, lang: str, limit: int = 5) -> list[dict[str, Any]]:
         """Places, communes, districts and cantons matching a free-text query.
 
         A canton name in any national language is resolved through its two-letter code

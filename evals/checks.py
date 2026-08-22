@@ -218,11 +218,7 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         return Verdict(
             question_id=question["id"],
             passed=False,
-            failures=[
-                Failure(
-                    "exchange_error", f"turn ended with error={observed.error_code}"
-                )
-            ],
+            failures=[Failure("exchange_error", f"turn ended with error={observed.error_code}")],
         )
 
     if not observed.answer.strip():
@@ -241,17 +237,13 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
     chain = expect.get("must_chain_tools")
     if chain and not _chain_in_order(observed.tool_calls, chain):
         stage = "no_tool_call" if not observed.tool_calls else "chain_broken"
-        failures.append(
-            Failure(stage, f"expected {chain} in order, called {observed.tool_calls}")
-        )
+        failures.append(Failure(stage, f"expected {chain} in order, called {observed.tool_calls}"))
 
     if expect.get("must_produce_layer") and not observed.layers:
         failures.append(Failure("no_layer", "expected a map layer, none produced"))
 
     if expect.get("no_layer") and observed.layers:
-        failures.append(
-            Failure("unexpected_layer", f"put {observed.layers} on the map")
-        )
+        failures.append(Failure("unexpected_layer", f"put {observed.layers} on the map"))
 
     ceiling = expect.get("max_tools")
     if isinstance(ceiling, int) and len(observed.tool_calls) > ceiling:
@@ -267,16 +259,12 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         detected = detect_language(observed.answer)
         if detected is not None and detected != wanted_lang:
             failures.append(
-                Failure(
-                    "wrong_language", f"asked in {wanted_lang}, answered in {detected}"
-                )
+                Failure("wrong_language", f"asked in {wanted_lang}, answered in {detected}")
             )
 
     for needle in expect.get("must_mention") or []:
         if not _contains(observed.answer, needle):
-            failures.append(
-                Failure("missing_mention", f"answer never mentions {needle!r}")
-            )
+            failures.append(Failure("missing_mention", f"answer never mentions {needle!r}"))
 
     for needle in expect.get("must_not_contain") or []:
         if _contains(observed.answer, needle):
@@ -293,9 +281,7 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
             for call in observed.tool_calls
         )
         if not asked:
-            failures.append(
-                Failure("no_clarification", "expected a clarifying question")
-            )
+            failures.append(Failure("no_clarification", "expected a clarifying question"))
         elif answered_anyway:
             failures.append(
                 Failure(
@@ -326,6 +312,4 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         )
 
     hard_failures = [f for f in failures if f.stage != "tool_error"]
-    return Verdict(
-        question_id=question["id"], passed=not hard_failures, failures=failures
-    )
+    return Verdict(question_id=question["id"], passed=not hard_failures, failures=failures)
