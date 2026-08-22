@@ -667,7 +667,7 @@ The image is the only contract between the backend code and this infrastructure:
 | Listens on `$PORT` (8787) | Target group port and security group rule |
 | `GET /health` → `200` | ALB health check; an unhealthy task is replaced and a bad deploy rolls back |
 | `WebSocket /ws/v1` | Protocol v1 ([`protocol.md`](./protocol.md)) |
-| `POST /feedback` | Feedback form and onboarding survey endpoint |
+| `POST /feedback` | Feedback form and onboarding (consent + optional survey) endpoint |
 | Streamable HTTP `/mcp` | Public, stateless Swisstopo exploration tools |
 | `POST /admin/api/login` / `logout` | Local administrator session endpoints |
 | `GET` / `POST /admin/api/users` | List or create local administrator accounts |
@@ -818,9 +818,13 @@ aws cloudformation deploy --profile swisstopo --region eu-central-1 \
 | `expires_at` | absent while retention is off (`FEEDBACK_TTL_DAYS=0`); otherwise epoch seconds, enforced only when `RetentionAutoDelete=true` |
 
 Onboarding items use the same standalone-submission table and daily index, with
-`entry_type: "onboarding"` plus the closed-choice fields `user_group`,
-`geodata_experience`, `intended_use`, and `consent_version`. They contain no name,
-email, employer, location, or free-text profile field. Unlike ordinary feedback, the
+`entry_type: "onboarding"` and `consent_version`, plus whichever of the three
+optional closed-choice survey answers the user gave: `user_group`,
+`geodata_experience`, `intended_use`. The questions are optional (swisstopo,
+2026-08-22): an unanswered one is **absent** from the item — never an empty string —
+and the admin metrics count it under `unknown`, shown as "No answer" in the admin
+panel. A value outside the closed choice list is still rejected with `400`. They
+contain no name, email, employer, location, or free-text profile field. Unlike ordinary feedback, the
 endpoint returns `503` unless DynamoDB confirms the onboarding write, because the
 browser records completion only after durable persistence succeeds.
 

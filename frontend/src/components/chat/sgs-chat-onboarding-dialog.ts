@@ -21,6 +21,11 @@ import { CHAT_ONBOARDING_VERSION } from '../../services/UiService';
 import { termsUrl } from '../../terms';
 
 /** Required first-use information shown before the chat panel can open. */
+/** Survey answers are optional: an unselected question is omitted from the payload. */
+function answered<K extends string, V extends string>(key: K, value: V | ''): Partial<Record<K, V>> {
+  return value ? ({ [key]: value } as Record<K, V>) : {};
+}
+
 @customElement('sgs-chat-onboarding-dialog')
 export class SgsChatOnboardingDialog extends LitElement {
   static override styles = css`
@@ -107,6 +112,11 @@ export class SgsChatOnboardingDialog extends LitElement {
       display: grid;
       gap: 0.375rem;
       font-weight: 600;
+    }
+
+    .optional {
+      font-weight: 400;
+      color: var(--sgc-color-text--secondary);
     }
 
     select {
@@ -226,16 +236,18 @@ export class SgsChatOnboardingDialog extends LitElement {
             </p>
             <form id="chat-onboarding-form" @submit=${this.submit}>
               <label for="onboarding-user-group">
-                ${t('chat.onboarding.form.userGroup.label')}
+                <span>
+                  ${t('chat.onboarding.form.userGroup.label')}
+                  <span class="optional">(${t('chat.onboarding.form.optional')})</span>
+                </span>
                 <select
                   id="onboarding-user-group"
-                  required
                   .value=${this.selectedUserGroup}
                   @change=${(event: Event) =>
                     (this.selectedUserGroup = (event.target as HTMLSelectElement)
                       .value as UserGroup)}
                 >
-                  <option value="" disabled selected>${t('chat.onboarding.form.choose')}</option>
+                  <option value="" selected>${t('chat.onboarding.form.choose')}</option>
                   ${USER_GROUPS.map(
                     (value) => html`
                       <option value=${value}>
@@ -246,16 +258,18 @@ export class SgsChatOnboardingDialog extends LitElement {
                 </select>
               </label>
               <label for="onboarding-experience">
-                ${t('chat.onboarding.form.experience.label')}
+                <span>
+                  ${t('chat.onboarding.form.experience.label')}
+                  <span class="optional">(${t('chat.onboarding.form.optional')})</span>
+                </span>
                 <select
                   id="onboarding-experience"
-                  required
                   .value=${this.selectedExperience}
                   @change=${(event: Event) =>
                     (this.selectedExperience = (event.target as HTMLSelectElement)
                       .value as GeodataExperience)}
                 >
-                  <option value="" disabled selected>${t('chat.onboarding.form.choose')}</option>
+                  <option value="" selected>${t('chat.onboarding.form.choose')}</option>
                   ${GEODATA_EXPERIENCE_LEVELS.map(
                     (value) => html`
                       <option value=${value}>
@@ -266,15 +280,17 @@ export class SgsChatOnboardingDialog extends LitElement {
                 </select>
               </label>
               <label for="onboarding-use">
-                ${t('chat.onboarding.form.intendedUse.label')}
+                <span>
+                  ${t('chat.onboarding.form.intendedUse.label')}
+                  <span class="optional">(${t('chat.onboarding.form.optional')})</span>
+                </span>
                 <select
                   id="onboarding-use"
-                  required
                   .value=${this.selectedUse}
                   @change=${(event: Event) =>
                     (this.selectedUse = (event.target as HTMLSelectElement).value as IntendedUse)}
                 >
-                  <option value="" disabled selected>${t('chat.onboarding.form.choose')}</option>
+                  <option value="" selected>${t('chat.onboarding.form.choose')}</option>
                   ${INTENDED_USES.map(
                     (value) => html`
                       <option value=${value}>
@@ -323,9 +339,9 @@ export class SgsChatOnboardingDialog extends LitElement {
     try {
       await submitOnboarding(getRuntimeConfig().feedbackUrl, {
         type: 'onboarding',
-        user_group: this.userGroupSelect.value as UserGroup,
-        geodata_experience: this.experienceSelect.value as GeodataExperience,
-        intended_use: this.intendedUseSelect.value as IntendedUse,
+        ...answered('user_group', this.userGroupSelect.value as UserGroup | ''),
+        ...answered('geodata_experience', this.experienceSelect.value as GeodataExperience | ''),
+        ...answered('intended_use', this.intendedUseSelect.value as IntendedUse | ''),
         consent_version: CHAT_ONBOARDING_VERSION,
         lang: document.documentElement.lang || 'de',
       });

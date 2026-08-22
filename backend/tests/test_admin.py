@@ -48,7 +48,22 @@ class AdminStore:
                     "consent_version": "v2",
                     "expires_at": 999,
                 }
-            ],
+            ]
+            + (
+                [
+                    {
+                        "id": "p2",
+                        "entry_type": "onboarding",
+                        "log_date": log_date,
+                        "ts": f"{log_date}T11:00:00Z",
+                        "lang": "de",
+                        "geodata_experience": "new",
+                        "consent_version": "v2",
+                    }
+                ]
+                if log_date == "2026-08-18"
+                else []
+            ),
             None,
         )
 
@@ -226,9 +241,11 @@ def test_metrics_are_aggregated_through_by_day_queries(authorized_client: TestCl
     body = response.json()
     assert body["totals"]["messages"] == 2
     assert body["totals"]["conversations"] == 2
-    assert body["totals"]["onboarding"] == 2
+    assert body["totals"]["onboarding"] == 3
     assert body["totals"]["average_latency_ms"] == 500
-    assert body["breakdowns"]["user_groups"] == {"research_education": 2}
+    assert body["breakdowns"]["user_groups"] == {"research_education": 2, "unknown": 1}
+    assert body["breakdowns"]["geodata_experience"] == {"advanced": 2, "new": 1}
+    assert body["breakdowns"]["intended_uses"] == {"find_data": 2, "unknown": 1}
 
 
 def test_records_hide_ttl_and_reject_long_or_future_ranges(

@@ -40,8 +40,8 @@
     "newConversation": "Neue Unterhaltung",
     "cancel": "Abbrechen",
     "onboarding": {
-      "title": "Willkommen beim Chat für Schweizer Geodaten",
-      "introduction": "Dieser experimentelle Chatbot hilft Ihnen, Geodaten des Bundes in natürlicher Sprache zu erkunden.",
+      "title": "Willkommen bei SGS LLM",
+      "introduction": "Dieser experimentelle Prototyp-Chatbot hilft Ihnen, Geodaten des Bundes in natürlicher Sprache zu erkunden.",
       "personalDataWarning": "Geben Sie keine persönlichen, vertraulichen oder sensiblen Informationen wie Namen, Passwörter, Geburtsdaten oder E-Mail-Adressen ein.",
       "accuracyWarning": "Die Antworten werden von einem KI-Modell generiert und können unvollständig oder falsch sein. Überprüfen Sie wichtige Informationen anhand offizieller Quellen.",
       "acknowledgement": "Indem Sie fortfahren, bestätigen Sie, dass Sie die folgenden Bestimmungen gelesen haben und akzeptieren:",
@@ -49,6 +49,8 @@
       "accept": "Speichern und fortfahren",
       "form": {
         "choose": "Bitte auswählen",
+        "optional": "optional",
+        "noAnswer": "Keine Angabe",
         "userGroup": {
           "label": "Was beschreibt Sie am besten?",
           "options": {

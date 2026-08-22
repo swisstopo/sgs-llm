@@ -194,4 +194,49 @@ describe('admin profile records', () => {
     expect(unselectedOption?.querySelector('.histogram-count')?.textContent).toBe('0');
     expect(unselectedOption?.querySelector<HTMLElement>('.histogram-bar')?.style.width).toBe('0%');
   });
+
+  it('shows "No answer" for optional survey questions left blank', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 401 })));
+    const element = document.createElement('sgs-admin-app') as unknown as TestAdminElement;
+    document.body.append(element);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    element.loading = false;
+    element.authenticated = true;
+    element.kind = 'profiles';
+    element.metrics = {
+      from: '2026-08-22',
+      to: '2026-08-22',
+      daily: [],
+      totals: { onboarding: 1 },
+      breakdowns: {
+        user_groups: { unknown: 1 },
+        geodata_experience: { new: 1 },
+        intended_uses: { unknown: 1 },
+      },
+    };
+    element.records = [
+      {
+        id: 'profile-3',
+        entry_type: 'onboarding',
+        ts: '2026-08-22T10:00:00Z',
+        lang: 'fr',
+        geodata_experience: 'new',
+        consent_version: 'v2',
+      },
+    ];
+    await element.updateComplete;
+
+    const root = element.shadowRoot;
+    const row = root?.querySelector('.profile-record')?.textContent ?? '';
+    expect(row).toContain('No answer');
+    expect(row).toContain('I am new to geodata');
+    expect(row).not.toContain('unknown');
+
+    // Known options always render; the "No answer" row appears only where it has a count.
+    expect(root?.querySelectorAll('.histogram-row')).toHaveLength(15);
+    const unanswered = root?.querySelector('[title="No answer"]')?.closest('.histogram-row');
+    expect(unanswered?.querySelector('.histogram-count')?.textContent).toBe('1');
+    expect(unanswered?.querySelector<HTMLElement>('.histogram-bar')?.style.width).toBe('100%');
+  });
 });

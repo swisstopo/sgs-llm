@@ -80,27 +80,37 @@ def _validate(data: Any) -> dict[str, Any] | None:
     }
 
 
+_SURVEY_FIELDS: dict[str, frozenset[str]] = {
+    "user_group": USER_GROUPS,
+    "geodata_experience": GEODATA_EXPERIENCE_LEVELS,
+    "intended_use": INTENDED_USES,
+}
+
+
 def _validate_onboarding(data: Any) -> dict[str, str] | None:
+    """Accepts the consent gate plus any subset of the three survey answers.
+
+    The survey questions are optional (swisstopo, 2026-08-22): an absent or empty
+    answer is simply left out of the stored item, while a value outside the closed
+    choice list still rejects the submission.
+    """
     if not isinstance(data, dict) or data.get("type") != "onboarding":
         return None
-    user_group = data.get("user_group")
-    geodata_experience = data.get("geodata_experience")
-    intended_use = data.get("intended_use")
     consent_version = data.get("consent_version")
-    if (
-        user_group not in USER_GROUPS
-        or geodata_experience not in GEODATA_EXPERIENCE_LEVELS
-        or intended_use not in INTENDED_USES
-        or consent_version != ONBOARDING_CONSENT_VERSION
-    ):
+    if consent_version != ONBOARDING_CONSENT_VERSION:
         return None
-    return {
-        "user_group": user_group,
-        "geodata_experience": geodata_experience,
-        "intended_use": intended_use,
+    entry: dict[str, str] = {
         "consent_version": consent_version,
         "lang": coerce_lang(data.get("lang")),
     }
+    for field, choices in _SURVEY_FIELDS.items():
+        value = data.get(field)
+        if value is None or value == "":
+            continue
+        if value not in choices:
+            return None
+        entry[field] = value
+    return entry
 
 
 @router.options("/feedback")

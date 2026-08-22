@@ -174,6 +174,14 @@ class TestFeedback:
         assert "message" not in table.items[0]
         assert "email" not in table.items[0]
 
+        partial_id = await store.record_onboarding(
+            consent_version="v2", lang="it", geodata_experience="new"
+        )
+        partial = next(item for item in table.items if item["id"] == partial_id)
+        assert partial["geodata_experience"] == "new"
+        assert "user_group" not in partial
+        assert "intended_use" not in partial
+
         unavailable = Store(Settings())
         assert (
             await unavailable.record_onboarding(

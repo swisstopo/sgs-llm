@@ -20,11 +20,15 @@ export type UserGroup = (typeof USER_GROUPS)[number];
 export type GeodataExperience = (typeof GEODATA_EXPERIENCE_LEVELS)[number];
 export type IntendedUse = (typeof INTENDED_USES)[number];
 
+/**
+ * Consent is the only gate; the three survey answers are optional and are left out of
+ * the payload entirely when the user does not answer (never sent as empty strings).
+ */
 export interface OnboardingPayload {
   type: 'onboarding';
-  user_group: UserGroup;
-  geodata_experience: GeodataExperience;
-  intended_use: IntendedUse;
+  user_group?: UserGroup;
+  geodata_experience?: GeodataExperience;
+  intended_use?: IntendedUse;
   consent_version: string;
   lang: string;
 }

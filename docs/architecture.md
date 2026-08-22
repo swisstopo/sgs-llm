@@ -343,7 +343,8 @@ requests today, but that is operational behavior, not a contract).
   ([`evals.md`](./evals.md#prompt-injection-via-data)).
 - The **frontend** stores nothing server-side; the **agent backend** does: chat turns,
   submitted feedback (which may include an email address the user typed), and the
-  closed-choice first-use onboarding survey are persisted to
+  first-use onboarding acceptance with its optional closed-choice survey answers are
+  persisted to
   DynamoDB with a TTL so the pilot can be evaluated. That is personal data - see
   [`deployment.md`](./deployment.md#what-gets-stored) for the schema, retention and
   the sign-off still outstanding.

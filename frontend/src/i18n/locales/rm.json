@@ -40,8 +40,8 @@
     "newConversation": "Nova conversaziun",
     "cancel": "Interrumper",
     "onboarding": {
-      "title": "Bainvegni en il chat per geodatas svizras",
-      "introduction": "Quest chatbot experimental As gida ad explorar geodatas federalas svizras cun lingua natirala.",
+      "title": "Bainvegni tar SGS LLM",
+      "introduction": "Quest prototip experimental da chatbot As gida ad explorar geodatas federalas svizras cun lingua natirala.",
       "personalDataWarning": "Na dai naginas infurmaziuns persunalas, confidenzialas u sensiblas sco nums, pleds-clav, datas da naschientscha u adressas dad e-mail.",
       "accuracyWarning": "Las respostas vegnan generadas dad in model d’IA e pon esser incumplettas u incorrectas. Controllescha infurmaziuns impurtantas cun funtaunas uffizialas.",
       "acknowledgement": "Cun cuntinuar confermas ti d’avair legì ed acceptà las",
@@ -49,6 +49,8 @@
       "accept": "Memorisar e cuntinuar",
       "form": {
         "choose": "Tscherna in’opziun",
+        "optional": "facultativ",
+        "noAnswer": "Nagina resposta",
         "userGroup": {
           "label": "Tge descriva tai il meglier?",
           "options": {

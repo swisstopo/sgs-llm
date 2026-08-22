@@ -81,6 +81,37 @@ def test_a_valid_onboarding_submission_is_stored(client: Any) -> None:
 
 
 @pytest.mark.parametrize(
+    "answers",
+    [
+        {},
+        {"geodata_experience": "new"},
+        {"user_group": "", "geodata_experience": "advanced", "intended_use": None},
+    ],
+)
+def test_onboarding_survey_answers_are_optional(client: Any, answers: dict[str, Any]) -> None:
+    """Consent is the gate; unanswered questions are simply left out of the stored item."""
+    response = client.post(
+        "/feedback",
+        json={"type": "onboarding", "consent_version": "v2", "lang": "de", **answers},
+    )
+    assert response.status_code == 201
+    stored = client.store.onboarding[-1]
+    assert stored["consent_version"] == "v2"
+    assert stored["lang"] == "de"
+    for field in ("user_group", "geodata_experience", "intended_use"):
+        if answers.get(field):
+            assert stored[field] == answers[field]
+        else:
+            assert field not in stored
+
+
+def test_onboarding_without_consent_is_rejected(client: Any) -> None:
+    response = client.post("/feedback", json={"type": "onboarding", "lang": "de"})
+    assert response.status_code == 400
+    assert client.store.onboarding == []
+
+
+@pytest.mark.parametrize(
     "field,value",
     [
         ("user_group", "wizard"),

@@ -40,8 +40,8 @@
     "newConversation": "Nouvelle conversation",
     "cancel": "Annuler",
     "onboarding": {
-      "title": "Bienvenue dans le chat des géodonnées suisses",
-      "introduction": "Ce chatbot expérimental vous aide à explorer les géodonnées fédérales suisses en langage naturel.",
+      "title": "Bienvenue sur SGS LLM",
+      "introduction": "Ce prototype expérimental de chatbot vous aide à explorer les géodonnées fédérales suisses en langage naturel.",
       "personalDataWarning": "Ne saisissez aucune information personnelle, confidentielle ou sensible, telle que des noms, mots de passe, dates de naissance ou adresses électroniques.",
       "accuracyWarning": "Les réponses sont générées par un modèle d’IA et peuvent être incomplètes ou incorrectes. Vérifiez les informations importantes auprès de sources officielles.",
       "acknowledgement": "En continuant, vous confirmez avoir lu et accepté les",
@@ -49,6 +49,8 @@
       "accept": "Enregistrer et continuer",
       "form": {
         "choose": "Sélectionner une option",
+        "optional": "facultatif",
+        "noAnswer": "Sans réponse",
         "userGroup": {
           "label": "Quelle description vous correspond le mieux ?",
           "options": {

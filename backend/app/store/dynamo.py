@@ -171,17 +171,19 @@ class Store:
     async def record_onboarding(
         self,
         *,
-        user_group: str,
-        geodata_experience: str,
-        intended_use: str,
         consent_version: str,
         lang: str,
+        user_group: str | None = None,
+        geodata_experience: str | None = None,
+        intended_use: str | None = None,
     ) -> str | None:
-        """Stores one onboarding survey after explicit acceptance.
+        """Stores one onboarding acceptance with whichever survey answers were given.
 
-        Unlike ordinary feedback, onboarding completion gates the UI. Return ``None``
-        unless DynamoDB confirms the write so the browser never records acceptance for
-        a profile that was silently lost.
+        The three survey answers are optional; an unanswered question is left off the
+        item entirely (never an empty string) so the admin metrics count it as
+        ``unknown``. Unlike ordinary feedback, onboarding completion gates the UI.
+        Return ``None`` unless DynamoDB confirms the write so the browser never records
+        acceptance for a profile that was silently lost.
         """
         moment = _now()
         entry_id = str(uuid.uuid4())
@@ -191,11 +193,15 @@ class Store:
             "log_date": moment.strftime("%Y-%m-%d"),
             "ts": _iso(moment),
             "lang": lang,
-            "user_group": user_group,
-            "geodata_experience": geodata_experience,
-            "intended_use": intended_use,
             "consent_version": consent_version,
         }
+        for key, value in (
+            ("user_group", user_group),
+            ("geodata_experience", geodata_experience),
+            ("intended_use", intended_use),
+        ):
+            if value:
+                item[key] = value
         if self._settings.feedback_ttl_days > 0:
             item["expires_at"] = _expires_at(moment, self._settings.feedback_ttl_days)
         stored = await self._put(self._settings.feedback_table, item)

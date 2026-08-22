@@ -107,10 +107,13 @@ function handleFeedback(req, res) {
     try {
       const data = JSON.parse(body);
       if (data.type === 'onboarding') {
+        // The three survey answers are optional: absent/empty is fine, an unknown
+        // value is not (mirrors backend/app/feedback.py).
+        const optionalChoice = (value, choices) => !value || choices.has(value);
         const validOnboarding =
-          USER_GROUPS.has(data.user_group) &&
-          GEODATA_EXPERIENCE_LEVELS.has(data.geodata_experience) &&
-          INTENDED_USES.has(data.intended_use) &&
+          optionalChoice(data.user_group, USER_GROUPS) &&
+          optionalChoice(data.geodata_experience, GEODATA_EXPERIENCE_LEVELS) &&
+          optionalChoice(data.intended_use, INTENDED_USES) &&
           data.consent_version === 'v2';
         if (!validOnboarding) {
           res.writeHead(400, FEEDBACK_CORS).end();

@@ -12,6 +12,9 @@ import {
 import { adminFetch, logout, signIn } from './auth';
 import type { AdminMetrics, AdminRecord, RecordPage } from './types';
 
+/** Bucket the backend metrics use for an optional survey question left unanswered. */
+const UNANSWERED = 'unknown';
+
 type RecordKind = 'conversations' | 'profiles' | 'feedback';
 const copy = {
   en: {
@@ -1489,11 +1492,13 @@ export class SgsAdminApp extends LitElement {
     options: readonly string[],
     counts: Record<string, number>,
   ) {
-    const maximum = Math.max(1, ...options.map((option) => counts[option] ?? 0));
+    // Survey questions are optional; the backend counts unanswered ones as "unknown".
+    const rows = counts[UNANSWERED] ? [...options, UNANSWERED] : options;
+    const maximum = Math.max(1, ...rows.map((option) => counts[option] ?? 0));
     return html`<section class="survey-histogram">
       <h4>${title}</h4>
       <div class="histogram-rows">
-        ${options.map((option) => {
+        ${rows.map((option) => {
           const count = counts[option] ?? 0;
           const width = (count / maximum) * 100;
           return html`<div class="histogram-row">
@@ -1546,12 +1551,12 @@ export class SgsAdminApp extends LitElement {
   }
 
   private renderProfileRecord(record: AdminRecord) {
-    const userType = this.optionLabel('user_groups', String(record.user_group ?? 'unknown'));
+    const userType = this.optionLabel('user_groups', String(record.user_group ?? UNANSWERED));
     const experience = this.optionLabel(
       'geodata_experience',
-      String(record.geodata_experience ?? 'unknown'),
+      String(record.geodata_experience ?? UNANSWERED),
     );
-    const intendedUse = this.optionLabel('intended_uses', String(record.intended_use ?? 'unknown'));
+    const intendedUse = this.optionLabel('intended_uses', String(record.intended_use ?? UNANSWERED));
     return html`<button
       class="record-row profile-grid profile-record ${this.selected === record ? 'selected' : ''}"
       aria-label=${`${this.text.details}: ${userType}, ${experience}, ${intendedUse}`}
@@ -1802,8 +1807,8 @@ export class SgsAdminApp extends LitElement {
   private recordSummary(record: AdminRecord) {
     if (this.kind === 'profiles')
       return {
-        title: this.optionLabel('user_groups', String(record.user_group ?? 'unknown')),
-        subtitle: `${this.optionLabel('geodata_experience', String(record.geodata_experience ?? 'unknown'))} · ${this.optionLabel('intended_uses', String(record.intended_use ?? 'unknown'))}`,
+        title: this.optionLabel('user_groups', String(record.user_group ?? UNANSWERED)),
+        subtitle: `${this.optionLabel('geodata_experience', String(record.geodata_experience ?? UNANSWERED))} · ${this.optionLabel('intended_uses', String(record.intended_use ?? UNANSWERED))}`,
       };
     if (this.kind === 'feedback')
       return {
@@ -1957,6 +1962,9 @@ export class SgsAdminApp extends LitElement {
       geodata_experience: 'experience',
       intended_uses: 'intendedUse',
     };
+    if (key === UNANSWERED) {
+      return t('chat.onboarding.form.noAnswer');
+    }
     return section[group]
       ? t(`chat.onboarding.form.${section[group]}.options.${key}`, {
           defaultValue: key.replaceAll('_', ' '),

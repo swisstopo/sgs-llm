@@ -35,7 +35,8 @@ describe('sgs-chat-onboarding-dialog', () => {
     const dialog = element.shadowRoot?.querySelector('dialog');
     expect(dialog?.open).toBe(true);
     expect(dialog?.getAttribute('aria-labelledby')).toBe('chat-onboarding-title');
-    expect(element.shadowRoot?.querySelector('h2')?.textContent).toContain('Welcome');
+    expect(element.shadowRoot?.querySelector('h2')?.textContent).toContain('Welcome to SGS LLM');
+    expect(element.shadowRoot?.textContent).toContain('experimental prototype chatbot');
     expect(element.shadowRoot?.querySelectorAll('form select')).toHaveLength(3);
 
     const selects = element.shadowRoot?.querySelectorAll('form select') ?? [];
@@ -95,21 +96,43 @@ describe('sgs-chat-onboarding-dialog', () => {
     element.remove();
   });
 
-  it('does not submit until every answer is selected', async () => {
-    const fetchMock = vi.fn();
+  it('treats every survey question as optional and omits unanswered ones', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'entry-id' }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const element = document.createElement('sgs-chat-onboarding-dialog') as SgsChatOnboardingDialog;
+    const accept = vi.fn();
+    element.addEventListener('sgs-accept', accept);
     document.body.append(element);
     await element.updateComplete;
 
-    element.shadowRoot
-      ?.querySelector('form')
-      ?.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    const form = element.shadowRoot?.querySelector('form') as HTMLFormElement;
+    const selects = element.shadowRoot?.querySelectorAll('form select') ?? [];
+    expect([...selects].every((select) => !(select as HTMLSelectElement).required)).toBe(true);
+    expect(element.shadowRoot?.querySelectorAll('label .optional')).toHaveLength(3);
+    expect(form.checkValidity()).toBe(true);
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect((element.shadowRoot?.querySelector('form') as HTMLFormElement).checkValidity()).toBe(
-      false,
-    );
+    form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(accept).toHaveBeenCalledOnce());
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      type: 'onboarding',
+      consent_version: 'v2',
+      lang: 'en',
+    });
+
+    (selects[1] as HTMLSelectElement).value = 'occasional';
+    form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+      type: 'onboarding',
+      geodata_experience: 'occasional',
+      consent_version: 'v2',
+      lang: 'en',
+    });
     element.remove();
   });
 
