@@ -48,21 +48,23 @@ def _client(*, requests_per_minute: int = 120) -> Iterator[TestClient]:
         yield client
 
 
-def test_backend_health_and_all_seven_public_tools_share_one_process() -> None:
+def test_backend_health_and_all_six_public_tools_share_one_process() -> None:
     with _client() as client:
         assert client.get("/health").json() == {"status": "ok"}
         response = client.post("/mcp", headers=_HEADERS, json=_request("tools/list"))
 
     assert response.status_code == 200
-    assert {tool["name"] for tool in response.json()["result"]["tools"]} == {
+    tools = response.json()["result"]["tools"]
+    assert {tool["name"] for tool in tools} == {
         "search_datasets",
         "describe_dataset",
         "search_divisions",
-        "create_map_preview",
+        "get_map_preview_links",
         "geocode_location",
         "identify_at_point",
-        "explain_swisstopo",
     }
+    assert all(tool["title"] for tool in tools)
+    assert all(tool["outputSchema"]["type"] == "object" for tool in tools)
 
 
 def test_mcp_cors_accepts_claude_and_rejects_an_untrusted_browser_origin() -> None:

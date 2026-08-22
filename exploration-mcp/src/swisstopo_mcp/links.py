@@ -18,11 +18,35 @@ _MIN_NORTHING = 1_050_000
 _MAX_NORTHING = 1_350_000
 
 _WGS84_TO_LV95 = Transformer.from_crs(4326, 2056, always_xy=True)
+_LV95_TO_WGS84 = Transformer.from_crs(2056, 4326, always_xy=True)
 
 # At z=1 the map viewer shows approximately the full Swiss extent. This value lets
 # division bboxes choose a useful continuous zoom while leaving some visual padding.
 _NATIONAL_VIEW_SPAN_METRES = 400_000
 _BBOX_PADDING = 1.2
+
+
+def wgs84_to_lv95(longitude: float, latitude: float) -> tuple[float, float]:
+    """Convert a finite WGS84 point to explicitly ordered LV95 coordinates."""
+    if not math.isfinite(longitude) or not math.isfinite(latitude):
+        raise ValueError("longitude and latitude must be finite")
+    if not (-180 <= longitude <= 180 and -90 <= latitude <= 90):
+        raise ValueError("longitude and latitude must be valid WGS84 coordinates")
+    return _WGS84_TO_LV95.transform(longitude, latitude)
+
+
+def lv95_to_wgs84(easting: float, northing: float) -> tuple[float, float]:
+    """Convert a finite Swiss LV95 point to explicitly ordered WGS84 coordinates."""
+    if not math.isfinite(easting) or not math.isfinite(northing):
+        raise ValueError("easting and northing must be finite")
+    if not within_viewer_extent(easting, northing):
+        raise ValueError("easting and northing must lie within the Swiss LV95 map extent")
+    return _LV95_TO_WGS84.transform(easting, northing)
+
+
+def within_viewer_extent(easting: float, northing: float) -> bool:
+    """Return whether an LV95 point can be used as a GeoAdmin viewer centre."""
+    return _MIN_EASTING <= easting <= _MAX_EASTING and _MIN_NORTHING <= northing <= _MAX_NORTHING
 
 
 def _bbox_view(bbox: Iterable[float]) -> tuple[float, float, float]:
@@ -79,19 +103,15 @@ def map_viewer_url(
     point_marker = longitude is not None and latitude is not None
     if focus_bbox is not None:
         longitude, latitude, zoom = _bbox_view(focus_bbox)
-        easting, northing = _WGS84_TO_LV95.transform(longitude, latitude)
-        if not (
-            _MIN_EASTING <= easting <= _MAX_EASTING and _MIN_NORTHING <= northing <= _MAX_NORTHING
-        ):
+        easting, northing = wgs84_to_lv95(longitude, latitude)
+        if not within_viewer_extent(easting, northing):
             raise ValueError("focus_bbox center must lie within the Swiss map extent")
         center_point = f"{easting:.3f},{northing:.3f}"
         params.append(("center", center_point))
         params.append(("z", f"{zoom:.3f}".rstrip("0").rstrip(".")))
     elif longitude is not None and latitude is not None:
-        if not math.isfinite(longitude) or not math.isfinite(latitude):
-            raise ValueError("longitude and latitude must be finite")
-        easting, northing = _WGS84_TO_LV95.transform(longitude, latitude)
-        if _MIN_EASTING <= easting <= _MAX_EASTING and _MIN_NORTHING <= northing <= _MAX_NORTHING:
+        easting, northing = wgs84_to_lv95(longitude, latitude)
+        if within_viewer_extent(easting, northing):
             center_point = f"{easting:.3f},{northing:.3f}"
             params.append(("center", center_point))
         params.append(("z", "12"))

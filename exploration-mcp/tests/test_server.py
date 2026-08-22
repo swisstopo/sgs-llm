@@ -39,7 +39,11 @@ class StubGeoAdmin:
                 "label": "Bundesplatz 3, Bern",
                 "coordinates": {
                     "wgs84": {"longitude": 7.444, "latitude": 46.947, "crs": "EPSG:4326"},
-                    "lv95": {"easting": 2600000.0, "northing": 1200000.0, "crs": "EPSG:2056"},
+                    "lv95": {
+                        "easting": 2600408.638,
+                        "northing": 1199546.126,
+                        "crs": "EPSG:2056",
+                    },
                 },
                 "match_quality": "exact",
                 "related_features": [],
@@ -69,32 +73,33 @@ async def test_mcp_catalog_exposes_selected_tools_resources_and_prompt() -> None
         "search_datasets",
         "describe_dataset",
         "search_divisions",
-        "create_map_preview",
+        "get_map_preview_links",
         "geocode_location",
         "identify_at_point",
-        "explain_swisstopo",
     }
     identify_schema = next(tool for tool in tools.tools if tool.name == "identify_at_point")
-    assert set(identify_schema.input_schema["required"]) == {"longitude", "latitude"}
+    assert set(identify_schema.input_schema["required"]) == {"point"}
     assert {"dataset_ids", "preset"} <= set(identify_schema.input_schema["properties"])
     assert all(tool.annotations and tool.annotations.read_only_hint for tool in tools.tools)
+    assert all(tool.title for tool in tools.tools)
+    assert all(tool.output_schema and "$defs" in tool.output_schema for tool in tools.tools)
     assert {str(resource.uri) for resource in resources.resources} == {"swisstopo://catalog/stats"}
     assert {template.name for template in templates.resource_templates} == {"swisstopo-guide"}
     assert {prompt.name for prompt in prompts.prompts} == {"find_swiss_geodata"}
 
 
-async def test_division_and_explanation_tools_return_structured_content() -> None:
+async def test_division_tool_and_explanation_resource_return_content() -> None:
     server = build_server(CatalogIndex(), StubGeoAdmin())
     async with Client(server) as client:
         division = await client.call_tool(
             "search_divisions",
             {"query": "Wallis", "kinds": ["kanton"], "limit": 2},
         )
-        explanation = await client.call_tool("explain_swisstopo", {"topic": "coordinates"})
+        explanation = await client.read_resource("swisstopo://guide/coordinates")
 
     assert division.structured_content["divisions"][0]["name"] == "Valais"
     assert division.structured_content["divisions"][0]["kind"] == "kanton"
-    assert "EPSG:4326" in explanation.structured_content["content"]
+    assert "EPSG:4326" in explanation.contents[0].text
 
 
 async def test_dataset_search_and_description_are_client_neutral() -> None:
@@ -117,14 +122,14 @@ async def test_dataset_search_and_description_are_client_neutral() -> None:
     assert description.structured_content["dataset"]["source"] == "live_geo_admin"
     assert "layers=" in description.structured_content["dataset"]["map_preview_url"]
     assert search.structured_content["datasets"][0]["map_preview_scope"] == "switzerland"
-    assert "create_map_preview" in search.structured_content["map_link_note"]
+    assert "get_map_preview_links" in search.structured_content["map_link_note"]
 
 
-async def test_create_map_preview_returns_one_centred_link_per_dataset() -> None:
+async def test_get_map_preview_links_returns_one_centred_link_per_dataset() -> None:
     server = build_server(CatalogIndex(), StubGeoAdmin())
     async with Client(server) as client:
         preview = await client.call_tool(
-            "create_map_preview",
+            "get_map_preview_links",
             {
                 "dataset_ids": [
                     "ch.bfs.gebaeude_wohnungs_register",
@@ -138,21 +143,52 @@ async def test_create_map_preview_returns_one_centred_link_per_dataset() -> None
     content = preview.structured_content
     assert content["map_preview_scope"] == "division_bbox"
     assert content["focus"]["crs"] == "EPSG:4326"
-    assert [item["dataset_id"] for item in content["dataset_previews"]] == [
+    assert [item["dataset_id"] for item in content["individual_links"]] == [
         "ch.bfs.gebaeude_wohnungs_register",
         "ch.swisstopo.vec25-gebaeude",
     ]
-    for item in content["dataset_previews"]:
-        url = item["map_preview_url"]
+    for item in content["individual_links"]:
+        url = item["url"]
         assert "center=2635016.954,1243338.400" in url
         assert "z=1" not in url
         assert f"layers={item['dataset_id']}" in url
         assert ";" not in url
     assert (
         "layers=ch.bfs.gebaeude_wohnungs_register;ch.swisstopo.vec25-gebaeude"
-        in content["combined_map_preview_url"]
+        in content["combined_link"]
     )
-    assert "individual links" in content["presentation_note"]
+    assert content["center"] == {
+        "easting": 2635016.954,
+        "northing": 1243338.4,
+        "crs": "EPSG:2056",
+    }
+    assert "individual_links" in content["presentation_note"]
+
+
+async def test_map_preview_accepts_an_explicit_lv95_point() -> None:
+    server = build_server(CatalogIndex(), StubGeoAdmin())
+    async with Client(server) as client:
+        preview = await client.call_tool(
+            "get_map_preview_links",
+            {
+                "dataset_ids": ["ch.test.layer"],
+                "point": {
+                    "easting": 2600968.7,
+                    "northing": 1197426.9,
+                    "crs": "EPSG:2056",
+                },
+            },
+        )
+
+    content = preview.structured_content
+    assert content["center"]["easting"] == pytest.approx(2600968.7, abs=0.002)
+    assert content["center"]["northing"] == pytest.approx(1197426.9, abs=0.002)
+    assert content["center"]["crs"] == "EPSG:2056"
+    expected_center = (
+        f"center={content['center']['easting']:.3f},{content['center']['northing']:.3f}"
+    )
+    assert expected_center in content["individual_links"][0]["url"]
+    assert content["combined_link"] is None
 
 
 async def test_geocode_and_identify_work_without_session_state() -> None:
@@ -167,13 +203,23 @@ async def test_geocode_and_identify_work_without_session_state() -> None:
             "identify_at_point",
             {
                 "dataset_ids": ["ch.test.layer"],
-                "longitude": point["longitude"],
-                "latitude": point["latitude"],
+                "point": point,
+            },
+        )
+        identified_from_lv95 = await client.call_tool(
+            "identify_at_point",
+            {
+                "dataset_ids": ["ch.test.layer"],
+                "point": geocoded.structured_content["locations"][0]["coordinates"]["lv95"],
             },
         )
 
     assert identified.structured_content["feature_count"] == 1
     assert identified.structured_content["features"][0]["properties"]["name"] == "Example"
+    assert identified_from_lv95.structured_content["feature_count"] == 1
+    assert identified_from_lv95.structured_content["point"]["wgs84"]["longitude"] == pytest.approx(
+        point["longitude"], abs=1e-6
+    )
     assert geocoded.structured_content["locations"][0]["map_preview_url"].startswith(
         "https://map.geo.admin.ch/#/map?"
     )
@@ -189,8 +235,11 @@ async def test_identify_preset_can_be_combined_with_explicit_dataset_ids() -> No
         identified = await client.call_tool(
             "identify_at_point",
             {
-                "longitude": 7.451352,
-                "latitude": 46.927937,
+                "point": {
+                    "longitude": 7.451352,
+                    "latitude": 46.927937,
+                    "crs": "EPSG:4326",
+                },
                 "preset": "all_relevant",
                 "dataset_ids": ["ch.test.layer"],
             },
@@ -214,27 +263,32 @@ async def test_validation_errors_are_structured_and_non_retryable() -> None:
         )
         bad_coordinates = await client.call_tool(
             "identify_at_point",
-            {"dataset_ids": ["ch.test.layer"], "longitude": 500, "latitude": 200},
+            {
+                "dataset_ids": ["ch.test.layer"],
+                "point": {"longitude": 0, "latitude": 0, "crs": "EPSG:4326"},
+            },
         )
         bad_preset = await client.call_tool(
             "identify_at_point",
-            {"preset": "buildings", "longitude": 7.4, "latitude": 46.9},
+            {
+                "preset": "buildings",
+                "point": {"longitude": 7.4, "latitude": 46.9, "crs": "EPSG:4326"},
+            },
         )
         missing_selection = await client.call_tool(
             "identify_at_point",
-            {"longitude": 7.4, "latitude": 46.9},
+            {"point": {"longitude": 7.4, "latitude": 46.9, "crs": "EPSG:4326"}},
         )
         missing_map_focus = await client.call_tool(
-            "create_map_preview",
+            "get_map_preview_links",
             {"dataset_ids": ["ch.test.layer"]},
         )
         conflicting_map_focus = await client.call_tool(
-            "create_map_preview",
+            "get_map_preview_links",
             {
                 "dataset_ids": ["ch.test.layer"],
                 "focus_bbox": [7.3, 46.8, 7.5, 47.0],
-                "longitude": 7.4,
-                "latitude": 46.9,
+                "point": {"longitude": 7.4, "latitude": 46.9, "crs": "EPSG:4326"},
             },
         )
 

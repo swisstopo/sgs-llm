@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swisstopo-search-mcp"
-version = "2.3.0"
+version = "3.0.0"
 description = "Read-only MCP server for Swiss federal geodata discovery, divisions, geocoding, and point lookup"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -13,6 +13,7 @@ authors = [{ name = "Ageospatial" }]
 dependencies = [
   "httpx==0.28.1",
   "mcp==2.0.0",
+  "pydantic==2.13.4",
   "pyproj==3.7.2",
   "uvicorn[standard]==0.52.0",
 ]

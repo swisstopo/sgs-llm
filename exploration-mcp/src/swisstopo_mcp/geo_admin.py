@@ -51,9 +51,8 @@ class GeoAdminError(RuntimeError):
             "code": self.code,
             "message": str(self),
             "retryable": self.retryable,
+            "upstream_status": self.status_code,
         }
-        if self.status_code is not None:
-            error["upstream_status"] = self.status_code
         return error
 
 
@@ -82,7 +81,7 @@ class GeoAdminClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=_TIMEOUT,
-                headers={"User-Agent": "swisstopo-search-mcp/2.3.0 (+read-only discovery)"},
+                headers={"User-Agent": "swisstopo-search-mcp/3.0.0 (+read-only discovery)"},
             )
         for attempt in range(2):
             try:

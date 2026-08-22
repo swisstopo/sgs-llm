@@ -56,7 +56,7 @@ async def smoke(url: str) -> dict[str, Any]:
         assert isinstance(description_content, dict) and description_content.get("dataset")
 
         focused_preview = await client.call_tool(
-            "create_map_preview",
+            "get_map_preview_links",
             {
                 "dataset_ids": [dataset_content["datasets"][0]["dataset_id"]],
                 "focus_bbox": division_content["divisions"][0]["bbox"],
@@ -71,8 +71,7 @@ async def smoke(url: str) -> dict[str, Any]:
             "identify_at_point",
             {
                 "preset": "all_relevant",
-                "longitude": point["longitude"],
-                "latitude": point["latitude"],
+                "point": point,
                 "language": "en",
                 "limit": 20,
             },
@@ -83,8 +82,7 @@ async def smoke(url: str) -> dict[str, Any]:
             "identify_at_point",
             {
                 "dataset_ids": ["ch.swisstopo-vd.amtliche-vermessung"],
-                "longitude": point["longitude"],
-                "latitude": point["latitude"],
+                "point": point,
                 "language": "en",
             },
         )
@@ -102,9 +100,10 @@ async def smoke(url: str) -> dict[str, Any]:
         assert explicit_identify_content["selection"]["preset"] is None
         assert explicit_identify_content["dataset_ids"] == ["ch.swisstopo-vd.amtliche-vermessung"]
         assert focused_preview_content["map_preview_scope"] == "division_bbox"
-        focused_url = focused_preview_content["dataset_previews"][0]["map_preview_url"]
+        focused_url = focused_preview_content["individual_links"][0]["url"]
         assert "center=" in focused_url
         assert "z=1&" not in focused_url
+        assert focused_preview_content["center"]["crs"] == "EPSG:2056"
 
     return {
         "endpoint": url,
@@ -124,9 +123,7 @@ async def smoke(url: str) -> dict[str, Any]:
         "identified_feature_count": identify_content["feature_count"],
         "explicit_identified_feature_count": explicit_identify_content["feature_count"],
         "map_preview_url": identify_content["map_preview_url"],
-        "focused_map_preview_url": focused_preview_content["dataset_previews"][0][
-            "map_preview_url"
-        ],
+        "focused_map_preview_url": focused_preview_content["individual_links"][0]["url"],
         "oereb_official_links": [
             link["url"]
             for feature in identify_content["features"]

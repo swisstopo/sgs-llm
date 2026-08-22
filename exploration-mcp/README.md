@@ -25,10 +25,15 @@ backend image, and roll the ECS service automatically.
 
 ## Tool inputs and outputs
 
-All seven tools are read-only and return structured JSON. Supported response languages
-are `de`, `fr`, `it`, `rm`, and `en`. Point inputs always use WGS84 longitude followed by
-latitude (`EPSG:4326`); Swiss LV95 easting/northing (`EPSG:2056`) is returned only as an
-additional representation.
+All six tools are read-only and return schema-validated structured JSON. Supported
+response languages are `de`, `fr`, `it`, `rm`, and `en`. Point inputs are objects with an
+explicit CRS and axis names: WGS84 longitude/latitude (`EPSG:4326`) or Swiss LV95
+easting/northing (`EPSG:2056`).
+
+Version 3 removes the redundant `explain_swisstopo` tool (the guides remain available as
+resources), renames the read-only map helper to `get_map_preview_links`, and replaces
+unlabelled point arguments with explicit coordinate objects. MCP clients refresh the tool
+catalogue when they reconnect; hard-coded callers must update these names and arguments.
 
 ### `search_datasets`
 
@@ -59,14 +64,14 @@ additional representation.
 - **Use it for:** named areas and map focus. A bbox is an enclosing rectangle, not the
   exact administrative polygon.
 
-### `create_map_preview`
+### `get_map_preview_links`
 
 - **Input:** `dataset_ids` (required, `1-10`) and exactly one focus: either WGS84
-  `focus_bbox=[west,south,east,north]` or both `longitude` and `latitude`; optional
-  `language="en"`.
-- **Output:** `dataset_previews[]` containing one centred official map URL per dataset,
-  `focus`, `map_preview_scope`, and, for multiple datasets, an optional
-  `combined_map_preview_url`.
+  `focus_bbox=[west,south,east,north]` or a `point` object explicitly labelled as
+  WGS84 longitude/latitude or LV95 easting/northing; optional `language="en"`.
+- **Output:** `individual_links[]` containing one centred official URL per dataset,
+  optional `combined_link`, original `focus`, and the exact LV95 `center` used by the
+  map viewer.
 - **Use it for:** subject-plus-place questions. Present every individual preview link;
   never replace them with only the combined link.
 
@@ -77,12 +82,12 @@ additional representation.
   and `kantone`.
 - **Output:** `locations[]` with `location_ref`, kind, label, match quality, related
   features, explicit WGS84 and LV95 coordinates, and `map_preview_url`.
-- **Use it for:** a precise address, parcel, postcode, or named point. Pass the returned
-  WGS84 numbers—not `location_ref` or LV95—to `identify_at_point`.
+- **Use it for:** a precise address, parcel, postcode, or named point. Pass either returned
+  coordinate object—not `location_ref`—to `identify_at_point`.
 
 ### `identify_at_point`
 
-- **Input:** required WGS84 `longitude` and `latitude`; one or both of `preset` and
+- **Input:** required explicit WGS84 or LV95 `point`; one or both of `preset` and
   `dataset_ids[]` (maximum `10`); `language="en"`; `limit=20` (`1-200`). Presets are
   `parcel`, `oereb`, and `all_relevant`.
 - **Output:** `point`, resolved `selection`, `dataset_ids`, `feature_count`, `features[]`
@@ -91,26 +96,22 @@ additional representation.
 - **Use it for:** parcel/EGRID attributes, ÖREB availability and official extract links,
   or feature records from an already-selected queryable layer.
 
-### `explain_swisstopo`
-
-- **Input:** `topic="overview"`; valid topics are `overview`, `datasets`, `divisions`,
-  `geocoding`, and `coordinates`.
-- **Output:** `topic`, `title`, explanatory `content`, and `related_tools`.
-- **Use it for:** teaching an agent the domain when its host does not expose MCP resources.
-
-Validation failures use one predictable shape:
+Tool-level validation failures use one predictable shape (arguments rejected directly by
+the advertised JSON Schema are returned as MCP protocol errors):
 
 ```json
 {
   "error": {
     "code": "invalid_coordinates",
-    "message": "longitude and latitude must be valid WGS84 coordinates.",
-    "retryable": false
+    "message": "point must lie within the Swiss map extent.",
+    "retryable": false,
+    "upstream_status": null
   }
 }
 ```
 
-The server also publishes MCP resources at `swisstopo://guide/{topic}` and
+Explanations are kept out of the callable tool list. The server publishes them as MCP
+resources at `swisstopo://guide/{topic}` and
 `swisstopo://catalog/stats`, plus a `find_swiss_geodata` prompt. The same critical
 instructions are repeated in tool descriptions because not every MCP host exposes
 resources or prompts to its model.
@@ -239,7 +240,7 @@ use this compact policy:
 Use the Swisstopo MCP for Swiss geodata exploration.
 Keep dataset subjects separate from place names: search the subject with search_datasets
 and resolve the place with search_divisions. For subject-plus-place questions, call
-create_map_preview and return every individual dataset preview link. Use geocode_location
+get_map_preview_links and return every individual dataset link. Use geocode_location
 before identify_at_point for an address. Use parcel, oereb, or all_relevant for cadastral
 questions. Copy returned map URLs verbatim. Never invent dataset IDs or coordinates, swap
 longitude/latitude, or claim that the MCP returned geometry or GeoJSON.
@@ -292,7 +293,7 @@ async def main() -> None:
             instructions=[
                 "Use the Swisstopo tools for Swiss geodata questions.",
                 "Search dataset subjects and geographic divisions separately.",
-                "Return every individual create_map_preview link.",
+                "Return every individual get_map_preview_links URL.",
                 "Geocode an address before parcel or ÖREB identification.",
                 "Use returned map URLs verbatim and never claim geometry was returned.",
             ],
@@ -356,7 +357,7 @@ The reliable tool sequence is:
 
    ```json
    {
-     "name": "create_map_preview",
+     "name": "get_map_preview_links",
      "arguments": {
        "dataset_ids": [
          "ch.bfs.gebaeude_wohnungs_register",
@@ -372,17 +373,18 @@ The reliable tool sequence is:
 
    ```json
    {
-     "dataset_previews": [
+     "individual_links": [
        {
          "dataset_id": "ch.bfs.gebaeude_wohnungs_register",
-         "map_preview_url": "https://map.geo.admin.ch/#/map?..."
+         "url": "https://map.geo.admin.ch/#/map?..."
        },
        {
          "dataset_id": "ch.swisstopo.vec25-gebaeude",
-         "map_preview_url": "https://map.geo.admin.ch/#/map?..."
+         "url": "https://map.geo.admin.ch/#/map?..."
        }
      ],
-     "combined_map_preview_url": "https://map.geo.admin.ch/#/map?..."
+     "combined_link": "https://map.geo.admin.ch/#/map?...",
+     "center": {"easting": 2635016.954, "northing": 1243338.4, "crs": "EPSG:2056"}
    }
    ```
 
@@ -411,8 +413,8 @@ First geocode the precise address:
 }
 ```
 
-The result contains both coordinate systems. Copy only the WGS84 point into the next
-tool call:
+The result contains both coordinate systems. Copy either complete object into the next
+tool call; this example uses WGS84:
 
 ```json
 {
@@ -437,8 +439,11 @@ Then request both cadastral and ÖREB records:
 {
   "name": "identify_at_point",
   "arguments": {
-    "longitude": 7.451352,
-    "latitude": 46.927937,
+    "point": {
+      "longitude": 7.451352,
+      "latitude": 46.927937,
+      "crs": "EPSG:4326"
+    },
     "preset": "all_relevant",
     "language": "en",
     "limit": 20
@@ -458,9 +463,9 @@ more important than exact wording because the public catalogue can change.
 
 | Difficulty | Test query | Expected tools and checks |
 | --- | --- | --- |
-| Basic | `What can this Swisstopo MCP do?` | `explain_swisstopo`; explain exploration limits without inventing analysis tools. |
+| Basic | `What can this Swisstopo MCP do?` | Use server instructions/tool descriptions; explain exploration limits without inventing analysis tools. |
 | Basic | `Find official avalanche-hazard datasets.` | `search_datasets`; return real `ch.*` IDs and mention low confidence if reported. |
-| Place | `Show me building datasets in Olten, with one centred link per dataset.` | `search_datasets` + `search_divisions` + `create_map_preview`; choose `gemeinde`; return every individual link. |
+| Place | `Show me building datasets in Olten, with one centred link per dataset.` | `search_datasets` + `search_divisions` + `get_map_preview_links`; choose `gemeinde`; return every individual link. |
 | Metadata | `What fields and owner does ch.bfs.gebaeude_wohnungs_register have?` | `describe_dataset`; use returned fields/owner rather than assumptions. |
 | Multilingual | `Trouve des données sur le potentiel solaire à Genève.` | French dataset search plus Geneva division resolution; keep subject and place separate. |
 | Ambiguity | `Show data for Zürich.` | Resolve or clarify canton/district/commune/locality instead of silently selecting one. |
@@ -478,9 +483,9 @@ A good agent run has these properties:
 
 - it never invents a dataset ID, coordinate, field, or administrative relationship;
 - it separates a dataset subject from a geographic place;
-- it uses `create_map_preview` for place-centred dataset links;
+- it uses `get_map_preview_links` for place-centred dataset links;
 - it returns every requested individual map link and copies URLs verbatim;
-- it uses WGS84 for point tools and never substitutes LV95 values;
+- it labels every point as WGS84 or LV95 and never swaps or guesses coordinate axes;
 - it clearly states that geometry, GeoJSON, bulk downloads, and legal certificates are
   outside this MCP's output.
 
@@ -511,11 +516,11 @@ reduce DNS-rebinding risk.
   when geo.admin.ch is reachable.
 - `divisions.json` packages 6,272 records: Switzerland, 26 cantons, 135 districts, 2,123
   communes, two shared territories, 11 special canton territories, and 3,974 localities.
-- Division bboxes and all point inputs/outputs use WGS84 (`EPSG:4326`). Geocoding also
-  returns LV95 (`EPSG:2056`) with explicitly named axes.
+- Division bboxes use WGS84 (`EPSG:4326`). Point inputs and outputs support explicitly
+  labelled WGS84 or LV95 (`EPSG:2056`) coordinates with named axes.
 - Dataset search/description, geocoding, and point-identification results include a
   ready-to-open `map_preview_url` for the official geo.admin.ch viewer. Dataset-only links
-  show Switzerland. For requests such as "buildings in Olten", `create_map_preview`
+  show Switzerland. For requests such as "buildings in Olten", `get_map_preview_links`
   combines the chosen `ch.*` IDs with the selected division bbox and returns one labelled
   preview per dataset, plus an optional combined view. Every link automatically uses an
   LV95 centre and area-appropriate zoom. Point links use an LV95 marker.
@@ -523,7 +528,7 @@ reduce DNS-rebinding risk.
   while still accepting exact `ch.*` dataset IDs. It returns attributes and official
   web/PDF links but deliberately never returns geometry or GeoJSON.
 - The HTTP MCP transport is stateless. `location_ref` is a result identifier, not hidden
-  server state; pass the returned WGS84 coordinates to `identify_at_point`.
+  server state; pass either returned coordinate object to `identify_at_point`.
 - Network calls are restricted in code to the public `api3.geo.admin.ch` service.
 
 Rebuild packaged data after refreshing the SGS source index:

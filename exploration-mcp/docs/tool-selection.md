@@ -18,10 +18,11 @@ SGS map application.
 | `analyze_features` | Exclude | — | Depends on a stateful `result_id` cache created by bulk retrieval. |
 | `display_layer` | Exclude | — | Depends on S3/local artifact publication and SGS map conventions. |
 
-Two small compatibility tools complete the portable workflow. `create_map_preview`
-combines exact dataset IDs with a resolved bbox or point in a universal GeoAdmin URL;
-unlike the excluded display tools, it publishes no data and returns no frontend action.
-`explain_swisstopo` mirrors the server's MCP resources for hosts that expose only tools.
+One small link helper completes the portable workflow. `get_map_preview_links` combines
+exact dataset IDs with a resolved bbox or explicitly labelled point in universal GeoAdmin
+URLs; unlike the excluded display tools, it publishes no data and returns no frontend
+action. Domain explanations stay in server instructions and MCP resources so they do not
+occupy the callable tool surface.
 
 ## Architectural changes
 
@@ -31,9 +32,9 @@ unlike the excluded display tools, it publishes no data and returns no frontend 
 - Division search uses a 1.3 MB packaged snapshot rather than 108 MB of boundary polygons.
   It returns WGS84 bboxes and source IDs, not geometry.
 - HTTP mode is explicitly stateless; there are no hidden location or feature caches.
-- Dataset and point results link to the official map viewer. `create_map_preview` centres
+- Dataset and point results link to the official map viewer. `get_map_preview_links` centres
   selected layers on a resolved division, while point links centre and enable the resolved
   layers without embedding geometry in the MCP response.
 - Every operation is annotated read-only and non-destructive in MCP `tools/list`.
-- Domain explanations are available as server instructions, resources, tool descriptions,
-  and a fallback explanation tool, which makes behavior consistent across MCP hosts.
+- Domain explanations are available as server instructions, resources, and tool
+  descriptions without adding a redundant callable tool.

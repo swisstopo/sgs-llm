@@ -28,10 +28,9 @@ async def smoke(url: str) -> dict[str, Any]:
             "search_datasets",
             "describe_dataset",
             "search_divisions",
-            "create_map_preview",
+            "get_map_preview_links",
             "geocode_location",
             "identify_at_point",
-            "explain_swisstopo",
         }
         assert set(functions) == expected
         entrypoint = functions["search_divisions"].entrypoint

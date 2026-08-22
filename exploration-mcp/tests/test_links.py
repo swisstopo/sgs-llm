@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from swisstopo_mcp.links import map_viewer_url
+from swisstopo_mcp.links import lv95_to_wgs84, map_viewer_url, wgs84_to_lv95
 
 
 def test_dataset_preview_opens_layer_at_swiss_extent() -> None:
@@ -37,6 +37,16 @@ def test_regression_wgs84_values_are_never_written_to_center() -> None:
 
     assert "center=2635019.092,1243341.081" in url
     assert "center=7.902" not in url
+
+
+def test_explicit_coordinate_conversions_preserve_axis_order() -> None:
+    easting, northing = wgs84_to_lv95(7.451352, 46.927937)
+    longitude, latitude = lv95_to_wgs84(easting, northing)
+
+    assert easting == pytest.approx(2600968.69, abs=0.1)
+    assert northing == pytest.approx(1197426.95, abs=0.1)
+    assert longitude == pytest.approx(7.451352, abs=1e-7)
+    assert latitude == pytest.approx(46.927937, abs=1e-7)
 
 
 def test_division_bbox_preview_centers_layers_on_olten() -> None:

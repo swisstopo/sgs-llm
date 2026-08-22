@@ -24,6 +24,8 @@ async def smoke() -> dict[str, object]:
             "search_divisions",
             {"query": "Geneve", "kinds": ["kanton"], "limit": 1},
         )
+    assert len(tools.tools) == 6
+    assert all(tool.title and tool.output_schema for tool in tools.tools)
     assert isinstance(result.structured_content, dict)
     division = result.structured_content["divisions"][0]
     assert division["name"] == "Genève"
