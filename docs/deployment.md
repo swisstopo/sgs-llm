@@ -863,6 +863,45 @@ tools, layer count, latency and error code, so the service can be watched with
 > it is an account-wide per-region setting, and the application-level tables above
 > already cover the requirement.
 
+### Provider-side retention: enforced zero data retention (Bedrock)
+
+The sections above cover what *this project* stores. This one covers what AWS
+and the model providers may keep, which is a separate setting.
+
+Set on **2026-08-25**: the Bedrock account data-retention mode is **`none`**
+(zero data retention) in both regions the pilot invokes models from,
+`eu-central-1` and `eu-west-1`. Under `none`, no request or response data is
+written to durable storage by AWS or shared with any model provider, and any
+model that *requires* provider data sharing (e.g. Claude Fable 5 /
+Claude Mythos 5, `allowed_modes: ["provider_data_share"]`) is blocked with an
+error instead of silently accepting retention. Reference:
+[Amazon Bedrock — Data retention](https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html).
+
+Verified after the change: both pilot models keep working — a direct `Converse`
+against each, and a full production chat turn through CloudFront that ran on
+`eu.anthropic.claude-sonnet-4-6` with a seven-tool geosearch chain.
+`mistral.ministral-3-14b-instruct` reports `allowed_modes`
+`["none","default","provider_data_share"]` and now runs at effective mode
+`none` (source: account); Claude Sonnet 4.6 predates the retention mechanism
+entirely ("no data retention change to Claude models released before Claude
+Fable 5") and is not on the retention-mode API surface at all.
+
+Two operational findings worth knowing before touching this again:
+
+- **The setting is per-region despite the "account" name** — set it in every
+  region the backend invokes models in (today: `eu-central-1` for the Claude EU
+  profile entry point, `eu-west-1` for Mistral).
+- **There are two API surfaces that do NOT sync**: the Bedrock control plane
+  (`aws bedrock put-account-data-retention --mode none`) and the
+  `bedrock-mantle` runtime surface (`PUT
+  https://bedrock-mantle.<region>.api.aws/v1/data_retention`). Setting only the
+  control plane left the mantle surface on `inherit`; both were set to `none`
+  explicitly, in both regions. When auditing, read both.
+
+To relax it later (e.g. if swisstopo ever wants a Fable-5-class model that
+mandates provider sharing), set the mode back with the same two calls per
+region — that is a data-protection decision, not a technical one.
+
 ### Run the backend locally
 
 No AWS profile needed beyond a Bedrock key - the same one
