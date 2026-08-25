@@ -7,7 +7,12 @@ during project execution.
 
 Claude and Mistral models are reached through **Amazon Bedrock** using **EU
 inference profiles** (`eu.*`), so inference stays within EU regions; the backend
-authenticates with its task IAM role (no API key). See
+authenticates with its task IAM role (no API key). Since 2026-08-25 the account
+enforces **zero data retention** (`mode: none` in `eu-central-1` and
+`eu-west-1`, verified live): no prompts or outputs are stored by AWS or shared
+with any model provider, and a model that would require provider data sharing
+is blocked rather than silently accepted — see
+[`deployment.md`](./deployment.md#provider-side-retention-enforced-zero-data-retention-bedrock). See
 [`deployment.md`](./deployment.md#backend-deployment) and
 [`architecture.md`](./architecture.md#backend-architecture).
 
