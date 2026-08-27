@@ -1,0 +1,506 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Apertus 1.5 8B on vLLM — a single GPU instance serving an OpenAI-compatible
+  endpoint to the backend over the VPC, started and stopped on Swiss office
+  hours by EventBridge Scheduler. Consumes an existing VPC and subnet and the
+  backend stack's task security group; it never creates network topology.
+  Reachable from the backend tasks over the VPC, and from the office static IP
+  via an Elastic IP for direct testing. Authentication is the vLLM --api-key;
+  the office /32 is a filter on top of it, not a substitute.
+  See docs/apertus-endpoint.md and infra/apertus/README.md.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Naming and tagging }
+        Parameters: [ProjectTag, ServiceName]
+      - Label: { default: Networking }
+        Parameters: [VpcId, SubnetId, BackendStackName, ContainerPort, OfficeCidr, PrivateIpAddress]
+      - Label: { default: Instance }
+        Parameters: [InstanceType, VolumeSizeGb, AmiId]
+      - Label: { default: Model }
+        Parameters: [WeightsS3Uri, ModelId, MaxModelLen, GpuMemoryUtilization, MaxNumSeqs, ContainerImage]
+      - Label: { default: Office-hours schedule }
+        Parameters: [ScheduleEnabled, StartExpression, StopExpression, ScheduleTimezone]
+
+Parameters:
+  ProjectTag:
+    Type: String
+    Default: sgs-llm-poc
+    Description: Value of the `project` tag applied to every taggable resource.
+  ServiceName:
+    Type: String
+    Default: sgs-llm-apertus
+    Description: Base name for the instance, security group, IAM roles and schedules.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: >-
+      Existing VPC, the same one the backend runs in. This account's
+      AccountAdmin policy denies ec2:CreateVpc and friends, so topology is
+      consumed, never created — same rule as backend-foundation.yaml.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      One subnet in the VPC above. The POC account only has the default VPC's
+      public subnets, which is where the Fargate tasks already run; the
+      instance is exposed to the internet only on the office /32 in OfficeCidr,
+      and only on ContainerPort, with the vLLM API key still required.
+      Pin this to a single subnet on purpose: the instance is stopped and
+      started rather than replaced, so it cannot move between AZs.
+  BackendStackName:
+    Type: String
+    Default: sgs-llm-backend-foundation
+    Description: >-
+      Name of the backend foundation stack, used to import its
+      TaskSecurityGroupId export. Only that security group may reach vLLM.
+  ContainerPort:
+    Type: Number
+    Default: 8000
+    Description: Port vLLM's OpenAI-compatible server listens on.
+  OfficeCidr:
+    Type: String
+    Default: ''
+    Description: >-
+      Static gateway IP allowed to reach vLLM directly, for testing from a
+      workstation. Supply the askEarth static gateway address as a /32; it is
+      deliberately not defaulted here, because this repository is public. Setting
+      this non-empty also allocates an Elastic IP, because an auto-assigned
+      public address is released on stop and would change every morning. Left
+      empty, office access is closed entirely and only the backend tasks can
+      reach vLLM, which drops the Elastic IP charge too.
+  PrivateIpAddress:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional fixed private IPv4 inside SubnetId. A primary private IP
+      survives stop/start, so pinning one gives the backend a stable address
+      with no Elastic IP and no DNS record. Leave blank to let EC2 choose —
+      note the address is then still stable for the life of the instance, but
+      changes if the instance is ever replaced.
+
+  InstanceType:
+    Type: String
+    Default: g5.xlarge
+    AllowedValues: [g5.xlarge, g5.2xlarge, g6.xlarge, g6.2xlarge, g6e.xlarge, g6e.2xlarge]
+    Description: >-
+      g5.xlarge (A10G 24 GB) measured at 30 tok/s single stream and 118 tok/s
+      across 4 concurrent requests, which fits Apertus v1.5 8B at 4K context
+      with 3.5 GiB left for KV cache. g6e.xlarge (L40S 48 GB) is roughly a
+      third faster and far roomier but costs ~85% more and had NO CAPACITY in
+      any eu-central-1 AZ when this was written. g6.xlarge (L4) is cheapest but
+      has half the memory bandwidth, so about half the throughput.
+  VolumeSizeGb:
+    Type: Number
+    Default: 120
+    MinValue: 100
+    Description: >-
+      Root volume. The measured footprint is 94 GB — 18 GB of weights, 20 GB of
+      docker, the rest the Deep Learning AMI's preinstalled frameworks — so 120
+      is the safe minimum. This bills while the instance is STOPPED, so it is
+      the bulk of the out-of-hours floor.
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
+    Description: >-
+      Deep Learning Base AMI, which ships the NVIDIA driver, container toolkit
+      and Docker so nothing compiles a driver at boot.
+
+  WeightsS3Uri:
+    Type: String
+    Default: 's3://sgs-llm-apertus-weights-259789526488/models/Apertus-v1.5-8B/'
+    Description: >-
+      S3 prefix holding the model files, synced to local disk at boot. When set,
+      the instance needs NO HuggingFace token and never contacts huggingface.co —
+      HF_HUB_OFFLINE and TRANSFORMERS_OFFLINE are both set and vLLM is pointed at
+      the local directory.
+      Leave EMPTY only for a first-ever bootstrap in an account with no mirror
+      yet: the instance then downloads from HuggingFace using /apertus/hf-token,
+      which must exist. Seed the bucket from that instance once, set this
+      parameter, update the stack, and the token can be deleted for good. The
+      procedure is in docs/apertus-endpoint.md.
+  ModelId:
+    Type: String
+    Default: swiss-ai/Apertus-v1.5-8B
+    Description: >-
+      HuggingFace model id. Used ONLY when WeightsS3Uri is empty, i.e. the
+      first-ever bootstrap. The repo is gated; see the HF token section of
+      infra/apertus/README.md.
+  MaxModelLen:
+    Type: Number
+    Default: 4096
+    Description: >-
+      Context length. 4096 measured to leave 3.5 GiB of KV cache on a 24 GB
+      card, which is 28,656 tokens or about 7 concurrent 4K conversations.
+      Raising this eats KV cache one-for-one.
+  GpuMemoryUtilization:
+    Type: String
+    Default: '0.95'
+    Description: >-
+      MUST be ~0.95 on a 24 GB card. The Apertus model card suggests 0.6, which
+      is calibrated for an 80 GB H100; on 24 GB that is a 13.4 GiB budget
+      against 17.1 GiB of weights and vLLM will not start. Use 0.90 on a 48 GB
+      g6e.
+  MaxNumSeqs:
+    Type: Number
+    Default: 4
+    Description: Concurrent sequences. 4 on a 24 GB card; 8 on a 48 GB g6e.
+  ContainerImage:
+    Type: String
+    Default: ghcr.io/swiss-ai/vllm_apertus_1.5_release@sha256:d85533f251c8272218ae2e519510836376e5a335b44f2204f193018e37753bc6
+    Description: >-
+      Pinned by digest. Upstream vLLM CANNOT load v1.5 — its registry has only
+      ApertusForCausalLM while v1.5 declares Apertus1p5ForConditionalGeneration —
+      so this must be the Swiss AI fork image. All of its tags are `latest`
+      style on a fork with no release cadence, hence the digest.
+
+  ScheduleEnabled:
+    Type: String
+    Default: 'ENABLED'
+    AllowedValues: ['ENABLED', 'DISABLED']
+    Description: >-
+      Set DISABLED to suspend office-hours scheduling without deleting it — the
+      instance then simply stays in whatever state it is in.
+  StartExpression:
+    Type: String
+    Default: 'cron(30 6 ? * MON-FRI *)'
+    Description: >-
+      When to start. Default 06:30 Swiss time on weekdays, which is 30 minutes
+      before a 07:00 working day: the measured stop-to-serving time is 4 min
+      48 s, so this leaves margin for a slow morning.
+  StopExpression:
+    Type: String
+    Default: 'cron(0 19 ? * MON-FRI *)'
+    Description: When to stop. Default 19:00 Swiss time on weekdays.
+  ScheduleTimezone:
+    Type: String
+    Default: Europe/Zurich
+    Description: >-
+      IANA timezone for the two expressions above. EventBridge Scheduler
+      resolves this per firing, so CET/CEST is handled automatically. A plain
+      UTC cron would drift by an hour twice a year.
+
+Conditions:
+  HasFixedIp: !Not [!Equals [!Ref PrivateIpAddress, '']]
+  HasOfficeCidr: !Not [!Equals [!Ref OfficeCidr, '']]
+  FromS3: !Not [!Equals [!Ref WeightsS3Uri, '']]
+  FromHuggingFace: !Equals [!Ref WeightsS3Uri, '']
+
+Resources:
+  # ---------------------------------------------------------------- networking
+  # Two ways in and no others: the backend's task security group over the VPC,
+  # and the office /32 below. Everything else is refused at the security group.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${ServiceName} vLLM - backend tasks and the office CIDR only'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: >-
+            Outbound for the container image pull (ghcr.io), SSM and S3. Weights
+            now come from the in-region S3 mirror, so HuggingFace is no longer
+            reachable-from or needed. An S3 gateway endpoint plus a ghcr.io-only
+            egress rule would narrow this further.
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${ServiceName}-sg' }
+
+  IngressFromBackend:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      SourceSecurityGroupId:
+        Fn::ImportValue: !Sub '${BackendStackName}-TaskSecurityGroupId'
+      Description: Backend ECS tasks only.
+
+  # Office access, for hitting the endpoint directly from a workstation.
+  # The /32 is a filter, not authentication — the vLLM
+  # --api-key is what actually protects the endpoint. Set OfficeCidr to '' to
+  # close this and leave only the backend tasks.
+  IngressFromOffice:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasOfficeCidr
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: !Ref ContainerPort
+      ToPort: !Ref ContainerPort
+      CidrIp: !Ref OfficeCidr
+      Description: askEarth office static IP.
+
+  # A public IP is only needed because of the office rule above. An auto-assigned
+  # one is RELEASED on stop and a different address comes back on start, which
+  # would break the office allow-list every single morning — so this is an
+  # Elastic IP, which survives the daily stop/start. It costs ~USD 3.65/month,
+  # billed whether the instance is running or not.
+  OfficeEip:
+    Type: AWS::EC2::EIP
+    Condition: HasOfficeCidr
+    Properties:
+      Domain: vpc
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${ServiceName}-eip' }
+
+  OfficeEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Condition: HasOfficeCidr
+    Properties:
+      AllocationId: !GetAtt OfficeEip.AllocationId
+      InstanceId: !Ref Instance
+
+  # ---------------------------------------------------------------------- IAM
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Session Manager is the only admin path in; there is no SSH key and no
+        # inbound rule that would let one work.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: read-model-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/apertus/*'
+              # Read-only on the weight mirror. Seeding it is a one-off done with
+              # elevated credentials, not something the instance may do.
+              - !If
+                - FromS3
+                - Effect: Allow
+                  Action: [s3:GetObject, s3:ListBucket]
+                  Resource:
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${B}'
+                      - B: !Select [0, !Split ['/', !Select [1, !Split ['s3://', !Ref WeightsS3Uri]]]]
+                    - !Sub
+                      - 'arn:${AWS::Partition}:s3:::${B}/*'
+                      - B: !Select [0, !Split ['/', !Select [1, !Split ['s3://', !Ref WeightsS3Uri]]]]
+                - !Ref 'AWS::NoValue'
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'ssm.${AWS::Region}.amazonaws.com'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  # ----------------------------------------------------------------- instance
+  # The volume goes through a LaunchTemplate rather than the instance's own
+  # BlockDeviceMappings because AWS::EC2::Instance has no Throughput property in
+  # its schema — only DeleteOnTermination, Encrypted, Iops, KmsKeyId, SnapshotId,
+  # VolumeSize and VolumeType. The EC2 API accepts Throughput fine; it is
+  # CloudFormation's Instance resource that does not expose it, and the stack
+  # fails early validation if you try. Without it gp3 defaults to 125 MiB/s,
+  # which roughly doubles the 68 s weight load measured at 500 MiB/s.
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ServiceName}-lt'
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: !Ref VolumeSizeGb
+              VolumeType: gp3
+              Throughput: 500
+              Iops: 6000
+              Encrypted: true
+              DeleteOnTermination: true
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: [!Ref SecurityGroup]
+      PrivateIpAddress: !If [HasFixedIp, !Ref PrivateIpAddress, !Ref 'AWS::NoValue']
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          exec > >(tee /var/log/apertus-boot.log) 2>&1
+          set -x
+
+          # The container runs with --restart unless-stopped, so after the FIRST
+          # boot Docker brings vLLM back by itself on every subsequent start and
+          # none of this re-runs. Measured stop -> serving: 4 min 48 s.
+          if docker ps -a --filter name=apertus-vllm --format '{{.Names}}' | grep -q apertus-vllm; then
+            echo "container already present; docker restart policy handles it"
+            exit 0
+          fi
+
+          nvidia-smi
+          DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+          BRANCH=${!DRV%%.*}
+          # The image is CUDA 13.0 and its NVIDIA_REQUIRE_CUDA guard only accepts
+          # driver branches 535/550/565/570/575. The Deep Learning AMI shipped 595
+          # when this was measured — newer and perfectly capable, but the guard
+          # aborts the container anyway. This is the most likely first-run failure.
+          GUARD=""
+          case "$BRANCH" in
+            535|550|565|570|575) ;;
+            *) GUARD="-e NVIDIA_DISABLE_REQUIRE=1" ;;
+          esac
+
+          KEY=$(aws ssm get-parameter --region ${AWS::Region} --name /apertus/api-key \
+                 --with-decryption --query Parameter.Value --output text)
+
+          docker pull ${ContainerImage}
+
+          # Weights come from the in-region S3 mirror, not HuggingFace. Nothing on
+          # this instance holds or needs an HF token, and the container is put in
+          # offline mode so no library can quietly reach out to huggingface.co.
+          # Empty WeightsS3Uri switches to the one-time HuggingFace bootstrap.
+          MODEL_DIR=/opt/models/apertus
+          mkdir -p "$MODEL_DIR"
+          WEIGHTS='${WeightsS3Uri}'
+          if [ -n "$WEIGHTS" ]; then
+            time aws s3 sync "$WEIGHTS" "$MODEL_DIR/" --only-show-errors --region ${AWS::Region}
+            MODEL_ARG="$MODEL_DIR"
+            OFFLINE="-e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1"
+            TOKEN_ARG=""
+          else
+            # Bootstrap only: no mirror exists yet, so pull from HuggingFace once
+            # using the gated-repo token, then seed the bucket from this instance
+            # and set WeightsS3Uri. See docs/apertus-endpoint.md.
+            HF=$(aws ssm get-parameter --region ${AWS::Region} --name /apertus/hf-token \
+                   --with-decryption --query Parameter.Value --output text)
+            MODEL_ARG='${ModelId}'
+            OFFLINE=""
+            TOKEN_ARG="-e HF_TOKEN=$HF"
+          fi
+
+          # This image's entrypoint is nvidia_entrypoint.sh and it declares no CMD,
+          # so the full `vllm serve` command must be given - bare flags would be
+          # exec'd as a binary.
+          docker run -d --name apertus-vllm --restart unless-stopped \
+            --gpus all --ipc host \
+            -p ${ContainerPort}:8000 \
+            -e HF_HOME=/root/.cache/huggingface $OFFLINE $TOKEN_ARG $GUARD \
+            -v /opt/hfcache:/root/.cache/huggingface \
+            -v "$MODEL_DIR":"$MODEL_DIR":ro \
+            ${ContainerImage} \
+            vllm serve "$MODEL_ARG" \
+              --served-model-name apertus-8b \
+              --chat-template-content-format string \
+              --max-model-len ${MaxModelLen} \
+              --gpu-memory-utilization ${GpuMemoryUtilization} \
+              --max-num-seqs ${MaxNumSeqs} \
+              --enable-auto-tool-choice --tool-call-parser apertus \
+              --api-key "$KEY" \
+              --host 0.0.0.0 --port 8000
+          echo "=== CONTAINER UP $(date -u) ==="
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Ref ServiceName }
+
+  # ---------------------------------------------------- office-hours schedule
+  # EventBridge Scheduler calls the EC2 API directly through a universal target,
+  # so there is no Lambda to own, patch or pay for.
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref 'AWS::AccountId'
+      Policies:
+        - PolicyName: start-stop-this-instance-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ec2:StartInstances, ec2:StopInstances]
+                Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Instance}'
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
+  StartSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ServiceName}-start'
+      Description: !Sub 'Start ${ServiceName} for Swiss office hours'
+      State: !Ref ScheduleEnabled
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      ScheduleExpression: !Ref StartExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      Target:
+        Arn: !Sub 'arn:${AWS::Partition}:scheduler:::aws-sdk:ec2:startInstances'
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: !Sub '{"InstanceIds":["${Instance}"]}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 5
+
+  StopSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${ServiceName}-stop'
+      Description: !Sub 'Stop ${ServiceName} outside Swiss office hours'
+      State: !Ref ScheduleEnabled
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      ScheduleExpression: !Ref StopExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      Target:
+        Arn: !Sub 'arn:${AWS::Partition}:scheduler:::aws-sdk:ec2:stopInstances'
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: !Sub '{"InstanceIds":["${Instance}"]}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 5
+
+Outputs:
+  InstanceId:
+    Value: !Ref Instance
+    Export: { Name: !Sub '${AWS::StackName}-InstanceId' }
+  PrivateIp:
+    Description: Stable across stop/start; this is what the backend should target.
+    Value: !GetAtt Instance.PrivateIp
+    Export: { Name: !Sub '${AWS::StackName}-PrivateIp' }
+  BaseUrl:
+    Description: OpenAI-compatible base URL for the backend (APERTUS_BASE_URL).
+    Value: !Sub 'http://${Instance.PrivateIp}:${ContainerPort}/v1'
+    Export: { Name: !Sub '${AWS::StackName}-BaseUrl' }
+  OfficeEndpoint:
+    Condition: HasOfficeCidr
+    Description: Reachable from OfficeCidr only. Stable across the daily stop/start.
+    Value: !Sub 'http://${OfficeEip}:${ContainerPort}/v1'
+    Export: { Name: !Sub '${AWS::StackName}-OfficeEndpoint' }
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+    Export: { Name: !Sub '${AWS::StackName}-SecurityGroupId' }
+  ServedModelName:
+    Description: The `model` field to send in requests.
+    Value: apertus-8b
