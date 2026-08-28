@@ -27,16 +27,17 @@ from ..protocol import (
     ServerEvent,
     UserMessage,
 )
-from .bedrock import (
-    BedrockModels,
+from .apertus import ApertusOffline
+from .layers import extract_catalog_layers, extract_focus_bbox, extract_layers
+from .models import (
     ModelHandle,
     NoModelAvailable,
     configured_model_handle,
     tool_result_block,
     tool_results_message,
 )
-from .layers import extract_catalog_layers, extract_focus_bbox, extract_layers
 from .prompts import DIVISION_NOTE, NO_RASTER_DISPLAY_NOTE, NO_TOOLS_NOTE, system_prompt
+from .router import ModelRouter
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,7 @@ def build_messages(
 async def run_turn(
     message: UserMessage,
     *,
-    models: BedrockModels,
+    models: ModelRouter,
     gateway: ToolGateway,
     settings: Settings,
     stats: TurnStats,
@@ -248,8 +249,27 @@ async def run_turn(
                     tools=tools.tool_specs or None,
                     pinned=pinned,
                 )
+            except ApertusOffline:
+                # Expected outside office hours, and deliberately not a fallback: an
+                # explicit Apertus selection is answered by Apertus or reported as
+                # unavailable (docs/apertus-endpoint.md).
+                logger.info("apertus offline for message %s", message_id)
+                stats.error_code = "model_unavailable"
+                if not thinking_closed:
+                    yield Intermediate(
+                        message_id=message_id,
+                        step_id=THINKING_STEP,
+                        status="failed",
+                        label=i18n.tool_failed(lang),
+                    )
+                yield Error(
+                    message_id=message_id,
+                    code="model_unavailable",
+                    message=i18n.apertus_offline(lang),
+                )
+                return
             except NoModelAvailable:
-                logger.error("no Bedrock model could serve message %s", message_id)
+                logger.error("no model could serve message %s", message_id)
                 stats.error_code = "internal"
                 if not thinking_closed:
                     yield Intermediate(

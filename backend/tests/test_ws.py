@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.agent.bedrock import NoModelAvailable
+from app.agent.models import NoModelAvailable
 from app.config import Settings, get_settings
 from app.limits import ConnectionRegistry, RateLimiter
 from app.mcp.client import NO_TOOLS, ToolOutcome
@@ -554,3 +554,41 @@ async def test_a_timed_out_turn_closes_its_tool_session_in_its_own_task(settings
     assert teardowns, "the session must have been opened and closed"
     entered, exited = teardowns[-1]
     assert entered == exited, f"session torn down in {exited}, opened in {entered}"
+
+
+def test_apertus_gets_its_own_turn_budget(settings) -> None:
+    """~16.8 tok/s across up to 8 tool iterations does not fit the Bedrock models' 90 s,
+    and raising it for everyone would loosen the Bedrock path too."""
+    settings.turn_timeout_seconds = 0.05
+    settings.apertus_turn_timeout_seconds = 30.0
+    settings.apertus_base_url = "http://10.0.0.1:8000/v1"
+
+    class SlowModels:
+        async def converse_with_fallback(self, **kwargs: Any) -> Any:
+            await asyncio.sleep(0.3)
+            return text_result("langsam, aber fertig")
+
+    app = build_app(settings=settings, models=SlowModels())
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(model="apertus"))
+        frames = _drain(ws)
+
+    assert not any(frame["type"] == "error" for frame in frames)
+    assert _first(frames, "final")["content_markdown"] == "langsam, aber fertig"
+
+
+def test_the_bedrock_budget_is_unchanged_by_the_apertus_one(settings) -> None:
+    settings.turn_timeout_seconds = 0.05
+    settings.apertus_turn_timeout_seconds = 30.0
+
+    class SlowModels:
+        async def converse_with_fallback(self, **kwargs: Any) -> Any:
+            await asyncio.sleep(0.3)
+            raise AssertionError("unreachable")
+
+    app = build_app(settings=settings, models=SlowModels())
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message())
+        frames = _drain(ws)
+
+    assert _first(frames, "error")["code"] == "timeout"

@@ -209,6 +209,8 @@ interface is in [MCP client interface](#mcp-client-interface); model choice is i
 │   /ws/v1 ◄──► agent orchestrator (LLM loop)                        │
 │                 ├─ LLM ──► Amazon Bedrock — Claude + Mistral        │
 │                 │          (eu.* EU inference profiles)            │
+│                 ├─ LLM ──► Apertus 1.5 — self-hosted vLLM in-VPC,  │
+│                 │          office hours only, explicit-only        │
 │                 └─ MCP client ──► geosearch: 10 Swiss geodata     │
 │                                   discovery/query/map tools        │
 │                                                                    │

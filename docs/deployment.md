@@ -494,6 +494,7 @@ becomes healthy.
                               private subnets, no public IP, egress via NAT
                                      image pulled from ECR (sgs-llm-backend)
                                      ├─► Amazon Bedrock — Claude + Mistral, EU profiles (task IAM role)
+                                     ├─► Apertus 1.5 — self-hosted vLLM in-VPC, office hours only (bearer key)
                                      ├─► DynamoDB — user feedback + conversation turns
                                      ├─► S3 — data-layer artifacts; backend relays presigned URLs
                                      ├─► public exploration MCP — mounted at /mcp, no model calls
@@ -732,6 +733,12 @@ ECS from Secrets Manager at task start.
 | `BEDROCK_PRIMARY_MODEL_ID` | parameter | Primary agent model — an EU inference profile id |
 | `BEDROCK_SECONDARY_MODEL_ID` | parameter | Second model for side-by-side evaluation |
 | `BEDROCK_SECONDARY_REGION` | parameter | Region for the secondary model when it differs from the primary's — the pilot's Mistral is in-region in `eu-west-1` ([`llm.md`](./llm.md)) |
+| `APERTUS_BASE_URL` | parameter (empty) | OpenAI-compatible base url of the self-hosted Apertus endpoint. **Empty disables the model**: it is not offered as a choice and no secret is read for it. Setting it requires `APERTUS_API_KEY` to be present in the backend secret ([`apertus-endpoint.md`](./apertus-endpoint.md)) |
+| `APERTUS_API_KEY` | Secrets Manager, gated on `APERTUS_BASE_URL` | vLLM's shared bearer key. Same secret and same task roles as `MCP_SERVER_TOKEN`, so no IAM change; the task role has no `ssm:GetParameter` and must not be granted it |
+| `APERTUS_MODEL_ID` | parameter (`apertus-8b`) | vLLM's `--served-model-name`, not a Bedrock model id |
+| `APERTUS_MAX_TOKENS` | environment (2048) | Completion cap for Apertus. vLLM charges this against the context window at admission, so it is subtracted from the input budget whether or not it is used |
+| `APERTUS_TURN_TIMEOUT_SECONDS` | environment (240) | Turn budget when `model: "apertus"` is selected. Separate from `TURN_TIMEOUT_SECONDS` because ~16.8 tok/s across up to 8 tool iterations does not fit the Bedrock models' 90 s |
+| `APERTUS_REGION` | environment (`eu-central-1`) | Where the endpoint runs. Reported in logs and eval rows; residency is a stated concern for every model in this pilot |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | parameters (0) | Days ahead to stamp `expires_at`; 0 = write no stamp (keep forever) |
 | `ADMIN_USER_DB_PATH` | local: `./admin-users.sqlite3`; image: `/var/lib/sgs-llm/admin-users.sqlite3` | SQLite file containing administrator hashes and sessions; the image directory is owned by its non-root user |

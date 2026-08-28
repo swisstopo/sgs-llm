@@ -102,6 +102,37 @@ def test_model_defaults_to_primary_and_rejects_unknown_choices() -> None:
     )
 
 
+def test_accepts_apertus_as_a_model_choice() -> None:
+    event = parse_client_event(
+        json.dumps(
+            {"type": "user_message", "id": "m1", "content": "hi", "lang": "de", "model": "apertus"}
+        )
+    )
+    assert isinstance(event, UserMessage)
+    assert event.model == "apertus"
+
+
+def test_apertus_is_a_valid_model_in_the_published_client_schema(client_event_validator) -> None:
+    """The enum Ageospatial reads from. An additive value they may adopt when ready."""
+    payload = {
+        "type": "user_message",
+        "id": "m1",
+        "content": "hi",
+        "lang": "de",
+        "model": "apertus",
+    }
+
+    assert client_event_validator.is_valid(payload)
+
+
+def test_model_unavailable_validates_against_the_published_schema(server_event_validator) -> None:
+    frame = json.loads(
+        Error(message_id="m", code="model_unavailable", message="offline until 06:30").frame()
+    )
+
+    assert server_event_validator.is_valid(frame)
+
+
 def test_frames_omit_absent_optionals() -> None:
     """The frontend's guards accept `undefined`, not `null`."""
     frame = json.loads(

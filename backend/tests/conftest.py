@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from app.agent.bedrock import (
+from app.agent.models import (
     ConverseResult,
     ModelHandle,
     ModelRole,
@@ -27,6 +27,7 @@ from app.mcp.client import ToolOutcome, ToolSession
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVER_EVENTS_SCHEMA = REPO_ROOT / "docs" / "protocol" / "server-events.schema.json"
+CLIENT_EVENTS_SCHEMA = REPO_ROOT / "docs" / "protocol" / "client-events.schema.json"
 
 
 @pytest.fixture(scope="session")
@@ -35,6 +36,15 @@ def server_event_validator() -> Any:
     from jsonschema import Draft202012Validator
 
     schema = json.loads(SERVER_EVENTS_SCHEMA.read_text(encoding="utf-8"))
+    return Draft202012Validator(schema)
+
+
+@pytest.fixture(scope="session")
+def client_event_validator() -> Any:
+    """The client half of the contract, validated against the published schema too."""
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(CLIENT_EVENTS_SCHEMA.read_text(encoding="utf-8"))
     return Draft202012Validator(schema)
 
 
@@ -70,7 +80,7 @@ class FakeModels:
         messages: list[dict[str, Any]],
         system: SystemPrompt,
         tools: list[dict[str, Any]] | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int | None = None,
         pinned: ModelHandle | None = None,
     ) -> ConverseResult:
         # Rendered here, as the real client does per attempt, so `calls[...]["system"]`

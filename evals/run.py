@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the SGS LLM evaluation set against one or more Bedrock models.
+"""Run the SGS LLM evaluation set against one or more models.
 
 This drives the real agent loop against a real MCP server, so what it measures is the
 deployed behaviour rather than a model in isolation.
@@ -14,6 +14,9 @@ prompt variant that produced it, so two runs can be compared only when both matc
     # one model (this is what actually costs money)
     python evals/run.py --model mistral.ministral-3-14b-instruct --region eu-west-1
 
+    # the self-hosted Apertus endpoint named by APERTUS_BASE_URL
+    python evals/run.py --model apertus
+
     # every configured model, side by side
     python evals/run.py --all
 
@@ -24,7 +27,9 @@ prompt variant that produced it, so two runs can be compared only when both matc
     python evals/run.py --mcp-url http://127.0.0.1:8790/mcp --only geosearch_tools --model ...
 
 Credentials come from the normal boto3 chain, so AWS_BEARER_TOKEN_BEDROCK works exactly
-as it does for scripts/ask-llm.py (VPN required).
+as it does for scripts/ask-llm.py (VPN required). Apertus needs no AWS credential, but its
+endpoint only answers from inside the VPC or the askEarth gateway IP, and only during
+office hours (docs/apertus-endpoint.md).
 """
 
 from __future__ import annotations
@@ -50,14 +55,17 @@ import yaml  # noqa: E402
 from mcp_dummy.server import build_server  # noqa: E402
 from mcp_dummy.swisstopo import Swisstopo  # noqa: E402
 
-from app.agent.bedrock import BedrockModels, ModelHandle  # noqa: E402
 from app.agent.loop import TurnStats, run_turn  # noqa: E402
+from app.agent.models import ModelHandle, configured_model_handle  # noqa: E402
 from app.agent.prompts import prompt_variant_for  # noqa: E402
+from app.agent.router import ModelRouter  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.mcp.client import ToolGateway  # noqa: E402
 from app.protocol import UserMessage  # noqa: E402
 from app.store.artifacts import ArtifactStore  # noqa: E402
 from evals.checks import Observation, evaluate  # noqa: E402
+
+APERTUS_KEYWORD = "apertus"
 
 QUESTIONS = Path(__file__).parent / "questions.yaml"
 RESULTS_DIR = Path(__file__).parent / "results"
@@ -167,7 +175,7 @@ def _tool_for_step(step_id: str, calls: list[str]) -> str:
 async def ask(
     question: dict[str, Any],
     *,
-    models: BedrockModels,
+    models: ModelRouter,
     handle: ModelHandle,
     gateway: ToolGateway,
     settings: Settings,
@@ -207,7 +215,7 @@ async def ask(
         # aclosing: run_turn holds the MCP session open across its yields, and abandoning
         # it on timeout finalizes the transport's cancel scope in the wrong task.
         async with (
-            asyncio.timeout(settings.turn_timeout_seconds),
+            asyncio.timeout(settings.turn_timeout_for(handle.role)),
             contextlib.aclosing(turn),
         ):
             async for event in turn:
@@ -242,7 +250,7 @@ async def judge(
     question: dict[str, Any],
     observed: Observation,
     *,
-    models: BedrockModels,
+    models: ModelRouter,
     handle: ModelHandle,
 ) -> tuple[int | None, str]:
     prompt = JUDGE_PROMPT.format(
@@ -278,7 +286,7 @@ async def run_model(
     sink: Callable[[dict[str, Any]], None] | None = None,
     mcp_url: str = "",
 ) -> list[dict[str, Any]]:
-    models = BedrockModels(settings)
+    models = ModelRouter(settings)
     rows: list[dict[str, Any]] = []
 
     # Questions needing the injection fixture run against their own server instance, so
@@ -440,7 +448,33 @@ def summarise(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+DEFAULT_BEDROCK_TIMEOUT = 120.0
+
+
+def eval_settings(args: argparse.Namespace) -> Settings:
+    """The run's settings. --timeout, when given, applies to every model; without it each
+    model keeps its own default, because Apertus needs a wider one than Bedrock."""
+    overrides: dict[str, Any] = {
+        "max_tool_iterations": 8,
+        "enable_catalog_layers": args.catalog_layers,
+        "turn_timeout_seconds": args.timeout or DEFAULT_BEDROCK_TIMEOUT,
+    }
+    if args.timeout:
+        overrides["apertus_turn_timeout_seconds"] = args.timeout
+    return Settings(**overrides)
+
+
 def resolve_handles(args: argparse.Namespace, settings: Settings) -> list[ModelHandle]:
+    if args.model == APERTUS_KEYWORD:
+        # A role, not a model id: the endpoint, key and provider all come from the
+        # environment, so there is nothing sensible to pass as --model/--region.
+        handle = configured_model_handle(settings, "apertus")
+        if handle is None:
+            sys.exit(
+                "Apertus is not configured. Set APERTUS_BASE_URL (and APERTUS_API_KEY) "
+                "-- see docs/apertus-endpoint.md."
+            )
+        return [handle]
     if args.model:
         return [
             ModelHandle(
@@ -449,7 +483,7 @@ def resolve_handles(args: argparse.Namespace, settings: Settings) -> list[ModelH
                 role="primary",
             )
         ]
-    handles = list(BedrockModels(settings).handles)
+    handles = list(ModelRouter(settings).handles)
     if not handles:
         sys.exit(
             "No model configured. Pass --model, or set BEDROCK_PRIMARY_MODEL_ID / "
@@ -462,7 +496,11 @@ async def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--model", help="Bedrock model or inference profile id")
+    parser.add_argument(
+        "--model",
+        help=f"Bedrock model or inference profile id, or '{APERTUS_KEYWORD}' for the "
+        "self-hosted endpoint named by APERTUS_BASE_URL",
+    )
     parser.add_argument("--region", help="Region for --model")
     parser.add_argument("--all", action="store_true", help="Run every configured model")
     parser.add_argument("--only", help="Run one category only")
@@ -476,7 +514,12 @@ async def main() -> None:
         "on http://127.0.0.1:8790/mcp) instead of the bundled stand-in. Required for the "
         "questions covering tools the stand-in does not implement.",
     )
-    parser.add_argument("--timeout", type=float, default=120.0, help="Per-question budget")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        help="Per-question budget in seconds, applied to every model. Default: 120 for "
+        "Bedrock, 240 for Apertus, which decodes far more slowly.",
+    )
     parser.add_argument(
         "--catalog-layers",
         action="store_true",
@@ -504,11 +547,7 @@ async def main() -> None:
             print()
         return
 
-    settings = Settings(
-        turn_timeout_seconds=args.timeout,
-        max_tool_iterations=8,
-        enable_catalog_layers=args.catalog_layers,
-    )
+    settings = eval_settings(args)
     handles = resolve_handles(args, settings)
     judge_handle = handles[0] if args.judge else None
 

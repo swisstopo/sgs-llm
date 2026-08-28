@@ -5,7 +5,7 @@ during project execution.
 
 ## Access
 
-Claude and Mistral models are reached through **Amazon Bedrock** using **EU
+Claude and Mistral are reached through **Amazon Bedrock** using **EU
 inference profiles** (`eu.*`), so inference stays within EU regions; the backend
 authenticates with its task IAM role (no API key). Since 2026-08-25 the account
 enforces **zero data retention** (`mode: none` in `eu-central-1` and
@@ -18,7 +18,7 @@ is blocked rather than silently accepted — see
 
 ## Initial models
 
-The pilot starts with two models, plus a third pending release:
+The pilot runs three models:
 
 - **Claude Sonnet 4.6** — Bedrock model ID `eu.anthropic.claude-sonnet-4-6`,
   confirmed with swisstopo on 2026-07-20. The primary agent model: strong at
@@ -32,8 +32,9 @@ The pilot starts with two models, plus a third pending release:
 - **Apertus 1.5** — released 2026-07-24 by the Swiss AI Initiative (ETH Zürich /
   EPFL / CSCS). Attractive for Swiss data sovereignty and for the national
   languages, including Romansh, which the UI already ships. **Not deployable on
-  Bedrock**, so it is evaluated offline for the pilot rather than wired into the
-  deployed backend — see [Apertus 1.5](#apertus-15).
+  Bedrock**, so it is self-hosted on EC2 with vLLM and reached over an
+  OpenAI-compatible API instead of an EU inference profile — see
+  [Apertus 1.5](#apertus-15).
 
 Other Claude tiers (**Opus 4.8** for escalation, **Haiku 4.5** for routing
 simple turns) remain available on the same EU profile if evaluation shows the
@@ -230,22 +231,40 @@ on. Two findings decide how it can be used:
   `g6e.12xlarge`); the 8B fits a single L40S but is unlikely to hold up on agentic
   tool use.
 
-**Decision for the pilot: evaluate Apertus offline; do not deploy it.** The
-deployed backend ships with Bedrock Claude + Mistral, and Apertus is compared on
-answer quality separately, so no GPU capacity or 24/7 endpoint cost is carried
-during the pilot. The options if that changes, roughly in order of effort:
+**Apertus is deployed and the backend can use it.** It runs on EC2 `g6.2xlarge`
+with vLLM in `eu-central-1`, on a weekday 06:30-19:00 Europe/Zurich schedule —
+the operational card is [`apertus-endpoint.md`](./apertus-endpoint.md). The
+backend reaches it as a third selectable model, and because it is self-hosted
+rather than a Bedrock profile it behaves differently from Claude and Mistral in
+three ways that matter:
+
+| | Claude / Mistral | Apertus |
+| --- | --- | --- |
+| Reached by | Bedrock Converse, task IAM role | OpenAI-compatible HTTP, shared bearer key |
+| Available | always | weekdays 06:30-19:00 Europe/Zurich |
+| Context | 200k | 28,000 tokens, one conversation at a time |
+| Selected by | `model: "primary" \| "secondary"` | `model: "apertus"`, explicit only |
+
+**Explicit only, and no fallback.** Apertus is never used to serve an unpinned
+turn, because answering a Claude request with a self-hosted Swiss model would
+change both the model and the residency story without the caller asking. In the
+other direction, a turn pinned to Apertus that finds the endpoint closed is
+reported as `model_unavailable` rather than quietly answered by Bedrock — the
+evaluation is only worth anything if the answer came from the model that was
+asked. The message names the schedule, in the user's language.
+
+The remaining hosting options, if the pilot outgrows one office-hours GPU:
 
 | Option | Trade-off |
 | --- | --- |
-| **EC2 `g6e` + vLLM**, started per evaluation window | OpenAI-compatible with native tool calling, cheapest per GPU-hour, mirrors the existing EC2 pattern. Watch for `InsufficientInstanceCapacity` on g6e in eu-central-1 |
+| **A baked AMI plus an Auto Scaling group across all three AZs** | Survives a failed morning start, which the single pinned instance cannot. The robust answer if anything comes to depend on this endpoint |
 | **SageMaker real-time endpoint** (vLLM/LMI) | Managed and IAM-native in-region, but the invoke API is not OpenAI-shaped (needs an adapter) and it is the most expensive if left running |
-| **Public AI hosted API** (`platform.publicai.co`) | Zero GPU ops, available today — but a third-party endpoint outside AWS, so prompts leave the account |
+| **Public AI hosted API** (`platform.publicai.co`) | Zero GPU ops — but a third-party endpoint outside AWS, so prompts leave the account |
 | **Swisscom sovereign Swiss AI platform** | Apertus hosted **in Switzerland** — the strongest residency story and the natural production path; needs a commercial agreement |
-| **Bedrock Marketplace / SageMaker JumpStart** | Not listed today; zero effort if it ever appears — worth re-checking at evaluation time |
+| **Bedrock Marketplace / SageMaker JumpStart** | Not listed today; zero effort if it ever appears |
 
-Because the backend reaches Bedrock through one model abstraction, keeping that
-layer able to take an **OpenAI-compatible base URL** is what preserves every
-option above at no cost today.
+Every one of these is an OpenAI-compatible base url away, which is what the
+model layer was kept able to take.
 
 ## Developer access
 

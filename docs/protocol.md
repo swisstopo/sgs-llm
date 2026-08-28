@@ -54,9 +54,18 @@ alongside `final_delta`; nothing depends on it today.
   echo it as `message_id`.
 - `lang` — `de | fr | it | en | rm`. Server responses (labels, markdown)
   should be in this language.
-- `model` — optional model routing preference: `primary` pins the complete turn to
-  Claude, while `secondary` pins it to Mistral. The server defaults to `primary` for
-  older clients.
+- `model` — optional model routing preference. `primary` pins the complete turn to
+  Claude, `secondary` to Mistral, `apertus` to the self-hosted Apertus 1.5 endpoint.
+  The server defaults to `primary` for older clients.
+
+  `apertus` differs from the two Bedrock choices in ways a client should surface:
+  it is **available on weekdays 06:30-19:00 Europe/Zurich only**, answers far more
+  slowly (about 24 s for a 400-token answer), and serves **one conversation at a
+  time** — a second concurrent request queues. Outside that window the turn ends
+  with `error` `model_unavailable` and a localized message naming the schedule; it
+  is never silently answered by another model. A client that offers the choice
+  should either disable it out of hours or render that error as a normal state
+  rather than a failure.
 - `history` — optional prior exchanges, oldest first; the server is
   stateless.
 - `map_context` — optional; current viewport bbox (WGS84, `[minLon, minLat,
@@ -169,7 +178,15 @@ in [`mcp-tool-catalog.md`](./mcp-tool-catalog.md).
 }
 ```
 
-`code` — `internal | timeout | bad_request | cancelled`.
+`code` — `internal | timeout | bad_request | cancelled | model_unavailable`.
+
+`model_unavailable` means the explicitly requested model is not reachable and no
+other model was substituted. In the pilot this is Apertus outside its office-hours
+schedule, which is expected operation rather than an incident. The accompanying
+`message` is localized and names when the model returns, so it can be shown as-is.
+A client that does not know the code can treat it as `internal` and still display
+`message` — which is what `frontend/src/protocol/v1.ts` does with any unrecognized
+code.
 
 ### `done`
 
@@ -228,7 +245,7 @@ enforces, all configurable in the task definition:
 | Concurrent connections per client             | 8                     |                                                                                                        |
 | Max message length / frame size               | 4 000 chars / 256 KiB |                                                                                                        |
 | One in-flight exchange per connection         | -                     | The contract already forbids interleaving; a second `user_message` mid-turn gets `error` `bad_request` |
-| Turn wall-clock budget                        | 90 s                  | Then `error` `timeout`                                                                                 |
+| Turn wall-clock budget                        | 90 s                  | Then `error` `timeout`. `model: "apertus"` gets 240 s, because it decodes at about 16.8 tok/s          |
 
 Over-limit requests still terminate the exchange properly - one `error`, then `done` - so
 the client never waits forever.

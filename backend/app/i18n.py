@@ -31,6 +31,27 @@ INTERNAL = {
     "en": "Internal error while handling the request.",
 }
 
+# Apertus is self-hosted on a weekday office-hours schedule (docs/apertus-endpoint.md),
+# so this is a normal state to be in, not an incident. The text says when it is back.
+APERTUS_OFFLINE = {
+    "de": (
+        "Apertus ist derzeit offline. Das Modell läuft an Werktagen von 06:30 bis 19:00 Uhr. "
+        "Bitte wählen Sie bis dahin ein anderes Modell."
+    ),
+    "fr": (
+        "Apertus est actuellement hors ligne. Le modèle fonctionne les jours ouvrables de "
+        "06:30 à 19:00. Veuillez choisir un autre modèle d'ici là."
+    ),
+    "it": (
+        "Apertus è attualmente offline. Il modello è disponibile nei giorni lavorativi dalle "
+        "06:30 alle 19:00. Nel frattempo scegliere un altro modello."
+    ),
+    "en": (
+        "Apertus is currently offline. The model runs on weekdays from 06:30 to 19:00. "
+        "Please choose another model until then."
+    ),
+}
+
 MCP_NOT_CONFIGURED = {
     "de": (
         "Der Chat ist noch nicht mit dem Geodaten-Dienst verbunden und kann daher keine "
@@ -179,6 +200,10 @@ def timed_out(lang: ProtocolLang) -> str:
 
 def internal(lang: ProtocolLang) -> str:
     return _pick(INTERNAL, lang)
+
+
+def apertus_offline(lang: ProtocolLang) -> str:
+    return _pick(APERTUS_OFFLINE, lang)
 
 
 def too_many(lang: ProtocolLang) -> str:
