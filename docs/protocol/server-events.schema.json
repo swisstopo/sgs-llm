@@ -48,7 +48,7 @@
       "properties": {
         "type": { "const": "error" },
         "message_id": { "type": "string" },
-        "code": { "enum": ["internal", "timeout", "bad_request", "cancelled"] },
+        "code": { "enum": ["internal", "timeout", "bad_request", "cancelled", "model_unavailable"] },
         "message": { "type": "string" }
       }
     },

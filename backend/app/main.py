@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 
 from .admin import router as admin_router
 from .admin_users import AdminUserStore
-from .agent.bedrock import BedrockModels
+from .agent.router import ModelRouter
 from .config import Settings, get_settings
 from .exploration_mcp import build_public_exploration_mcp
 from .feedback import router as feedback_router
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.store = Store(settings)
     app.state.artifacts = ArtifactStore(settings)
-    app.state.models = BedrockModels(settings)
+    app.state.models = ModelRouter(settings)
     app.state.limiter = RateLimiter(settings.rate_limit_messages_per_minute)
     app.state.connections = ConnectionRegistry(limit=settings.max_connections_per_ip)
     app.state.admin_users = AdminUserStore(settings.admin_user_db_path)

@@ -9,8 +9,10 @@ from __future__ import annotations
 import json
 from itertools import pairwise
 
-from app.agent.bedrock import NoModelAvailable
+from app import i18n
+from app.agent.apertus import ApertusOffline
 from app.agent.loop import TurnStats, build_messages, run_turn
+from app.agent.models import NoModelAvailable
 from app.mcp.client import NO_TOOLS, ToolOutcome
 from app.protocol import HistoryEntry, UserMessage
 from tests.conftest import (
@@ -617,3 +619,43 @@ async def test_a_division_boundary_reaches_the_client_as_a_layer(settings) -> No
     final = events[-1]
     assert final.type == "final"
     assert [layer.name for layer in final.layers] == ["Zug"]
+
+
+async def test_an_offline_apertus_reports_model_unavailable_not_an_internal_error(
+    settings,
+) -> None:
+    """Nightly downtime is expected operation, so it must be distinguishable from a bug -
+    and per the chosen behaviour it is never answered by Bedrock instead."""
+    apertus_settings = settings.model_copy(
+        update={"apertus_base_url": "http://10.0.0.1:8000/v1", "apertus_model_id": "apertus-8b"}
+    )
+    stats = TurnStats()
+
+    events = await _collect(
+        _message(model="apertus"),
+        FakeModels([ApertusOffline("not accepting connections")]),
+        FakeGateway(NO_TOOLS),
+        apertus_settings,
+        stats,
+    )
+
+    assert [e.type for e in events].count("error") == 1
+    assert events[-1].code == "model_unavailable"
+    assert stats.error_code == "model_unavailable"
+
+
+async def test_the_offline_message_names_the_schedule_in_the_users_language(settings) -> None:
+    apertus_settings = settings.model_copy(
+        update={"apertus_base_url": "http://10.0.0.1:8000/v1", "apertus_model_id": "apertus-8b"}
+    )
+
+    events = await _collect(
+        _message(model="apertus", lang="fr"),
+        FakeModels([ApertusOffline("nope")]),
+        FakeGateway(NO_TOOLS),
+        apertus_settings,
+        TurnStats(),
+    )
+
+    assert events[-1].message == i18n.apertus_offline("fr")
+    assert "06:30" in events[-1].message

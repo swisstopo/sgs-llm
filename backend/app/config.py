@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     bedrock_secondary_model_id: str = ""
     bedrock_secondary_region: str = ""
 
+    # Apertus 1.5, self-hosted on an OpenAI-compatible vLLM endpoint. Empty base url
+    # disables the model entirely, which is the default and what CI smoke-tests.
+    apertus_base_url: str = ""
+    apertus_api_key: str = ""
+    apertus_model_id: str = "apertus-8b"
+    apertus_region: str = "eu-central-1"
+    apertus_max_tokens: int = 2048
+    # Its own budget: ~16.8 tok/s decode plus up to 8 tool iterations does not fit the
+    # 90 s the Bedrock models are given (docs/apertus-endpoint.md).
+    apertus_turn_timeout_seconds: float = 240.0
+
     feedback_table: str = ""
     conversation_table: str = ""
     feedback_ttl_days: int = 365
@@ -73,6 +84,17 @@ class Settings(BaseSettings):
     def secondary_region(self) -> str:
         """Where the secondary model lives; the pilot's Mistral is eu-west-1 only."""
         return self.bedrock_secondary_region or self.bedrock_region
+
+    def turn_timeout_for(self, role: str) -> float:
+        """The wall-clock budget for one turn on the selected model.
+
+        Apertus decodes at about 16.8 tok/s on the deployed L4 and re-prefills a growing
+        conversation on every tool iteration, so the Bedrock models' budget does not fit
+        it (docs/apertus-endpoint.md).
+        """
+        if role == "apertus":
+            return self.apertus_turn_timeout_seconds
+        return self.turn_timeout_seconds
 
     @property
     def origin_allowlist(self) -> tuple[str, ...]:

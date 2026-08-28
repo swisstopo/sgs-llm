@@ -376,3 +376,77 @@ class TestJudgeSelection:
         assert len(judged) == sum(
             1 for q in questions if "judge" in (q.get("expect") or {}) and q["expect"]["judge"]
         )
+
+
+class TestModelResolution:
+    """`--model apertus` names a role, not a Bedrock id: the endpoint and the provider
+    come from the environment, and the harness must not send it to Bedrock."""
+
+    def _args(self, **overrides: Any) -> Any:
+        import argparse
+
+        defaults = {"model": None, "region": None, "all": False}
+        return argparse.Namespace(**(defaults | overrides))
+
+    def test_resolves_the_apertus_keyword_to_the_configured_endpoint(self) -> None:
+        from evals.run import resolve_handles
+
+        from app.config import Settings
+
+        settings = Settings(
+            apertus_base_url="http://10.0.0.1:8000/v1", apertus_model_id="apertus-8b"
+        )
+
+        handles = resolve_handles(self._args(model="apertus"), settings)
+
+        assert len(handles) == 1
+        assert handles[0].provider == "openai"
+        assert handles[0].role == "apertus"
+        assert handles[0].model_id == "apertus-8b"
+
+    def test_an_ordinary_model_id_still_goes_to_bedrock(self) -> None:
+        from evals.run import resolve_handles
+
+        from app.config import Settings
+
+        handles = resolve_handles(
+            self._args(model="mistral.ministral-3-14b-instruct", region="eu-west-1"), Settings()
+        )
+
+        assert handles[0].provider == "bedrock"
+        assert handles[0].region == "eu-west-1"
+
+    def test_apertus_without_an_endpoint_exits_rather_than_calling_bedrock(self) -> None:
+        from evals.run import resolve_handles
+
+        from app.config import Settings
+
+        with pytest.raises(SystemExit):
+            resolve_handles(self._args(model="apertus"), Settings())
+
+
+class TestEvalBudget:
+    """An eval run must give Apertus the same wider budget the deployed backend does, or
+    every Apertus question fails on the clock rather than on the answer."""
+
+    def _args(self, **overrides: Any) -> Any:
+        import argparse
+
+        defaults = {"timeout": None, "catalog_layers": False}
+        return argparse.Namespace(**(defaults | overrides))
+
+    def test_apertus_gets_the_wider_default_budget(self) -> None:
+        from evals.run import eval_settings
+
+        settings = eval_settings(self._args())
+
+        assert settings.turn_timeout_for("primary") == 120.0
+        assert settings.turn_timeout_for("apertus") == 240.0
+
+    def test_an_explicit_timeout_applies_to_every_model(self) -> None:
+        from evals.run import eval_settings
+
+        settings = eval_settings(self._args(timeout=600.0))
+
+        assert settings.turn_timeout_for("primary") == 600.0
+        assert settings.turn_timeout_for("apertus") == 600.0

@@ -80,15 +80,87 @@ aws ssm get-parameter --region eu-central-1 --name /apertus/api-key \
 Only the `admin-poc-sgs-llm` SSO role can do that today; `sgs-llm-dev` has
 nothing reaching Parameter Store.
 
-**The backend must not fetch it from SSM.** `sgs-llm-backend-task` has no
-`ssm:GetParameter`, and the fix is not to grant it: `backend-service.yaml`
-already injects secrets through the task definition's `Secrets:` block, from the
-Secrets Manager secret both task roles can read — the same path `MCP_SERVER_TOKEN`
-uses. `APERTUS_API_KEY` is populated in that secret and arrives as an ordinary
-environment variable, so wiring it needs **no IAM change at all**.
+**The backend does not fetch it from SSM.** `sgs-llm-backend-task` has no
+`ssm:GetParameter`, and the fix was not to grant it: `backend-service.yaml`
+injects it through the task definition's `Secrets:` block, from the Secrets
+Manager secret both task roles can read — the same path `MCP_SERVER_TOKEN` uses.
+`APERTUS_API_KEY` arrives as an ordinary environment variable, so this needed
+**no IAM change at all**.
+
+That `Secrets:` entry is gated on the `ApertusBaseUrl` stack parameter being
+non-empty. This is not tidiness: a `Secrets:` entry naming a key the secret does
+not hold fails **every** task start, which would take the chat down rather than
+just Apertus. Apertus is off by default for that reason, and switching it on means
+confirming the key is in the secret first.
 
 Rotating means updating both copies and restarting the container, since the key
 is passed to vLLM at container start.
+
+## How the backend uses it
+
+`model: "apertus"` on a `user_message` pins the whole turn to this endpoint
+([`protocol.md`](./protocol.md)). It is a third choice alongside Claude and
+Mistral, not a replacement for either, and it is **explicit-only in both
+directions**:
+
+- An unpinned turn is never served by Apertus. Answering a Claude request with a
+  self-hosted Swiss model would change the model and the residency story without
+  the caller asking for either.
+- A turn pinned to Apertus is never served by Bedrock. When the endpoint is
+  closed, the turn ends with `error` `model_unavailable` and a localized message
+  naming the schedule. Substituting Claude would make the comparison worthless,
+  since the point of selecting Apertus is to see what Apertus does.
+
+Being unreachable is **not** cached. The router marks a Bedrock model unavailable
+for the life of the process when it is denied, which is right for an SCP deny and
+wrong here: this endpoint returns on its own at 06:30, and caching it dead would
+keep it dead until the ECS task was replaced.
+
+Three settings differ from the Bedrock path, all in the environment contract
+([`deployment.md`](./deployment.md#environment-contract)):
+
+| | Bedrock | Apertus |
+| --- | --- | --- |
+| Turn budget | 90 s | 240 s (`APERTUS_TURN_TIMEOUT_SECONDS`) |
+| Completion cap | 2048 | 2048 (`APERTUS_MAX_TOKENS`), charged against the context window at admission |
+| Credential | task IAM role | `APERTUS_API_KEY` bearer token |
+
+Evaluate it on the same question set with `python evals/run.py --model apertus`
+([`evals.md`](./evals.md)); the harness gives it the wider budget automatically.
+
+## What the agent loop needs from the window
+
+Why 4096 was not merely tight but unusable, and what the 28,000-token
+configuration buys — the budget arithmetic itself is in
+[*Context and concurrency are the same budget*](#context-and-concurrency-are-the-same-budget).
+
+Every request carries a fixed floor before the user has said anything:
+
+| Fixed part of every request | Chars |
+| --- | ---: |
+| System prompt (`backend/app/agent/prompts.py`) | 6,659 measured on the wire |
+| Tool definitions and JSON schemas | ~770 per tool; ~7,700 for the 10-tool geosearch surface |
+| **Floor, before the user's question** | **~14,300** ≈ 3,600-4,100 tokens |
+
+The backend is stateless on top of that: the client's history and every
+accumulated `toolResult` are re-sent on each of up to 8 iterations, so input grows
+monotonically within one turn. At 4096, with a 2048-token completion reservation
+charged at admission, the prompt allowance was ~2,048 tokens — less than the
+system prompt alone — so every request was rejected before the model generated
+anything.
+
+At 28,000 the same floor leaves roughly 24,000 tokens for history and tool
+results, which is what makes the loop run with the full tool set rather than a
+reduced one. Character counts are measured; token figures are chars ÷ 3.5-4, and
+the conclusion does not depend on the ratio.
+
+`--enable-prefix-caching` is set for the same reason. The floor is byte-identical
+on every iteration of every turn, so caching that prefix removes most of the
+repeated prefill. It is worth having rather than load-bearing: long prefill was
+measured at ~5,200 tok/s, so re-prefilling a 26k prompt eight times costs about
+40 s, not the ~99 s a naive extrapolation from the ~2,100 tok/s small-prompt
+figure suggests. The flag lives in run-once `UserData`, so it applies at the next
+container recycle and does not justify one of its own.
 
 ## Measured performance on this hardware
 
@@ -188,12 +260,12 @@ Not in place, and worth deciding on:
   failed AZ fall back to another. This is the robust answer if the endpoint ever
   becomes something people depend on, and it is a redesign rather than a
   parameter change.
-- **Falling back to Bedrock** when Apertus is unreachable, which the backend
-  should do anyway for the nightly downtime, covers this case for free.
-
-Given the backend already needs a fallback path for out-of-hours, a failed
-morning start degrades to the same behaviour. That is the pragmatic answer for
-a pilot.
+A failed morning start is indistinguishable, from the backend's side, from the
+ordinary overnight closure: the turn ends with `model_unavailable` and the user is
+told when the model returns. Falling back to Bedrock was considered and rejected —
+see *How the backend uses it* above. That keeps a failed start a visible
+degradation of one model rather than a silent substitution, which is the right
+trade for an evaluation pilot.
 
 ## Cost
 
@@ -279,7 +351,14 @@ Mirror cost is about USD 0.45/month of S3 Standard.
 1. **Bake the xIELU CUDA kernel** into the image. vLLM logs `CUDA-fused xIELU not
    available - falling back to a Python version`, so the measured throughput is
    below what the hardware can do.
-2. **Narrow egress.** It is still open for the ghcr.io image pull and SSM. An S3
+2. **Move the vLLM flags out of run-once `UserData`.** `MaxModelLen`,
+   `MaxNumSeqs` and the rest are baked into the instance's first-boot script,
+   which self-guards on the container already existing and never re-runs. Changing
+   any of them means either a CloudFormation instance replacement or a manual
+   `docker rm -f apertus-vllm` and re-run over SSM — after which the running
+   container no longer matches the template. A systemd unit or a small config file
+   synced from S3 would make the flags re-read on boot.
+3. **Narrow egress.** It is still open for the ghcr.io image pull and SSM. An S3
    gateway endpoint plus a ghcr.io-only rule would close most of it.
-3. **Move to A10G** when `g5` capacity returns in Frankfurt, for roughly double
+4. **Move to A10G** when `g5` capacity returns in Frankfurt, for roughly double
    the throughput. One parameter change, but it replaces the instance.

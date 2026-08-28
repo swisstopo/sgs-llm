@@ -17,11 +17,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 ProtocolLang = Literal["de", "fr", "it", "en", "rm"]
-ModelPreference = Literal["primary", "secondary"]
+ModelPreference = Literal["primary", "secondary", "apertus"]
 SUPPORTED_LANGS: frozenset[str] = frozenset({"de", "fr", "it", "en", "rm"})
 DEFAULT_LANG: ProtocolLang = "de"
 
-ErrorCode = Literal["internal", "timeout", "bad_request", "cancelled"]
+ErrorCode = Literal["internal", "timeout", "bad_request", "cancelled", "model_unavailable"]
 
 # [minLon, minLat, maxLon, maxLat] in WGS84.
 BBox = tuple[float, float, float, float]

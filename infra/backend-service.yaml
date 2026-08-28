@@ -108,6 +108,21 @@ Parameters:
     Description: >-
       Second model for side-by-side evaluation. Resolved from the account at
       deploy time; empty disables it.
+  ApertusBaseUrl:
+    Type: String
+    Default: ''
+    Description: >-
+      OpenAI-compatible base url of the self-hosted Apertus endpoint, e.g.
+      http://172.31.32.71:8000/v1 from inside the VPC. Empty disables the model:
+      it is then not offered as a choice and no secret is read for it. Setting
+      this REQUIRES APERTUS_API_KEY to exist in the backend secret, because a
+      task cannot start with a secret it cannot resolve. The endpoint is up on
+      weekdays 06:30-19:00 Europe/Zurich only (docs/apertus-endpoint.md).
+  ApertusModelId:
+    Type: String
+    Default: apertus-8b
+    Description: >-
+      The --served-model-name vLLM answers to, not a Bedrock model id.
   SecondaryModelRegion:
     Type: String
     Default: ''
@@ -204,6 +219,10 @@ Conditions:
   HasSecondaryModel: !Not [!Equals [!Ref SecondaryModelId, '']]
   HasSecondaryRegion: !Not [!Equals [!Ref SecondaryModelRegion, '']]
   HasMcpServer: !Not [!Equals [!Ref McpServerUrl, '']]
+  # Gates both the endpoint and its secret: a Secrets block naming a key that is not in
+  # the secret fails every task start, which would take the chat down rather than just
+  # Apertus.
+  HasApertus: !Not [!Equals [!Ref ApertusBaseUrl, '']]
   HasServiceConnect: !Not [!Equals [!Ref ServiceConnectNamespace, '']]
 
 Resources:
@@ -285,6 +304,9 @@ Resources:
             - { Name: DATA_LAYER_PRESIGN_TTL, Value: !Ref DataLayerPresignTtl }
             - { Name: PUBLIC_BASE_URL, Value: !Ref PublicBaseUrl }
             - { Name: ALLOWED_ORIGINS, Value: !Ref PublicBaseUrl }
+            - Name: APERTUS_BASE_URL
+              Value: !If [HasApertus, !Ref ApertusBaseUrl, '']
+            - { Name: APERTUS_MODEL_ID, Value: !Ref ApertusModelId }
             - Name: MCP_SERVER_URL
               Value: !If [HasMcpServer, !Ref McpServerUrl, '']
             - { Name: EXPLORATION_MCP_ALLOWED_ORIGINS, Value: !Ref ExplorationMcpAllowedOrigins }
@@ -302,6 +324,17 @@ Resources:
                 - '${SecretArn}:MCP_SERVER_TOKEN::'
                 - SecretArn: !ImportValue
                     Fn::Sub: '${FoundationStackName}-BackendSecretArn'
+            # Same secret and the same two task roles, so wiring Apertus needs no IAM
+            # change: the task role has no ssm:GetParameter and must not be granted it
+            # (docs/apertus-endpoint.md).
+            - !If
+              - HasApertus
+              - Name: APERTUS_API_KEY
+                ValueFrom: !Sub
+                  - '${SecretArn}:APERTUS_API_KEY::'
+                  - SecretArn: !ImportValue
+                      Fn::Sub: '${FoundationStackName}-BackendSecretArn'
+              - !Ref AWS::NoValue
       Tags:
         - { Key: project, Value: !Ref ProjectTag }
 

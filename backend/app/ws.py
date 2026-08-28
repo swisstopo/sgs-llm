@@ -307,7 +307,8 @@ async def _run(
             stats=stats,
             base_url=base_url,
         )
-        async with asyncio.timeout(settings.turn_timeout_seconds), contextlib.aclosing(turn):
+        budget = settings.turn_timeout_for(message.model)
+        async with asyncio.timeout(budget), contextlib.aclosing(turn):
             async for event in turn:
                 await exchange.send(event)
                 if event.type in ("final", "error"):

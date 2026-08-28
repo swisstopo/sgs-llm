@@ -59,8 +59,10 @@ a prototype - not for operational use; interfaces and layout may still change.
 > profile, with `mistral.ministral-3-14b-instruct` in `eu-west-1` as the secondary. Both the
 > organization SCP and the Anthropic use-case gate that blocked Claude are now clear -
 > Sonnet 4.6 and Sonnet 5 both answered from `eu-central-1` on 2026-08-10. A process started
-> before that clears keeps using the secondary until restarted - see
-> [`docs/llm.md`](docs/llm.md).
+> before that clears keeps using the secondary until restarted. A third model, self-hosted
+> **Apertus 1.5**, is selectable per message and available weekday office hours only - see
+> [`docs/llm.md`](docs/llm.md) and
+> [`docs/apertus-endpoint.md`](docs/apertus-endpoint.md).
 
 A live POC instance (frontend + agent backend + geosearch MCP) is available at
 **https://denpw8uo5zpkl.cloudfront.net/**. See [Deployment](#deployment).
@@ -112,6 +114,7 @@ Browser (frontend/, Lit + OpenLayers + @swissgeol/ui-core, map in EPSG:2056)
   │                                 wms.geo.admin.ch, data.geo.admin.ch)
   └── WebSocket /ws/v1 ─────────►  Agent backend (backend/)
                                      ├─ Amazon Bedrock - Claude / Mistral, EU regions
+                                     ├─ Apertus 1.5 - self-hosted vLLM, office hours
                                      ├─ MCP client ──► geodata MCP server (geosearch/)
                                      │                 10 intent-oriented Swiss geodata tools
                                      └─ DynamoDB - feedback + conversation turns

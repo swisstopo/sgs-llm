@@ -1,9 +1,8 @@
 """Bedrock access over the Converse API (docs/llm.md).
 
-Both pilot models share one code path and differ only in id and region: Claude goes
-through an EU inference profile in BEDROCK_REGION, the pilot's Mistral is in-region in
-eu-west-1 only. Claude is tried first; an organization SCP currently denies it, so a
-denial is expected and the secondary serves instead.
+Both Bedrock pilot models share one code path and differ only in id and region: Claude
+goes through an EU inference profile in BEDROCK_REGION, the pilot's Mistral is in-region
+in eu-west-1 only.
 
 Credentials come from the normal boto3 chain, so the task role and a workstation's
 AWS_BEARER_TOKEN_BEDROCK both work.
@@ -13,108 +12,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Any, Literal, Union
+from typing import Any
 
-from ..config import Settings
+from .models import (
+    ConverseResult,
+    ModelHandle,
+    SystemPrompt,
+    ToolUse,
+    resolve_system,
+)
 
 logger = logging.getLogger(__name__)
 
-ModelRole = Literal["primary", "secondary"]
 
-# A callable is rendered per attempt, so under fallback the model that serves the turn gets
-# its own prompt (app/agent/prompts.py).
-SystemPrompt = Union[str, "Callable[[ModelHandle], str]"]
+class BedrockProvider:
+    """Invokes Bedrock models. One client per region, created on first use."""
 
-# ValidationException is excluded: it means our request was malformed, not that the model
-# is unavailable, and it would otherwise disable the primary for the whole process.
-_UNAVAILABLE_ERRORS = frozenset({"AccessDeniedException", "ResourceNotFoundException"})
-
-
-@dataclass(frozen=True)
-class ModelHandle:
-    model_id: str
-    region: str
-    role: ModelRole
-
-    def __str__(self) -> str:
-        return f"{self.model_id}@{self.region}"
-
-
-class NoModelAvailable(RuntimeError):
-    """Every configured model refused the request."""
-
-
-def configured_model_handle(settings: Settings, role: ModelRole) -> ModelHandle | None:
-    """Resolve an approved UI model role without accepting an arbitrary model id."""
-    if role == "primary" and settings.bedrock_primary_model_id:
-        return ModelHandle(settings.bedrock_primary_model_id, settings.bedrock_region, role)
-    if role == "secondary" and settings.bedrock_secondary_model_id:
-        return ModelHandle(settings.bedrock_secondary_model_id, settings.secondary_region, role)
-    return None
-
-
-def resolve_system(system: SystemPrompt, handle: ModelHandle) -> str:
-    return system(handle) if callable(system) else system
-
-
-@dataclass
-class ToolUse:
-    tool_use_id: str
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass
-class ConverseResult:
-    handle: ModelHandle
-    stop_reason: str
-    text: str
-    tool_uses: list[ToolUse] = field(default_factory=list)
-    # The assistant message exactly as returned, to be appended to the running
-    # conversation. Bedrock requires the tool_use blocks be echoed back verbatim.
-    assistant_message: dict[str, Any] = field(default_factory=dict)
-    # Blocks with no name or id. Bedrock demands one toolResult per block in the echoed
-    # turn, and an unidentifiable block cannot be answered.
-    malformed_tool_uses: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-
-def _error_code(exc: Exception) -> str:
-    response = getattr(exc, "response", None)
-    if isinstance(response, dict):
-        code = response.get("Error", {}).get("Code")
-        if isinstance(code, str):
-            return code
-    return type(exc).__name__
-
-
-class BedrockModels:
-    """Resolves and invokes the configured models, newest-preferred first."""
-
-    def __init__(self, settings: Settings) -> None:
-        self._settings = settings
+    def __init__(self) -> None:
         self._clients: dict[str, Any] = {}
-        self._unavailable: set[str] = set()
-
-    @property
-    def handles(self) -> tuple[ModelHandle, ...]:
-        """Configured models in preference order, skipping unset ids."""
-        candidates = (
-            configured_model_handle(self._settings, "primary"),
-            configured_model_handle(self._settings, "secondary"),
-        )
-        return tuple(handle for handle in candidates if handle is not None)
-
-    @property
-    def usable_handles(self) -> tuple[ModelHandle, ...]:
-        return tuple(h for h in self.handles if h.model_id not in self._unavailable)
-
-    def handle_for_role(self, role: ModelRole) -> ModelHandle | None:
-        """The configured, currently usable model for an explicit UI selection."""
-        return next((handle for handle in self.usable_handles if handle.role == role), None)
 
     def _client(self, region: str) -> Any:
         if region not in self._clients:
@@ -153,54 +68,10 @@ class BedrockModels:
 
         client = self._client(handle.region)
         response = await asyncio.to_thread(lambda: client.converse(**request))
-        return _parse_response(handle, response)
-
-    async def converse_with_fallback(
-        self,
-        *,
-        messages: list[dict[str, Any]],
-        system: SystemPrompt,
-        tools: list[dict[str, Any]] | None = None,
-        max_tokens: int = 2048,
-        pinned: ModelHandle | None = None,
-    ) -> ConverseResult:
-        """Tries each usable model in order until one answers.
-
-        `pinned` keeps a multi-step turn on the model that started it - switching
-        models mid-tool-loop would hand one model's tool_use blocks to another.
-        """
-        candidates = (pinned,) if pinned is not None else self.usable_handles
-        if not candidates:
-            raise NoModelAvailable("no Bedrock model is configured")
-
-        last_error: Exception | None = None
-        for handle in candidates:
-            if handle is None:
-                continue
-            try:
-                return await self.converse(
-                    handle, messages=messages, system=system, tools=tools, max_tokens=max_tokens
-                )
-            except Exception as exc:
-                code = _error_code(exc)
-                last_error = exc
-                if code in _UNAVAILABLE_ERRORS:
-                    if handle.model_id not in self._unavailable:
-                        self._unavailable.add(handle.model_id)
-                        logger.warning(
-                            "model %s unavailable (%s); falling back. This is expected for "
-                            "Claude until organization SCP p-ddxnpgbm is amended (docs/llm.md)",
-                            handle,
-                            code,
-                        )
-                    continue
-                logger.warning("model %s failed with %s", handle, code)
-                continue
-
-        raise NoModelAvailable("every configured model refused the request") from last_error
+        return parse_response(handle, response)
 
 
-def _parse_response(handle: ModelHandle, response: dict[str, Any]) -> ConverseResult:
+def parse_response(handle: ModelHandle, response: dict[str, Any]) -> ConverseResult:
     message = response.get("output", {}).get("message", {}) or {}
     blocks = message.get("content", []) or []
 
@@ -255,24 +126,3 @@ def _parse_response(handle: ModelHandle, response: dict[str, Any]) -> ConverseRe
         input_tokens=int(usage.get("inputTokens", 0) or 0),
         output_tokens=int(usage.get("outputTokens", 0) or 0),
     )
-
-
-def tool_result_block(tool_use_id: str, payload: str, *, is_error: bool = False) -> dict[str, Any]:
-    """One tool's output, as a content block."""
-    return {
-        "toolResult": {
-            "toolUseId": tool_use_id,
-            "content": [{"text": payload}],
-            "status": "error" if is_error else "success",
-        }
-    }
-
-
-def tool_results_message(blocks: list[dict[str, Any]]) -> dict[str, Any]:
-    """Carries tool output back to the model.
-
-    All blocks go in one message. When a response contains several tool_use blocks,
-    Bedrock requires a toolResult for each before it accepts the conversation, and
-    rejects them answered one message at a time.
-    """
-    return {"role": "user", "content": blocks}

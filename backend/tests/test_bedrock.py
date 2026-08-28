@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
-from app.agent.bedrock import (
-    BedrockModels,
+from app.agent.bedrock import parse_response
+from app.agent.models import (
     ModelHandle,
     NoModelAvailable,
-    _parse_response,
     resolve_system,
     tool_result_block,
     tool_results_message,
 )
+from app.agent.router import ModelRouter
 from app.config import Settings
 from tests.conftest import HANDLE
 
@@ -42,9 +42,9 @@ class FakeBedrockClient:
         return self._behaviour
 
 
-def _models(settings: Settings, clients: dict[str, FakeBedrockClient]) -> BedrockModels:
-    models = BedrockModels(settings)
-    models._clients.update(clients)
+def _models(settings: Settings, clients: dict[str, FakeBedrockClient]) -> ModelRouter:
+    models = ModelRouter(settings)
+    models._bedrock._clients.update(clients)
     return models
 
 
@@ -58,7 +58,7 @@ def _text_response(text: str) -> dict[str, Any]:
 
 class TestParseResponse:
     def test_extracts_text_and_usage(self) -> None:
-        result = _parse_response(HANDLE, _text_response("Drei Kantone: …"))
+        result = parse_response(HANDLE, _text_response("Drei Kantone: …"))
         assert result.text == "Drei Kantone: …"
         assert result.tool_uses == []
         assert (result.input_tokens, result.output_tokens) == (12, 7)
@@ -82,7 +82,7 @@ class TestParseResponse:
             },
             "stopReason": "tool_use",
         }
-        result = _parse_response(HANDLE, response)
+        result = parse_response(HANDLE, response)
         assert result.stop_reason == "tool_use"
         assert len(result.tool_uses) == 1
         assert result.tool_uses[0].name == "search_layers"
@@ -92,7 +92,7 @@ class TestParseResponse:
         assert result.assistant_message["content"] == response["output"]["message"]["content"]
 
     def test_survives_a_response_with_no_content(self) -> None:
-        result = _parse_response(HANDLE, {})
+        result = parse_response(HANDLE, {})
         assert result.text == ""
         assert result.tool_uses == []
 
@@ -116,7 +116,7 @@ class TestParseResponse:
             },
             "stopReason": "tool_use",
         }
-        result = _parse_response(HANDLE, response)
+        result = parse_response(HANDLE, response)
 
         assert result.malformed_tool_uses == 1
         assert [u.name for u in result.tool_uses] == ["search_layers"]
@@ -130,13 +130,13 @@ class TestParseResponse:
         response = {
             "output": {"message": {"content": [{"toolUse": {"toolUseId": "t", "name": "compute"}}]}}
         }
-        result = _parse_response(HANDLE, response)
+        result = parse_response(HANDLE, response)
         assert result.tool_uses[0].arguments == {}
 
 
 class TestFallback:
     def test_resolves_explicit_model_roles(self, settings: Settings) -> None:
-        models = BedrockModels(settings)
+        models = ModelRouter(settings)
         assert models.handle_for_role("primary") == models.handles[0]
         assert models.handle_for_role("secondary") == models.handles[1]
 
@@ -183,7 +183,7 @@ class TestFallback:
             await models.converse_with_fallback(messages=[], system="s")
 
     async def test_no_configured_model_raises(self) -> None:
-        models = BedrockModels(Settings())
+        models = ModelRouter(Settings())
         with pytest.raises(NoModelAvailable):
             await models.converse_with_fallback(messages=[], system="s")
 
@@ -205,7 +205,7 @@ class TestFallback:
             bedrock_secondary_model_id="b",
             bedrock_region="eu-central-1",
         )
-        models = BedrockModels(settings)
+        models = ModelRouter(settings)
         assert [h.region for h in models.handles] == ["eu-central-1", "eu-central-1"]
 
     async def test_tools_are_only_sent_when_present(self, settings: Settings) -> None:

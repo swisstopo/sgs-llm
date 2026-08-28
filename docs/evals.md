@@ -5,9 +5,9 @@ questions with one harness:
 
 1. **Does the agent work?** Does it pick the right tools, chain them, produce layers,
    answer in the right language, and decline what it should?
-2. **Which model should the pilot use?** The same set run against Claude and against
-   Mistral, side by side, with per-category pass rates - evidence for a decision that
-   would otherwise be made on datasheets.
+2. **Which model should the pilot use?** The same set run against Claude, Mistral and
+   the self-hosted Apertus 1.5, side by side, with per-category pass rates - evidence for
+   a decision that would otherwise be made on datasheets.
 
 It drives the **real agent loop against a real MCP server**, so it measures the deployed
 behaviour rather than a model in isolation.
@@ -20,7 +20,7 @@ lowercase, missing umlauts, occasionally in dialect, sometimes stating a wrong f
 confidence, sometimes barely a question at all.
 
 They are deliberately **not tuned to what the smaller model can pass**. The point is to
-separate the two models, so a category the secondary model fails is a *result*, not a
+separate the models, so a category the secondary model fails is a *result*, not a
 bug in the question.
 
 | Category | What it tests | Why it separates models |
@@ -106,6 +106,13 @@ By default the harness constructs the six-tool stand-in in process. Pass `--mcp-
 exercise an already-running production geosearch server; the `geosearch_tools` category
 requires that mode. Neither benchmark listener is exposed publicly by the harness.
 
+`--model apertus` names a role rather than a model id: the endpoint, key and provider all
+come from `APERTUS_BASE_URL` and `APERTUS_API_KEY`. It costs no Bedrock tokens, but it only
+answers from inside the VPC or the askEarth gateway IP, only during weekday office hours,
+and it serves one conversation at a time, so a full run takes considerably longer than a
+Bedrock one. The harness gives it a 240 s per-question budget instead of 120 s; `--timeout`
+overrides that for every model at once.
+
 Costs Bedrock tokens: 87 multi-turn conversations per model - on the order of half a million
 input tokens for a Ministral run, and more for a larger model. Check the on-demand
 tokens-per-minute quota before a full run; increases are not instant
@@ -118,6 +125,7 @@ export AWS_BEARER_TOKEN_BEDROCK=<key>               # or use an AWS profile; VPN
 
 python evals/run.py --list                          # what would run; spends nothing
 python evals/run.py --model mistral.ministral-3-14b-instruct --region eu-west-1
+python evals/run.py --model apertus                 # the self-hosted endpoint
 python evals/run.py --all                           # every configured model, side by side
 python evals/run.py --only place_scoped --model ... # one category while iterating
 python evals/run.py --mcp-url http://127.0.0.1:8790/mcp \
