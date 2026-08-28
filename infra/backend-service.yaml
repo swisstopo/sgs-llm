@@ -26,6 +26,7 @@ Metadata:
           - ServiceConnectNamespace
           - ExplorationMcpAllowedOrigins
           - DataLayerPresignTtl
+          - AdminSessionHours
           - LogLevel
       - Label: { default: Limits and optional key }
         Parameters:
@@ -82,6 +83,12 @@ Parameters:
     Type: Number
     Default: 8787
     Description: Must match the foundation stack's target group port.
+  AdminSessionHours:
+    Type: Number
+    Default: 8
+    MinValue: 1
+    MaxValue: 24
+    Description: Lifetime of an authenticated administrator browser session.
   FeedbackTtlDays:
     Type: Number
     Default: 0
@@ -298,6 +305,17 @@ Resources:
             # retention at whatever it was on day one.
             - { Name: FEEDBACK_TTL_DAYS, Value: !Ref FeedbackTtlDays }
             - { Name: CONVERSATION_TTL_DAYS, Value: !Ref ConversationTtlDays }
+            # The admin dashboard's own auth, pinned here to match the deployed
+            # stack. ADMIN_USER_DB_PATH restates the value backend/Dockerfile
+            # already sets in ENV, so it is explicit rather than load-bearing —
+            # note /var/lib/sgs-llm is created in the image, not mounted, so the
+            # account database does not outlive a task replacement either way.
+            # ADMIN_COOKIE_SECURE is the one that carries weight: config.py
+            # defaults it to False and nothing else sets it, so leaving it unset
+            # ships the session cookie without the Secure flag.
+            - { Name: ADMIN_USER_DB_PATH, Value: /var/lib/sgs-llm/admin-users.sqlite3 }
+            - { Name: ADMIN_SESSION_HOURS, Value: !Ref AdminSessionHours }
+            - { Name: ADMIN_COOKIE_SECURE, Value: 'true' }
             - Name: DATA_LAYER_BUCKET
               Value: !ImportValue
                 Fn::Sub: '${FoundationStackName}-DataLayerBucketName'
