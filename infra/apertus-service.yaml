@@ -128,11 +128,19 @@ Parameters:
       infra/apertus/README.md.
   MaxModelLen:
     Type: Number
-    Default: 4096
+    Default: 28000
     Description: >-
-      Context length. 4096 measured to leave 3.5 GiB of KV cache on a 24 GB
-      card, which is 28,656 tokens or about 7 concurrent 4K conversations.
-      Raising this eats KV cache one-for-one.
+      Context length: prompt PLUS generated output, not an output cap. A request
+      whose prompt alone exceeds this is rejected.
+      The ceiling is the KV cache, not the model - Apertus v1.5 itself supports
+      262,144 tokens. On a 24 GB card the weights take 17.23 GiB of the ~21.3 GiB
+      budget, leaving 3.47 GiB of KV cache, and this architecture costs 128 KiB
+      per token (32 layers x 8 KV heads x 128 head dim x 2 for K and V x 2 bytes),
+      so the pool is about 28,400 tokens TOTAL, shared across concurrent requests.
+      28000 with MaxNumSeqs 1 spends that pool on one long conversation. Going
+      back to 4096 with MaxNumSeqs 4 spends it on several short ones. Genuinely
+      long context needs a bigger card, not a bigger number here: even at
+      MaxNumSeqs 1 the ceiling is ~28K, not 262K.
   GpuMemoryUtilization:
     Type: String
     Default: '0.95'
@@ -143,8 +151,15 @@ Parameters:
       g6e.
   MaxNumSeqs:
     Type: Number
-    Default: 4
-    Description: Concurrent sequences. 4 on a 24 GB card; 8 on a 48 GB g6e.
+    Default: 1
+    Description: >-
+      Concurrent sequences. MaxModelLen x MaxNumSeqs must stay inside the KV pool
+      (~28,400 tokens on a 24 GB card), so this and MaxModelLen trade against each
+      other directly.
+      1 means NO batching: a second request queues behind the first rather than
+      interleaving, so with generation at ~17 tok/s a queued caller waits for the
+      whole preceding answer. That is the price of the long context. If more than
+      one person uses this at a time, 4096 / 4 is the better split.
   ContainerImage:
     Type: String
     Default: ghcr.io/swiss-ai/vllm_apertus_1.5_release@sha256:d85533f251c8272218ae2e519510836376e5a335b44f2204f193018e37753bc6

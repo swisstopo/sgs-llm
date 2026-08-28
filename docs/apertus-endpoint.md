@@ -16,7 +16,7 @@ how to integrate. Background and licensing are in
 | **API key** | SSM `/apertus/api-key` (SecureString) — read it, don't copy it around |
 | **Instance** | `i-0b416ac06d01fc84f`, `g6.2xlarge`, `eu-central-1b` |
 | **Protocol** | OpenAI-compatible (`/v1/chat/completions`, `/v1/models`) |
-| **Context** | 4096 tokens, 4 concurrent sequences |
+| **Context** | 28,000 tokens (prompt + output), 1 request at a time |
 
 Both addresses are stable. The private IP survives stop/start because it is the
 instance's primary private address; the office one is an Elastic IP, allocated
@@ -101,6 +101,39 @@ evaluation — see *Why L4* below.
 | 4 concurrent, aggregate | **64.5 tok/s** | 118.3 tok/s |
 | Prefill | ~2,100 tok/s | ~2,824 tok/s |
 | KV cache | 3.47 GiB / 28,400 tokens | 3.5 GiB / 28,656 tokens |
+
+The 4-concurrent row measures the earlier `4096 / 4` configuration. As deployed
+today there is no batching, so aggregate throughput *is* the single-stream
+figure — that is the trade described next.
+
+### Context and concurrency are the same budget
+
+`--max-model-len` is the **total** sequence length — prompt plus generated
+output, not an output cap. A request whose prompt alone exceeds it is rejected.
+
+The ceiling is the KV cache, not the model: Apertus v1.5 itself supports 262,144
+tokens. On this card the weights take 17.23 GiB of the ~21.3 GiB budget, leaving
+3.47 GiB of KV cache at 128 KiB per token, so the pool is **~28,400 tokens
+total, shared across all in-flight requests**.
+
+This deployment spends that pool on **one long conversation**: `max-model-len
+28000`, `max-num-seqs 1`. The trade is real — with no batching, a second caller
+**queues behind the first** rather than interleaving, and at ~17 tok/s that means
+waiting out the whole preceding answer. Switch back to `4096 / 4` if more than
+one person uses it at a time; both are stack parameters.
+
+Note the ceiling barely moves either way: even at `max-num-seqs 1` it is ~28K,
+not 262K. Real long context needs a bigger card.
+
+**Verified on the deployed instance** after the change: vLLM reports
+`GPU KV cache size: 28,400 tokens` and `Maximum concurrency for 28,000 tokens
+per request: 1.01x` — it fits, with about 1% headroom. A 26,103-token prompt was
+accepted and answered correctly in 5 s. Long prefill is *more* efficient than
+short: ~5,200 tok/s at 26K against the ~2,100 tok/s measured on small prompts,
+because a large prefill keeps the GPU better occupied.
+
+If you ever raise `MaxModelLen` past ~28,400 the container will refuse to start
+rather than degrade quietly — the failure is visible in `docker logs`.
 
 **A 400-token answer takes about 24 seconds.** That is slow enough that users
 will feel it; streaming is worth turning on. Roughly half the A10G's speed,
