@@ -429,7 +429,6 @@ Resources:
               --gpu-memory-utilization ${GpuMemoryUtilization} \
               --max-num-seqs ${MaxNumSeqs} \
               --enable-auto-tool-choice --tool-call-parser apertus \
-              --enable-prefix-caching \
               --api-key "$KEY" \
               --host 0.0.0.0 --port 8000
           echo "=== CONTAINER UP $(date -u) ==="

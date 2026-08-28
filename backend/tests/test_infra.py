@@ -142,12 +142,3 @@ def test_one_sequence_at_a_time_so_a_second_request_queues_instead_of_preempting
     max_num_seqs = int(stack["Parameters"]["MaxNumSeqs"]["Default"])
 
     assert max_model_len * max_num_seqs <= KV_CACHE_TOKENS
-
-
-def test_the_repeated_prompt_prefix_is_cached() -> None:
-    """The system prompt and all tool specs repeat on every iteration of every turn.
-    Prefill is ~2,100 tok/s, so re-prefilling a 26k prompt eight times is ~99 s of pure
-    prefill - more than the turn budget on its own."""
-    user_data = _apertus_stack()["Resources"]["Instance"]["Properties"]["UserData"]
-
-    assert "--enable-prefix-caching" in str(user_data)

@@ -154,13 +154,57 @@ results, which is what makes the loop run with the full tool set rather than a
 reduced one. Character counts are measured; token figures are chars ÷ 3.5-4, and
 the conclusion does not depend on the ratio.
 
-`--enable-prefix-caching` is set for the same reason. The floor is byte-identical
-on every iteration of every turn, so caching that prefix removes most of the
-repeated prefill. It is worth having rather than load-bearing: long prefill was
-measured at ~5,200 tok/s, so re-prefilling a 26k prompt eight times costs about
-40 s, not the ~99 s a naive extrapolation from the ~2,100 tok/s small-prompt
-figure suggests. The flag lives in run-once `UserData`, so it applies at the next
-container recycle and does not justify one of its own.
+**Prefix caching is already on** — it is the vLLM V1 engine default in this image,
+not something the stack sets. That matters for the agent loop, because the fixed
+floor above is byte-identical on every iteration of every turn. Measured against
+the live endpoint with a unique 18,626-token prompt sent twice:
+
+| | Wall time |
+| --- | ---: |
+| Cold | 7.03 s (~2,650 tok/s prefill) |
+| Same prompt again | 0.22 s |
+
+`vllm:prefix_cache_queries_total` rose by exactly two prompts and
+`vllm:prefix_cache_hits_total` by exactly one, so the second request was served
+from cache. **Beware when benchmarking this endpoint:** a repeated or
+shared-prefix prompt reports prefill rates 10-30x the real cold figure. Any
+throughput number taken from a prompt the endpoint has seen before is measuring
+the cache, not the GPU.
+
+## Verified against the live model
+
+Measured 2026-08-28 from the askEarth gateway address, through the real backend
+over `/ws/v1` with the bundled MCP stand-in.
+
+**Tool calling works, which is what the agent loop depends on.** Given a German
+query and one `search_layers` definition, Apertus returned
+`finish_reason: tool_calls` with
+`{"query": "Hochwassergefahren", "canton": "Wallis"}` - correct tool, correct
+extraction from German, and prose alongside the call rather than instead of it.
+Full turns through the loop:
+
+| Turn | Tools chained | Wall time |
+| --- | --- | ---: |
+| "Hallo, wer bist du?" (de) | - | 3.3 s |
+| "Zeige mir Hochwassergefahren im Wallis" (de) | `search_layers`, `display_catalog_layer` | 12.7 s |
+| "Montre-moi les zones d'inondation en Valais" (fr) | `search_layers`, `search_locations`, `filter_features`, `search_layers`, `display_catalog_layer` | 46.3 s |
+
+Both geodata turns ended with a real catalogue layer in the protocol's
+`catalog_layers` (`ch.bafu.hydroweb-warnkarte_national` and
+`ch.bafu.aquaprotect_100`). The 46 s five-tool turn is why the Apertus path needs
+its own turn budget: it would have been at risk under the Bedrock models' 90 s.
+
+**Decode is 16.2-16.8 tok/s**, matching the figures below. **3.88 chars per token**
+measured on German prose, which is what the token estimates elsewhere in this
+document are based on.
+
+**Concurrency serializes, as configured.** Three simultaneous 120-token requests
+finished at 7.17 s, 14.30 s and 21.42 s - even 7.13 s steps, none dropped -
+for an aggregate 16.8 tok/s, i.e. exactly the single-stream rate. With no
+batching, aggregate throughput does not rise with load; only latency does. At the
+46 s measured for a five-tool turn, the 240 s backend budget absorbs roughly four
+concurrent agentic callers before later ones start failing on the clock, and they
+fail as `timeout` rather than `model_unavailable`.
 
 ## Measured performance on this hardware
 
@@ -293,6 +337,12 @@ always-on, so on-demand plus the schedule wins below about 315 h/month
   and the askEarth static gateway IP as a `/32`. Everything else is refused.
 - The `/32` is a filter, not authentication — the vLLM API key is what actually
   protects the endpoint. Anything sharing that office egress IP still needs the key.
+- **The key does not cover everything.** `/health`, `/ping`, `/version`,
+  `/metrics` and `/openapi.json` all answer `200` without it, so anything on that
+  egress IP can read the endpoint's telemetry — model name, request and queue
+  counts, cache hit rates, token totals. Useful for monitoring (`/health` is the
+  readiness probe to poll, no credential needed) and worth knowing before treating
+  the key as a complete boundary.
 - Egress is currently open, for the image pull and weight download. Narrow it
   once the weights are mirrored to S3.
 - IMDSv2 required, EBS encrypted.
