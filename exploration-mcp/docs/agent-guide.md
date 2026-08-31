@@ -30,6 +30,28 @@ preset and explicit IDs can be supplied together; the server resolves and dedupl
 the final layer list. An ÖREB identify response is an exploration aid. Open its official
 cantonal PDF/web extract for the authoritative result.
 
+## Temporal point identification
+
+Some queryable datasets are historicised: the same real-world feature has one record per
+published year. `identify_at_point` pins every time-enabled dataset to its own latest
+published timestamp by default and reports the choice in `temporal_context`. Do not treat
+an omitted `year` as an unfiltered historical query.
+
+Layer configuration is read live on every identify or dataset-description call and is not
+cached by the MCP. If Swisstopo publishes a new year, the next call sees it automatically;
+the agent does not need to wait for a deployment or server restart.
+
+For a historical question, pass the requested four-digit `year`. The server resolves it
+to the dataset's exact published timestamp and returns `time_not_available` if that year
+does not exist; it never silently substitutes another year. Call `describe_dataset` first
+and choose from its normalized `available_years`; retain raw `timestamps` only when the
+exact GeoAdmin representation matters. A `time_not_available` error repeats the complete
+valid-year list in `error.details.available_years` so the agent can recover without
+guessing. When several datasets have different latest timestamps, the server queries them
+separately and merges the records. Historical `map_preview_url` and `map_feature_url`
+values include the same year. State the returned `year_used` when answering a user with a
+value that can change over time.
+
 ## Division hierarchy
 
 The index uses source terminology so identifiers remain unambiguous:
@@ -105,6 +127,12 @@ After starting HTTP mode, use an MCP client or Inspector to run:
 
 ```json
 {"name":"identify_at_point","arguments":{"point":{"longitude":7.451352,"latitude":46.927937,"crs":"EPSG:4326"},"preset":"all_relevant","language":"en"}}
+```
+
+Historical example:
+
+```json
+{"name":"identify_at_point","arguments":{"point":{"longitude":6.96974,"latitude":46.31642,"crs":"EPSG:4326"},"dataset_ids":["ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"],"year":2015,"language":"en"}}
 ```
 
 The geocode result should be approximately longitude `7.451352`, latitude `46.927937`,

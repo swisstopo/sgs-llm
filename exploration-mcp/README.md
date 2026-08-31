@@ -23,6 +23,13 @@ independent per-viewer rate and global concurrency limits. See the
 it to high-volume traffic. Relevant pushes to `main` test the package, build it into the
 backend image, and roll the ECS service automatically.
 
+Deployment packages the small catalogue and administrative-division search snapshots; it
+does not download Swisstopo feature data, layer configuration, or live metadata. Tools
+read those values directly from `api3.geo.admin.ch` at runtime. There is no in-process
+GeoAdmin data or metadata cache, so a newly published timestamp is visible on the next
+relevant tool call without restarting or redeploying the MCP. The HTTP client is reused
+only for network connection pooling.
+
 ## Tool inputs and outputs
 
 All six tools are read-only and return schema-validated structured JSON. Supported
@@ -34,6 +41,8 @@ Version 3 removes the redundant `explain_swisstopo` tool (the guides remain avai
 resources), renames the read-only map helper to `get_map_preview_links`, and replaces
 unlabelled point arguments with explicit coordinate objects. MCP clients refresh the tool
 catalogue when they reconnect; hard-coded callers must update these names and arguments.
+Version 3.1 makes point identification temporally deterministic: historicised datasets
+use their latest published timestamp unless the caller requests an explicit year.
 
 ### `search_datasets`
 
@@ -49,8 +58,9 @@ catalogue when they reconnect; hard-coded callers must update these names and ar
 
 - **Input:** `dataset_id` (required official `ch.*` identifier) and `language="en"`.
 - **Output:** `dataset` with current metadata, schema/fields, data owner, timestamps,
-  legend/details/download links, query/display capability, and `map_preview_url`;
-  `live_metadata` reports whether current metadata was available.
+  normalized `available_years`, `latest_year`, legend/details/download links,
+  query/display capability, and `map_preview_url`; `live_metadata` reports whether current
+  metadata was available.
 - **Use it for:** checking what a dataset actually contains before interpreting fields or
   claiming that it supports point queries.
 
@@ -88,13 +98,17 @@ catalogue when they reconnect; hard-coded callers must update these names and ar
 ### `identify_at_point`
 
 - **Input:** required explicit WGS84 or LV95 `point`; one or both of `preset` and
-  `dataset_ids[]` (maximum `10`); `language="en"`; `limit=20` (`1-200`). Presets are
-  `parcel`, `oereb`, and `all_relevant`.
-- **Output:** `point`, resolved `selection`, `dataset_ids`, `feature_count`, `features[]`
-  with full attributes and official links, plus point-centred `map_preview_url` and
-  optional per-feature `map_feature_url`. `geometry_omitted` is always `true`.
+  `dataset_ids[]` (maximum `10`); optional four-digit `year`; `language="en"`; `limit=20`
+  (`1-200`). Presets are `parcel`, `oereb`, and `all_relevant`.
+- **Output:** `point`, resolved `selection`, `dataset_ids`, `temporal_context`,
+  `feature_count`, and `features[]` with full attributes and official links, plus
+  point-centred `map_preview_url` and optional per-feature `map_feature_url`.
+  `geometry_omitted` is always `true`.
 - **Use it for:** parcel/EGRID attributes, ÖREB availability and official extract links,
-  or feature records from an already-selected queryable layer.
+  or feature records from an already-selected queryable layer. With no `year`, each
+  time-enabled dataset is queried at its own latest published timestamp. An unavailable
+  explicit year returns `time_not_available` with structured `available_years`; it never
+  falls back to another year. Call `describe_dataset` first to discover valid years.
 
 Tool-level validation failures use one predictable shape (arguments rejected directly by
 the advertised JSON Schema are returned as MCP protocol errors):
@@ -452,9 +466,10 @@ Then request both cadastral and ÖREB records:
 ```
 
 The response includes `features[]`, full record properties, `external_links`, a
-point-centred `map_preview_url`, and official cantonal ÖREB PDF/web links when available.
-It deliberately returns `"geometry_omitted": true`. Treat the official cantonal extract,
-not the exploratory MCP response, as authoritative.
+point-centred `map_preview_url`, `temporal_context` stating the timestamp selected for
+each dataset, and official cantonal ÖREB PDF/web links when available. It deliberately
+returns `"geometry_omitted": true`. Treat the official cantonal extract, not the
+exploratory MCP response, as authoritative.
 
 ## Test-query suite
 
@@ -526,7 +541,12 @@ reduce DNS-rebinding risk.
   LV95 centre and area-appropriate zoom. Point links use an LV95 marker.
 - `identify_at_point` accepts the curated `parcel`, `oereb`, and `all_relevant` presets,
   while still accepting exact `ch.*` dataset IDs. It returns attributes and official
-  web/PDF links but deliberately never returns geometry or GeoJSON.
+  web/PDF links but deliberately never returns geometry or GeoJSON. Time-enabled datasets
+  are pinned independently to their latest published timestamp by default. Pass `year`
+  for a historical lookup; the response and map links state and preserve that selection.
+- Live layer configuration and metadata are fetched again for every relevant tool call;
+  they are never retained in a process-level cache. Consequently, new Swisstopo years
+  become selectable immediately after GeoAdmin publishes them.
 - The HTTP MCP transport is stateless. `location_ref` is a result identifier, not hidden
   server state; pass either returned coordinate object to `identify_at_point`.
 - Network calls are restricted in code to the public `api3.geo.admin.ch` service.

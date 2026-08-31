@@ -84,6 +84,7 @@ def map_viewer_url(
     latitude: float | None = None,
     focus_bbox: Iterable[float] | None = None,
     feature_id: str | None = None,
+    year: int | None = None,
 ) -> str:
     """Build a ready-to-open map.geo.admin.ch URL.
 
@@ -97,6 +98,8 @@ def map_viewer_url(
         raise ValueError("longitude and latitude must be supplied together")
     if focus_bbox is not None and (longitude is not None or latitude is not None):
         raise ValueError("supply either focus_bbox or longitude/latitude, not both")
+    if year is not None and not 1000 <= year <= 9999:
+        raise ValueError("year must contain four digits")
 
     params: list[tuple[str, str]] = [("lang", language)]
     center_point: str | None = None
@@ -124,6 +127,8 @@ def map_viewer_url(
         if feature_id and len(layers) == 1:
             layer_value = f"{layer_value}@features={feature_id}"
         params.append(("layers", layer_value))
+    if year is not None:
+        params.append(("timeSlider", str(year)))
     params.append(("bgLayer", DEFAULT_BACKGROUND))
 
     if center_point is not None and point_marker:

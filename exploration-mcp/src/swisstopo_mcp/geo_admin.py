@@ -27,6 +27,7 @@ ATTRIBUTION = "swisstopo / geo.admin.ch"
 _TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 _TAGS = re.compile(r"<[^>]+>")
 _MATCH_WORD = re.compile(r"\w+", re.UNICODE)
+_TIMESTAMP_YEAR = re.compile(r"^(\d{4})")
 _WGS84_TO_LV95 = Transformer.from_crs(4326, 2056, always_xy=True)
 
 
@@ -40,11 +41,13 @@ class GeoAdminError(RuntimeError):
         *,
         retryable: bool,
         status_code: int | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.retryable = retryable
         self.status_code = status_code
+        self.details = details
 
     def as_dict(self) -> dict[str, Any]:
         error: dict[str, Any] = {
@@ -53,11 +56,39 @@ class GeoAdminError(RuntimeError):
             "retryable": self.retryable,
             "upstream_status": self.status_code,
         }
+        if self.details is not None:
+            error["details"] = self.details
         return error
 
 
 def strip_markup(value: object) -> str:
     return html.unescape(_TAGS.sub("", str(value or ""))).strip()
+
+
+def _published_year(timestamp: str) -> int | None:
+    """Return the human year encoded by a GeoAdmin timestamp, excluding sentinels."""
+    match = _TIMESTAMP_YEAR.match(timestamp)
+    if match is None:
+        return None
+    year = int(match.group(1))
+    return None if year == 9999 else year
+
+
+def _latest_timestamp(timestamps: list[str]) -> str | None:
+    """Choose the newest published timestamp, including GeoAdmin's current sentinels."""
+    if not timestamps:
+        return None
+
+    def sort_key(timestamp: str) -> tuple[bool, str]:
+        is_current = timestamp.casefold() == "current" or timestamp.startswith("9999")
+        return is_current, timestamp
+
+    return max(timestamps, key=sort_key)
+
+
+def _timestamp_for_year(timestamps: list[str], year: int) -> str | None:
+    matching = [timestamp for timestamp in timestamps if _published_year(timestamp) == year]
+    return _latest_timestamp(matching)
 
 
 def _canton_code(value: str) -> str | None:
@@ -69,19 +100,17 @@ def _canton_code(value: str) -> str | None:
 
 
 class GeoAdminClient:
-    """One reusable HTTP client with small in-process metadata caches."""
+    """One reusable HTTP client that always reads current GeoAdmin metadata."""
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client
         self._owns_client = client is None
-        self._layers_config: dict[str, dict[str, dict[str, Any]]] = {}
-        self._metadata: dict[str, dict[str, dict[str, Any]]] = {}
 
     async def _get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=_TIMEOUT,
-                headers={"User-Agent": "swisstopo-search-mcp/3.0.0 (+read-only discovery)"},
+                headers={"User-Agent": "swisstopo-search-mcp/3.1.0 (+read-only discovery)"},
             )
         for attempt in range(2):
             try:
@@ -114,22 +143,16 @@ class GeoAdminClient:
             self._client = None
 
     async def layers_config(self, language: str) -> dict[str, dict[str, Any]]:
-        if language not in self._layers_config:
-            payload = await self._get(LAYERS_CONFIG_URL, {"lang": language})
-            self._layers_config[language] = {
-                str(key): value for key, value in payload.items() if isinstance(value, dict)
-            }
-        return self._layers_config[language]
+        payload = await self._get(LAYERS_CONFIG_URL, {"lang": language})
+        return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
 
     async def layer_metadata(self, language: str) -> dict[str, dict[str, Any]]:
-        if language not in self._metadata:
-            payload = await self._get(LAYER_METADATA_URL, {"lang": language})
-            self._metadata[language] = {
-                row["layerBodId"]: row.get("attributes") or {}
-                for row in payload.get("layers", [])
-                if isinstance(row, dict) and isinstance(row.get("layerBodId"), str)
-            }
-        return self._metadata[language]
+        payload = await self._get(LAYER_METADATA_URL, {"lang": language})
+        return {
+            row["layerBodId"]: row.get("attributes") or {}
+            for row in payload.get("layers", [])
+            if isinstance(row, dict) and isinstance(row.get("layerBodId"), str)
+        }
 
     async def search_datasets(
         self,
@@ -201,6 +224,14 @@ class GeoAdminClient:
                 entry["values"] = field["values"]
             fields.append(entry)
         timestamps = [str(value) for value in (config.get("timestamps") or [])]
+        current_timestamp = _latest_timestamp(timestamps)
+        available_years = sorted(
+            {
+                published_year
+                for timestamp in timestamps
+                if (published_year := _published_year(timestamp)) is not None
+            }
+        )
         return {
             "dataset_id": dataset_id,
             "title": strip_markup(config.get("label")) or dataset_id,
@@ -215,7 +246,11 @@ class GeoAdminClient:
             "fields": fields,
             "time_enabled": bool(config.get("timeEnabled")),
             "timestamps": timestamps,
-            "current_timestamp": max(timestamps) if timestamps else None,
+            "available_years": available_years,
+            "current_timestamp": current_timestamp,
+            "latest_year": (
+                _published_year(current_timestamp) if current_timestamp is not None else None
+            ),
             "details_url": metadata.get("urlDetails"),
             "download_url": metadata.get("downloadUrl"),
             "legend_url": f"{MAPSERVER_URL}/{dataset_id}/legend?lang={language}",
@@ -324,55 +359,158 @@ class GeoAdminClient:
         *,
         language: str,
         limit: int,
-    ) -> list[dict[str, Any]]:
-        payload = await self._get(
-            IDENTIFY_URL,
-            {
+        year: int | None = None,
+    ) -> dict[str, Any]:
+        """Identify features at one point with deterministic temporal selection.
+
+        Time-enabled layers are pinned to their newest published timestamp by default.
+        An explicit year is resolved independently against every layer's published
+        timestamps. Requests are grouped by effective timestamp because ``timeInstant``
+        applies to the whole GeoAdmin identify request, not to individual layers.
+        """
+        config = await self.layers_config(language)
+        temporal_datasets: list[dict[str, Any]] = []
+        request_groups: dict[str | None, list[str]] = {}
+
+        for dataset_id in dataset_ids:
+            capabilities = config.get(dataset_id) or {}
+            time_enabled = bool(capabilities.get("timeEnabled"))
+            timestamp: str | None = None
+            selection = "not_applicable"
+            if time_enabled:
+                timestamps = [str(value) for value in (capabilities.get("timestamps") or [])]
+                if not timestamps:
+                    raise GeoAdminError(
+                        "temporal_metadata_unavailable",
+                        f"Dataset {dataset_id} is time-enabled but publishes no timestamps.",
+                        retryable=False,
+                    )
+                if year is None:
+                    timestamp = _latest_timestamp(timestamps)
+                    selection = "latest_published"
+                else:
+                    timestamp = _timestamp_for_year(timestamps, year)
+                    selection = "explicit_year"
+                    if timestamp is None:
+                        available_years = sorted(
+                            {
+                                published_year
+                                for value in timestamps
+                                if (published_year := _published_year(value)) is not None
+                            }
+                        )
+                        latest_timestamp = _latest_timestamp(timestamps)
+                        availability = (
+                            f" Published years span {available_years[0]}-{available_years[-1]} "
+                            f"({len(available_years)} available)."
+                            if available_years
+                            else " No year-specific timestamps are published."
+                        )
+                        raise GeoAdminError(
+                            "time_not_available",
+                            (
+                                f"Year {year} is not available for dataset {dataset_id}."
+                                f"{availability} Call describe_dataset and use available_years."
+                            ),
+                            retryable=False,
+                            details={
+                                "dataset_id": dataset_id,
+                                "requested_year": year,
+                                "available_years": available_years,
+                                "latest_timestamp": latest_timestamp,
+                                "latest_year": (
+                                    _published_year(latest_timestamp)
+                                    if latest_timestamp is not None
+                                    else None
+                                ),
+                            },
+                        )
+
+            temporal_datasets.append(
+                {
+                    "dataset_id": dataset_id,
+                    "time_enabled": time_enabled,
+                    "timestamp_used": timestamp,
+                    "year_used": _published_year(timestamp) if timestamp is not None else None,
+                    "selection": selection,
+                }
+            )
+            request_groups.setdefault(timestamp, []).append(dataset_id)
+
+        bounded_limit = max(1, min(limit, 200))
+        features: list[dict[str, Any]] = []
+        for timestamp, grouped_dataset_ids in request_groups.items():
+            params: dict[str, Any] = {
                 "geometry": f"{longitude},{latitude}",
                 "geometryType": "esriGeometryPoint",
-                "layers": "all:" + ",".join(dataset_ids),
+                "layers": "all:" + ",".join(grouped_dataset_ids),
                 "tolerance": 0,
                 "sr": 4326,
                 "geometryFormat": "geojson",
                 "returnGeometry": "false",
                 "lang": language,
-                "limit": max(1, min(limit, 200)),
-            },
-        )
-        features: list[dict[str, Any]] = []
-        for row in payload.get("results") or []:
-            if not isinstance(row, dict) or row.get("featureId") == -99 or row.get("id") == -99:
-                continue
-            properties = row.get("properties") or row.get("attributes") or {}
-            if not isinstance(properties, dict):
-                properties = {}
-            links = []
-            for field, value in properties.items():
-                if not isinstance(value, str) or not value.lower().startswith(
-                    ("http://", "https://")
+                "limit": bounded_limit,
+            }
+            if timestamp is not None:
+                params["timeInstant"] = timestamp
+            payload = await self._get(IDENTIFY_URL, params)
+            for row in payload.get("results") or []:
+                if (
+                    not isinstance(row, dict)
+                    or row.get("featureId") == -99
+                    or row.get("id") == -99
                 ):
                     continue
-                path = value.lower().split("?", 1)[0]
-                links.append(
+                properties = row.get("properties") or row.get("attributes") or {}
+                if not isinstance(properties, dict):
+                    properties = {}
+                links = []
+                for field, value in properties.items():
+                    if not isinstance(value, str) or not value.lower().startswith(
+                        ("http://", "https://")
+                    ):
+                        continue
+                    path = value.lower().split("?", 1)[0]
+                    links.append(
+                        {
+                            "field": str(field),
+                            "kind": (
+                                "pdf"
+                                if path.endswith(".pdf") or "pdf" in str(field).casefold()
+                                else "web"
+                            ),
+                            "url": value,
+                        }
+                    )
+                features.append(
                     {
-                        "field": str(field),
-                        "kind": (
-                            "pdf"
-                            if path.endswith(".pdf") or "pdf" in str(field).casefold()
-                            else "web"
-                        ),
-                        "url": value,
+                        "feature_ref": {
+                            "dataset_id": row.get("layerBodId"),
+                            "feature_id": str(row.get("featureId", row.get("id"))),
+                        },
+                        "dataset_title": row.get("layerName"),
+                        "properties": properties,
+                        "external_links": links,
                     }
                 )
-            features.append(
-                {
-                    "feature_ref": {
-                        "dataset_id": row.get("layerBodId"),
-                        "feature_id": str(row.get("featureId", row.get("id"))),
-                    },
-                    "dataset_title": row.get("layerName"),
-                    "properties": properties,
-                    "external_links": links,
-                }
+
+        dataset_order = {dataset_id: index for index, dataset_id in enumerate(dataset_ids)}
+        features.sort(
+            key=lambda feature: dataset_order.get(
+                str((feature.get("feature_ref") or {}).get("dataset_id")), len(dataset_order)
             )
-        return features
+        )
+        temporal_context = {
+            "requested_year": year,
+            "mode": "explicit_year" if year is not None else "latest_by_dataset",
+            "datasets": temporal_datasets,
+            "note": (
+                f"Time-enabled datasets were queried at their published {year} timestamp."
+                if year is not None
+                else "Each time-enabled dataset was queried at its latest published timestamp."
+            ),
+        }
+        return {
+            "features": features[:bounded_limit],
+            "temporal_context": temporal_context,
+        }

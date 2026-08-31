@@ -84,6 +84,21 @@ def test_feature_preview_uses_map_viewer_feature_syntax() -> None:
     assert "featureInfo=default" in url
 
 
+def test_historical_preview_keeps_feature_selection_and_sets_time_slider() -> None:
+    url = map_viewer_url(
+        language="en",
+        dataset_ids=["ch.test.layer"],
+        longitude=7.0,
+        latitude=46.0,
+        feature_id="42-2015",
+        year=2015,
+    )
+
+    assert "layers=ch.test.layer@features=42-2015" in url
+    assert "timeSlider=2015" in url
+    assert "featureInfo=default" in url
+
+
 def test_preview_requires_both_point_coordinates() -> None:
     with pytest.raises(ValueError, match="supplied together"):
         map_viewer_url(language="en", longitude=7.0)

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swisstopo-search-mcp"
-version = "3.0.0"
+version = "3.1.0"
 description = "Read-only MCP server for Swiss federal geodata discovery, divisions, geocoding, and point lookup"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"

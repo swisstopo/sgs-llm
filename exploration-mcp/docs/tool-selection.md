@@ -32,9 +32,15 @@ occupy the callable tool surface.
 - Division search uses a 1.3 MB packaged snapshot rather than 108 MB of boundary polygons.
   It returns WGS84 bboxes and source IDs, not geometry.
 - HTTP mode is explicitly stateless; there are no hidden location or feature caches.
+- Live GeoAdmin layer configuration and metadata are not cached either. Relevant calls
+  fetch them again so newly published datasets, fields, and years are visible immediately.
 - Dataset and point results link to the official map viewer. `get_map_preview_links` centres
   selected layers on a resolved division, while point links centre and enable the resolved
   layers without embedding geometry in the MCP response.
+- Point identification resolves each time-enabled layer to its latest published timestamp
+  by default, supports an explicit historical year, and reports the timestamp used. Layers
+  with different latest timestamps are queried separately because `timeInstant` applies to
+  a complete GeoAdmin identify request.
 - Every operation is annotated read-only and non-destructive in MCP `tools/list`.
 - Domain explanations are available as server instructions, resources, and tool
   descriptions without adding a redundant callable tool.

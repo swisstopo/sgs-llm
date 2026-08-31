@@ -42,11 +42,20 @@ headroom for this small I/O-bound application.
 There is no Lambda cold start. A warm local catalogue lookup returns immediately; tools
 that call geo.admin.ch additionally wait for that public API.
 
+Deployment includes only the packaged catalogue and division search snapshots. It does
+not download or bake GeoAdmin feature records, layer configuration, timestamps, or live
+metadata into the image. The MCP deliberately keeps no in-process cache of those live
+GeoAdmin responses: every relevant call fetches current configuration/metadata, and every
+point identification reads current feature data. The reusable HTTP client provides
+connection pooling only. A newly published Swisstopo year therefore becomes available on
+the next request without an ECS restart or image deployment.
+
 ## Isolation and public-traffic controls
 
 The MCP shares compute with the chat but not protocol state:
 
 - stateless JSON responses; no MCP session or result handles are retained;
+- no process-level cache of GeoAdmin layer configuration, metadata, or feature responses;
 - at most 256 KiB per MCP request;
 - 120 MCP requests per viewer address per minute by default;
 - at most eight concurrent MCP requests across the task; excess bursts receive `503`;

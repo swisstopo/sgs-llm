@@ -6,6 +6,7 @@ import pytest
 from mcp import Client
 
 from swisstopo_mcp.catalog import CatalogIndex
+from swisstopo_mcp.geo_admin import GeoAdminError
 from swisstopo_mcp.server import build_server
 
 pytestmark = pytest.mark.anyio
@@ -28,6 +29,11 @@ class StubGeoAdmin:
             "title": "Test dataset",
             "language": language,
             "fields": [],
+            "time_enabled": True,
+            "timestamps": ["2026", "2025"],
+            "available_years": [2025, 2026],
+            "current_timestamp": "2026",
+            "latest_year": 2026,
             "source": "live_geo_admin",
         }
 
@@ -50,15 +56,61 @@ class StubGeoAdmin:
             }
         ]
 
-    async def identify_at_point(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        return [
-            {
-                "feature_ref": {"dataset_id": "ch.test.layer", "feature_id": "42"},
-                "dataset_title": "Test",
-                "properties": {"name": "Example"},
-                "external_links": [],
-            }
-        ]
+    async def identify_at_point(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        dataset_ids = list(args[0])
+        year = kwargs.get("year")
+        return {
+            "features": [
+                {
+                    "feature_ref": {"dataset_id": "ch.test.layer", "feature_id": "42"},
+                    "dataset_title": "Test",
+                    "properties": {"name": "Example"},
+                    "external_links": [],
+                }
+            ],
+            "temporal_context": {
+                "requested_year": year,
+                "mode": "explicit_year" if year is not None else "latest_by_dataset",
+                "datasets": [
+                    {
+                        "dataset_id": dataset_id,
+                        "time_enabled": dataset_id == "ch.test.layer",
+                        "timestamp_used": str(year or 2026)
+                        if dataset_id == "ch.test.layer"
+                        else None,
+                        "year_used": year or 2026 if dataset_id == "ch.test.layer" else None,
+                        "selection": (
+                            "explicit_year"
+                            if dataset_id == "ch.test.layer" and year is not None
+                            else "latest_published"
+                            if dataset_id == "ch.test.layer"
+                            else "not_applicable"
+                        ),
+                    }
+                    for dataset_id in dataset_ids
+                ],
+                "note": "Test temporal selection.",
+            },
+        }
+
+
+class UnavailableYearGeoAdmin(StubGeoAdmin):
+    async def identify_at_point(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise GeoAdminError(
+            "time_not_available",
+            (
+                "Year 2015 is not available for dataset ch.test.layer. "
+                "Call describe_dataset and use available_years."
+            ),
+            retryable=False,
+            details={
+                "dataset_id": "ch.test.layer",
+                "requested_year": 2015,
+                "available_years": [2024, 2026],
+                "latest_timestamp": "2026",
+                "latest_year": 2026,
+            },
+        )
 
 
 async def test_mcp_catalog_exposes_selected_tools_resources_and_prompt() -> None:
@@ -79,7 +131,9 @@ async def test_mcp_catalog_exposes_selected_tools_resources_and_prompt() -> None
     }
     identify_schema = next(tool for tool in tools.tools if tool.name == "identify_at_point")
     assert set(identify_schema.input_schema["required"]) == {"point"}
-    assert {"dataset_ids", "preset"} <= set(identify_schema.input_schema["properties"])
+    assert {"dataset_ids", "preset", "year"} <= set(
+        identify_schema.input_schema["properties"]
+    )
     assert all(tool.annotations and tool.annotations.read_only_hint for tool in tools.tools)
     assert all(tool.title for tool in tools.tools)
     assert all(tool.output_schema and "$defs" in tool.output_schema for tool in tools.tools)
@@ -120,6 +174,8 @@ async def test_dataset_search_and_description_are_client_neutral() -> None:
         "https://map.geo.admin.ch/#/map?"
     )
     assert description.structured_content["dataset"]["source"] == "live_geo_admin"
+    assert description.structured_content["dataset"]["available_years"] == [2025, 2026]
+    assert description.structured_content["dataset"]["latest_year"] == 2026
     assert "layers=" in description.structured_content["dataset"]["map_preview_url"]
     assert search.structured_content["datasets"][0]["map_preview_scope"] == "switzerland"
     assert "get_map_preview_links" in search.structured_content["map_link_note"]
@@ -224,9 +280,68 @@ async def test_geocode_and_identify_work_without_session_state() -> None:
         "https://map.geo.admin.ch/#/map?"
     )
     assert identified.structured_content["geometry_omitted"] is True
+    assert identified.structured_content["temporal_context"]["datasets"][0]["year_used"] == 2026
     assert "verbatim" in identified.structured_content["map_link_note"]
     assert "ch.test.layer" in identified.structured_content["map_preview_url"]
     assert "@features=42" in identified.structured_content["features"][0]["map_feature_url"]
+
+
+async def test_identify_explicit_year_is_reported_and_applied_to_map_links() -> None:
+    server = build_server(CatalogIndex(), StubGeoAdmin())
+    async with Client(server) as client:
+        identified = await client.call_tool(
+            "identify_at_point",
+            {
+                "dataset_ids": ["ch.test.layer"],
+                "point": {
+                    "longitude": 7.451352,
+                    "latitude": 46.927937,
+                    "crs": "EPSG:4326",
+                },
+                "year": 2015,
+            },
+        )
+
+    content = identified.structured_content
+    assert content["temporal_context"]["requested_year"] == 2015
+    assert content["temporal_context"]["mode"] == "explicit_year"
+    assert content["temporal_context"]["datasets"][0]["year_used"] == 2015
+    assert "timeSlider=2015" in content["map_preview_url"]
+    assert "timeSlider=2015" in content["features"][0]["map_feature_url"]
+
+
+async def test_identify_unavailable_year_returns_a_stable_structured_error() -> None:
+    server = build_server(CatalogIndex(), UnavailableYearGeoAdmin())
+    async with Client(server) as client:
+        identified = await client.call_tool(
+            "identify_at_point",
+            {
+                "dataset_ids": ["ch.test.layer"],
+                "point": {
+                    "longitude": 7.451352,
+                    "latitude": 46.927937,
+                    "crs": "EPSG:4326",
+                },
+                "year": 2015,
+            },
+        )
+
+    assert identified.structured_content["error"] == {
+        "code": "time_not_available",
+        "message": (
+            "Year 2015 is not available for dataset ch.test.layer. "
+            "Call describe_dataset and use available_years."
+        ),
+        "retryable": False,
+        "upstream_status": None,
+        "details": {
+            "dataset_id": "ch.test.layer",
+            "requested_year": 2015,
+            "available_years": [2024, 2026],
+            "latest_timestamp": "2026",
+            "latest_year": 2026,
+        },
+    }
 
 
 async def test_identify_preset_can_be_combined_with_explicit_dataset_ids() -> None:
@@ -279,6 +394,14 @@ async def test_validation_errors_are_structured_and_non_retryable() -> None:
             "identify_at_point",
             {"point": {"longitude": 7.4, "latitude": 46.9, "crs": "EPSG:4326"}},
         )
+        bad_year = await client.call_tool(
+            "identify_at_point",
+            {
+                "dataset_ids": ["ch.test.layer"],
+                "point": {"longitude": 7.4, "latitude": 46.9, "crs": "EPSG:4326"},
+                "year": 99,
+            },
+        )
         missing_map_focus = await client.call_tool(
             "get_map_preview_links",
             {"dataset_ids": ["ch.test.layer"]},
@@ -298,6 +421,7 @@ async def test_validation_errors_are_structured_and_non_retryable() -> None:
         bad_coordinates,
         bad_preset,
         missing_selection,
+        bad_year,
         missing_map_focus,
         conflicting_map_focus,
     ):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
@@ -49,6 +49,7 @@ class ErrorDetails(TypedDict):
     message: str
     retryable: bool
     upstream_status: int | None
+    details: NotRequired[dict[str, Any]]
 
 
 class ErrorResult(TypedDict):
@@ -134,10 +135,26 @@ class GeocodeLocationOutput(RootModel[GeocodeLocationSuccess | ErrorResult]):
     model_config = ConfigDict(json_schema_extra={"type": "object"})
 
 
+class DatasetTemporalContext(TypedDict):
+    dataset_id: str
+    time_enabled: bool
+    timestamp_used: str | None
+    year_used: int | None
+    selection: Literal["latest_published", "explicit_year", "not_applicable"]
+
+
+class TemporalContext(TypedDict):
+    requested_year: int | None
+    mode: Literal["latest_by_dataset", "explicit_year"]
+    datasets: list[DatasetTemporalContext]
+    note: str
+
+
 class IdentifyAtPointSuccess(TypedDict):
     point: dict[str, Any]
     selection: dict[str, Any]
     dataset_ids: list[str]
+    temporal_context: TemporalContext
     map_preview_url: str
     feature_count: int
     features: list[dict[str, Any]]

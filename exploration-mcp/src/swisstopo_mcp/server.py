@@ -39,7 +39,7 @@ from .schemas import (
 )
 
 SERVER_NAME = "swisstopo-search"
-SERVER_VERSION = "3.0.0"
+SERVER_VERSION = "3.1.0"
 _DATASET_ID = re.compile(r"^ch\.[A-Za-z0-9._-]+$")
 _MAP_LINK_NOTE = (
     "Open every returned url, combined_link, map_preview_url, or map_feature_url verbatim. "
@@ -664,6 +664,7 @@ def build_server(
         preset: str | None = None,
         language: str = "en",
         limit: int = 20,
+        year: int | None = None,
     ) -> IdentifyAtPointOutput:
         """Read complete feature attributes from selected datasets at an explicit point.
 
@@ -671,8 +672,10 @@ def build_server(
         pass 1-10 exact dataset IDs chosen with search_datasets and describe_dataset. Copy
         either the WGS84 or LV95 coordinates object from geocode_location into point; the
         server converts it safely. Geometry and GeoJSON are omitted; attributes, official
-        PDF/web links, and a ready-to-open map preview remain intact. Raster datasets may
-        not support feature lookup.
+        PDF/web links, and a ready-to-open map preview remain intact. Time-enabled datasets
+        use their latest published timestamp by default. Before passing year for a
+        historical view, call describe_dataset and choose one of its available_years.
+        Raster datasets may not support feature lookup.
         """
         requested_ids = [
             value.strip() if isinstance(value, str) else value for value in (dataset_ids or [])
@@ -731,13 +734,19 @@ def build_server(
                 IdentifyAtPointOutput,
                 _error("invalid_limit", "limit must be between 1 and 200."),
             )
+        if year is not None and not 1000 <= year <= 9999:
+            return _output(
+                IdentifyAtPointOutput,
+                _error("invalid_year", "year must contain four digits."),
+            )
         try:
-            features = await geo_admin.identify_at_point(
+            identify_result = await geo_admin.identify_at_point(
                 resolved_ids,
                 longitude,
                 latitude,
                 language=selected_language,
                 limit=limit,
+                year=year,
             )
         except GeoAdminError as exc:
             if exc.status_code == 400:
@@ -749,6 +758,8 @@ def build_server(
                     ),
                 )
             return _output(IdentifyAtPointOutput, {"error": exc.as_dict()})
+        features = identify_result["features"]
+        temporal_context = identify_result["temporal_context"]
         enriched_features: list[dict[str, Any]] = []
         for feature in features:
             enriched = dict(feature)
@@ -762,6 +773,7 @@ def build_server(
                     longitude=longitude,
                     latitude=latitude,
                     feature_id=str(feature_id),
+                    year=year,
                 )
             enriched_features.append(enriched)
 
@@ -785,11 +797,13 @@ def build_server(
                 "resolved_dataset_ids": resolved_ids,
             },
             "dataset_ids": resolved_ids,
+            "temporal_context": temporal_context,
             "map_preview_url": map_viewer_url(
                 language=selected_language,
                 dataset_ids=resolved_ids,
                 longitude=longitude,
                 latitude=latitude,
+                year=year,
             ),
             "feature_count": len(enriched_features),
             "features": enriched_features,
