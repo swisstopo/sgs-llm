@@ -35,6 +35,10 @@ curl -s http://63.182.197.164:8000/v1/chat/completions \
 
 **Weekdays 06:30–19:00 Europe/Zurich. Down every night and all weekend.**
 
+The EC2 instance starts at 06:30. The frontend presents Apertus as available
+Monday–Friday from **06:40–19:00 Europe/Zurich**, leaving ten minutes for the
+instance and model server to become ready after a cold start.
+
 | | |
 |---|---|
 | Starts | `cron(30 6 ? * MON-FRI *)` Europe/Zurich |

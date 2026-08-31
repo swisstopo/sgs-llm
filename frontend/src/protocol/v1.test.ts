@@ -57,6 +57,18 @@ describe('parseServerEvent', () => {
     expect(event).toMatchObject({ type: 'error', code: 'internal' });
   });
 
+  it('preserves the expected model-unavailable state', () => {
+    const event = parseServerEvent(
+      JSON.stringify({
+        type: 'error',
+        message_id: 'm1',
+        code: 'model_unavailable',
+        message: 'Apertus is offline until the next service window.',
+      }),
+    );
+    expect(event).toMatchObject({ type: 'error', code: 'model_unavailable' });
+  });
+
   it('parses done events', () => {
     expect(parseServerEvent(JSON.stringify({ type: 'done', message_id: 'm1' }))).toEqual({
       type: 'done',

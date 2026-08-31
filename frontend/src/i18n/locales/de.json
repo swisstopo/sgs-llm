@@ -35,7 +35,10 @@
     "model": {
       "label": "Modell",
       "primary": "Claude Sonnet 4.6",
-      "secondary": "Ministral 3 14B"
+      "secondary": "Ministral 3 14B",
+      "apertus": "Apertus 1.5 8B",
+      "apertusSchedule": "Montag–Freitag · 06:40–19:00 · Europe/Zurich",
+      "apertusUnavailable": "Apertus ist derzeit offline. Das Modell ist Montag bis Freitag von 06:40 bis 19:00 Uhr verfügbar (Europe/Zurich). Wählen Sie bis dahin ein anderes Modell."
     },
     "newConversation": "Neue Unterhaltung",
     "cancel": "Abbrechen",

@@ -658,4 +658,5 @@ async def test_the_offline_message_names_the_schedule_in_the_users_language(sett
     )
 
     assert events[-1].message == i18n.apertus_offline("fr")
-    assert "06:30" in events[-1].message
+    assert "lundi au vendredi" in events[-1].message
+    assert "06:40" in events[-1].message

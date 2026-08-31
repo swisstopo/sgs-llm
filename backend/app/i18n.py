@@ -35,19 +35,21 @@ INTERNAL = {
 # so this is a normal state to be in, not an incident. The text says when it is back.
 APERTUS_OFFLINE = {
     "de": (
-        "Apertus ist derzeit offline. Das Modell läuft an Werktagen von 06:30 bis 19:00 Uhr. "
+        "Apertus ist derzeit offline. Das Modell ist Montag bis Freitag von 06:40 bis 19:00 Uhr "
+        "verfügbar. "
         "Bitte wählen Sie bis dahin ein anderes Modell."
     ),
     "fr": (
-        "Apertus est actuellement hors ligne. Le modèle fonctionne les jours ouvrables de "
-        "06:30 à 19:00. Veuillez choisir un autre modèle d'ici là."
+        "Apertus est actuellement hors ligne. Le modèle est disponible du lundi au vendredi de "
+        "06:40 à 19:00. Veuillez choisir un autre modèle d'ici là."
     ),
     "it": (
-        "Apertus è attualmente offline. Il modello è disponibile nei giorni lavorativi dalle "
-        "06:30 alle 19:00. Nel frattempo scegliere un altro modello."
+        "Apertus è attualmente offline. Il modello è disponibile dal lunedì al venerdì dalle "
+        "06:40 alle 19:00. Nel frattempo scegliere un altro modello."
     ),
     "en": (
-        "Apertus is currently offline. The model runs on weekdays from 06:30 to 19:00. "
+        "Apertus is currently offline. The model is available Monday through Friday from 06:40 "
+        "to 19:00. "
         "Please choose another model until then."
     ),
 }

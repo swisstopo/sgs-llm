@@ -35,7 +35,10 @@
     "model": {
       "label": "Model",
       "primary": "Claude Sonnet 4.6",
-      "secondary": "Ministral 3 14B"
+      "secondary": "Ministral 3 14B",
+      "apertus": "Apertus 1.5 8B",
+      "apertusSchedule": "Glindesdi–venderdi · 06:40–19:00 · Europe/Zurich",
+      "apertusUnavailable": "Apertus n’è actualmain betg disponibel. Il model è disponibel da glindesdi fin venderdi da las 06:40 fin las 19:00 (Europe/Zurich). Tscherna entant in auter model."
     },
     "newConversation": "Nova conversaziun",
     "cancel": "Interrumper",

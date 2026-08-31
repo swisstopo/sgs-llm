@@ -11,7 +11,7 @@
  */
 
 export type ProtocolLang = 'de' | 'fr' | 'it' | 'en' | 'rm';
-export type ModelPreference = 'primary' | 'secondary';
+export type ModelPreference = 'primary' | 'secondary' | 'apertus';
 
 export interface HistoryEntry {
   role: 'user' | 'assistant';
@@ -32,7 +32,7 @@ export interface UserMessageEvent {
   id: string;
   content: string;
   lang: ProtocolLang;
-  /** Agent model routing: Claude primary or Mistral secondary. */
+  /** Agent model routing: Claude primary, Mistral secondary, or self-hosted Apertus. */
   model: ModelPreference;
   history?: HistoryEntry[];
   map_context?: MapContext;
@@ -94,7 +94,7 @@ export interface FinalEvent {
   focus_bbox?: ProtocolBBox;
 }
 
-export type ErrorCode = 'internal' | 'timeout' | 'bad_request' | 'cancelled';
+export type ErrorCode = 'internal' | 'timeout' | 'bad_request' | 'cancelled' | 'model_unavailable';
 
 export interface ErrorEvent {
   type: 'error';
@@ -203,7 +203,10 @@ export function parseServerEvent(raw: string): ServerEvent | null {
     case 'error':
       if (typeof data.message === 'string') {
         const code: ErrorCode =
-          data.code === 'timeout' || data.code === 'bad_request' || data.code === 'cancelled'
+          data.code === 'timeout' ||
+          data.code === 'bad_request' ||
+          data.code === 'cancelled' ||
+          data.code === 'model_unavailable'
             ? data.code
             : 'internal';
         return { type: 'error', message_id: data.message_id, code, message: data.message };

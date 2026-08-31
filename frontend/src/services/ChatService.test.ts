@@ -61,6 +61,16 @@ describe('ChatService', () => {
     });
   });
 
+  it('sends an explicit Apertus selection without substituting another model', () => {
+    service.selectModel('apertus');
+    service.send('Use Apertus for this query');
+
+    expect(client.sent.at(-1)).toMatchObject({
+      type: 'user_message',
+      model: 'apertus',
+    });
+  });
+
   it('does not change the selected model during an active query', () => {
     service.selectModel('primary');
     service.send('Use Claude');
