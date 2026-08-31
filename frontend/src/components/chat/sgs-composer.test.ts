@@ -39,6 +39,7 @@ describe('sgs-composer', () => {
     expect(options[1]?.textContent).toContain('Ministral 3 14B');
     expect(options[2]?.textContent).toContain('Apertus 1.5 8B');
     expect(options[2]?.textContent).toContain('Monday–Friday · 06:40–19:00');
+    expect(options[2]?.querySelector('[data-logo="swiss-flag"]')).not.toBeNull();
     expect(options.every((option) => option.querySelector('.model-logo svg'))).toBe(true);
     expect(element.shadowRoot?.textContent).not.toContain('Automatic');
     element.remove();

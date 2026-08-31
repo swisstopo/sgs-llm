@@ -412,11 +412,21 @@ export class SgsComposer extends LitElement {
       body = svg`<path d="M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z" />`;
       color = '#FA520F';
     } else {
-      body = svg`<path d="M12 2 22 22h-4.4l-2-4.25H8.4L6.4 22H2L12 2Zm0 7.1-2.15 4.65h4.3L12 9.1Z" />`;
+      body = svg`
+        <rect width="24" height="24" rx="2" fill="#DC0018" />
+        <path d="M10 5h4v5h5v4h-5v5h-4v-5H5v-4h5V5Z" fill="#fff" />
+      `;
       color = '#DC0018';
     }
     return html`<span class="model-logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill=${color} xmlns="http://www.w3.org/2000/svg">${body}</svg>
+      <svg
+        viewBox="0 0 24 24"
+        fill=${color}
+        data-logo=${model === 'apertus' ? 'swiss-flag' : model}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        ${body}
+      </svg>
     </span>`;
   }
 
