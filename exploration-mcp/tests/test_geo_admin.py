@@ -300,9 +300,7 @@ def test_latest_timestamp_supports_every_geoadmin_timestamp_format(
         ("not-a-time", None),
     ],
 )
-def test_published_year_normalizes_timestamp_formats(
-    timestamp: str, expected: int | None
-) -> None:
+def test_published_year_normalizes_timestamp_formats(timestamp: str, expected: int | None) -> None:
     assert _published_year(timestamp) == expected
 
 
@@ -390,9 +388,7 @@ def test_identify_defaults_historicised_layer_to_latest_published_year() -> None
             {
                 "results": [
                     {
-                        "layerBodId": (
-                            "ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"
-                        ),
+                        "layerBodId": ("ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"),
                         "layerName": "Municipal boundaries",
                         "featureId": "5401-2026",
                         "properties": {
@@ -568,9 +564,11 @@ def test_identify_groups_layers_that_share_the_same_latest_timestamp() -> None:
         ("ch.test.static", None),
     ]
     assert result["features"] == []
-    assert [
-        dataset["selection"] for dataset in result["temporal_context"]["datasets"]
-    ] == ["latest_published", "latest_published", "not_applicable"]
+    assert [dataset["selection"] for dataset in result["temporal_context"]["datasets"]] == [
+        "latest_published",
+        "latest_published",
+        "not_applicable",
+    ]
 
 
 def test_identify_applies_limit_after_merging_temporal_groups() -> None:
@@ -658,6 +656,8 @@ def test_identify_groups_layers_by_effective_timestamp_and_preserves_dataset_ord
         ("ch.test.newer", "2026"),
     ]
     assert [feature["feature_ref"]["dataset_id"] for feature in result["features"]] == requested_ids
-    assert [
-        item["year_used"] for item in result["temporal_context"]["datasets"]
-    ] == [2024, None, 2026]
+    assert [item["year_used"] for item in result["temporal_context"]["datasets"]] == [
+        2024,
+        None,
+        2026,
+    ]

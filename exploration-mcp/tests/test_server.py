@@ -131,9 +131,7 @@ async def test_mcp_catalog_exposes_selected_tools_resources_and_prompt() -> None
     }
     identify_schema = next(tool for tool in tools.tools if tool.name == "identify_at_point")
     assert set(identify_schema.input_schema["required"]) == {"point"}
-    assert {"dataset_ids", "preset", "year"} <= set(
-        identify_schema.input_schema["properties"]
-    )
+    assert {"dataset_ids", "preset", "year"} <= set(identify_schema.input_schema["properties"])
     assert all(tool.annotations and tool.annotations.read_only_hint for tool in tools.tools)
     assert all(tool.title for tool in tools.tools)
     assert all(tool.output_schema and "$defs" in tool.output_schema for tool in tools.tools)

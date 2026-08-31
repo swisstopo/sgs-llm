@@ -455,11 +455,7 @@ class GeoAdminClient:
                 params["timeInstant"] = timestamp
             payload = await self._get(IDENTIFY_URL, params)
             for row in payload.get("results") or []:
-                if (
-                    not isinstance(row, dict)
-                    or row.get("featureId") == -99
-                    or row.get("id") == -99
-                ):
+                if not isinstance(row, dict) or row.get("featureId") == -99 or row.get("id") == -99:
                     continue
                 properties = row.get("properties") or row.get("attributes") or {}
                 if not isinstance(properties, dict):
