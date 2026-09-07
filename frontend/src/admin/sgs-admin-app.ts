@@ -71,6 +71,9 @@ const copy = {
     userMessage: 'Request from user',
     answer: 'Assistant answer',
     feedbackMessage: 'Feedback message',
+    dateRangeTooLong: 'Choose a date range of 31 days or fewer, including both dates.',
+    invalidDates:
+      'Choose valid dates: the end must be on or after the start and no later than today.',
     failed: 'The dashboard could not load. Check your access and try again.',
   },
   de: {
@@ -127,6 +130,10 @@ const copy = {
     userMessage: 'Anfrage des Nutzers',
     answer: 'Antwort des Assistenten',
     feedbackMessage: 'Feedback',
+    dateRangeTooLong:
+      'Wählen Sie einen Zeitraum von höchstens 31 Tagen, einschliesslich beider Daten.',
+    invalidDates:
+      'Wählen Sie gültige Daten: Das Enddatum muss am oder nach dem Startdatum liegen und darf nicht in der Zukunft liegen.',
     failed: 'Die Übersicht konnte nicht geladen werden. Zugriff prüfen und erneut versuchen.',
   },
   fr: {
@@ -183,6 +190,9 @@ const copy = {
     userMessage: "Demande de l'utilisateur",
     answer: "Réponse de l'assistant",
     feedbackMessage: 'Feedback',
+    dateRangeTooLong: 'Choisissez une période de 31 jours maximum, les deux dates incluses.',
+    invalidDates:
+      'Choisissez des dates valides : la fin doit être égale ou postérieure au début et ne pas dépasser aujourd’hui.',
     failed: "Impossible de charger la vue d'ensemble. Vérifiez votre accès.",
   },
   it: {
@@ -239,6 +249,9 @@ const copy = {
     userMessage: "Richiesta dell'utente",
     answer: "Risposta dell'assistente",
     feedbackMessage: 'Feedback',
+    dateRangeTooLong: 'Scegli un periodo di massimo 31 giorni, comprese entrambe le date.',
+    invalidDates:
+      'Scegli date valide: la fine deve essere uguale o successiva all’inizio e non oltre oggi.',
     failed: 'Impossibile caricare la panoramica. Verifica il tuo accesso.',
   },
   rm: {
@@ -295,6 +308,9 @@ const copy = {
     userMessage: 'Dumonda da l’utilisader',
     answer: 'Resposta da l’assistent',
     feedbackMessage: 'Resun',
+    dateRangeTooLong: 'Tschernai ina perioda da maximalmain 31 dis, inclus las duas datas.',
+    invalidDates:
+      'Tschernai datas validas: la fin sto esser a partir dal cumenzament e betg suenter oz.',
     failed: 'La survista na po betg vegnir chargiada. Controllai vos access.',
   },
 } as const;
@@ -1198,6 +1214,7 @@ export class SgsAdminApp extends LitElement {
   @state() private authenticated = false;
   @state() private loading = true;
   @state() private failed = false;
+  @state() private dateError: 'dateRangeTooLong' | 'invalidDates' | null = null;
   @state() private metrics?: AdminMetrics;
   @state() private kind: RecordKind = 'conversations';
   @state() private records: AdminRecord[] = [];
@@ -1311,6 +1328,9 @@ export class SgsAdminApp extends LitElement {
         </div>
         ${this.renderDateForm()}
       </div>
+      ${this.dateError
+        ? html`<div class="error-banner" role="alert">${this.text[this.dateError]}</div>`
+        : nothing}
       ${this.failed
         ? html`<div class="error-banner" role="alert">${this.text.failed}</div>`
         : nothing}
@@ -1352,14 +1372,15 @@ export class SgsAdminApp extends LitElement {
           type="date"
           name="from"
           .value=${this.from}
-          max=${this.to} /></label
+          max=${this.isoDaysAgo(0)}
+          required /></label
       ><label
         >${this.text.to}<input
           type="date"
           name="to"
           .value=${this.to}
-          min=${this.from}
-          max=${this.isoDaysAgo(0)} /></label
+          max=${this.isoDaysAgo(0)}
+          required /></label
       ><button class="button primary" type="submit">${this.text.refresh}</button>
     </form>`;
   }
@@ -1847,8 +1868,22 @@ export class SgsAdminApp extends LitElement {
   private async applyDates(event: SubmitEvent) {
     event.preventDefault();
     const form = new FormData(event.currentTarget as HTMLFormElement);
-    this.from = String(form.get('from'));
-    this.to = String(form.get('to'));
+    const from = String(form.get('from'));
+    const to = String(form.get('to'));
+    const elapsedDays = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+    this.failed = false;
+    this.dateError = null;
+    if (!Number.isFinite(elapsedDays) || elapsedDays < 0 || to > this.isoDaysAgo(0)) {
+      this.dateError = 'invalidDates';
+      return;
+    }
+    // The API limit counts both endpoints: August 1–31 is exactly 31 days.
+    if (elapsedDays >= 31) {
+      this.dateError = 'dateRangeTooLong';
+      return;
+    }
+    this.from = from;
+    this.to = to;
     this.selected = undefined;
     this.expandedConversationId = '';
     await this.loadAll();

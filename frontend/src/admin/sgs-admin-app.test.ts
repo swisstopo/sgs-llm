@@ -240,3 +240,58 @@ describe('admin profile records', () => {
     expect(unanswered?.querySelector<HTMLElement>('.histogram-bar')?.style.width).toBe('100%');
   });
 });
+
+describe('admin date range validation', () => {
+  it('explains the limit without a request, then loads a corrected 31-day range', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const element = document.createElement('sgs-admin-app') as unknown as TestAdminElement;
+    document.body.append(element);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    element.authenticated = true;
+    element.loading = false;
+    const originalMetrics = {
+      daily: [],
+      totals: { messages: 225 },
+      breakdowns: {},
+    } as unknown as AdminMetrics;
+    element.metrics = originalMetrics;
+    await element.updateComplete;
+    fetchMock.mockClear();
+
+    const form = element.shadowRoot!.querySelector<HTMLFormElement>('.date-form')!;
+    const from = form.querySelector<HTMLInputElement>('[name="from"]')!;
+    const to = form.querySelector<HTMLInputElement>('[name="to"]')!;
+    from.value = '2026-08-01';
+    to.value = '2026-09-01';
+    expect(form.checkValidity()).toBe(true);
+    form.requestSubmit();
+    await element.updateComplete;
+
+    expect(element.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain(
+      'Choose a date range of 31 days or fewer, including both dates.',
+    );
+    expect(element.shadowRoot?.textContent).not.toContain('Check your access');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(element.metrics).toBe(originalMetrics);
+
+    fetchMock.mockImplementation(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.includes('/metrics') ? originalMetrics : { items: [], next_cursor: null },
+          ),
+        ),
+    );
+    to.value = '2026-08-31';
+    expect(form.checkValidity()).toBe(true);
+    form.requestSubmit();
+    await vi.waitFor(() => expect(element.loading).toBe(false));
+    await element.updateComplete;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [url] of fetchMock.mock.calls) {
+      expect(url).toContain('from=2026-08-01&to=2026-08-31');
+    }
+    expect(element.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
+  });
+});
