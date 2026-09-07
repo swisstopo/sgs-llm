@@ -39,8 +39,8 @@ Parameters:
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: >-
-      At least two subnets in different AZs, for both the ALB and the Fargate
-      tasks. In the POC account these are the default VPC's public subnets (the
+      Three subnets in different AZs, for the ALB, Fargate tasks and one EFS
+      mount target per AZ. In the POC account these are the default VPC's public subnets (the
       same place the EC2 mock-agent runs); the tasks are reachable only through
       the ALB security group regardless.
   ContainerPort:
@@ -196,6 +196,88 @@ Resources:
       ToPort: !Ref ContainerPort
       DestinationSecurityGroupId: !Ref TaskSecurityGroup
       Description: Forward to the agent tasks
+
+  AdminFileSystemSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${BackendName} encrypted admin-data EFS'
+      VpcId: !Ref VpcId
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-admin-efs-sg' }
+
+  AdminFileSystemIngressFromTasks:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AdminFileSystemSecurityGroup
+      IpProtocol: tcp
+      FromPort: 2049
+      ToPort: 2049
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+      Description: NFS from the backend tasks only
+
+  # The pilot keeps administrator password hashes and revocable sessions in SQLite.
+  # Fargate task storage is ephemeral, so this file system is the durable boundary.
+  AdminFileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      BackupPolicy: { Status: ENABLED }
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 'elasticfilesystem:*'
+            Resource: '*'
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+      FileSystemTags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-admin-data' }
+
+  AdminFileSystemAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref AdminFileSystem
+      PosixUser:
+        Uid: '10001'
+        Gid: '10001'
+      RootDirectory:
+        Path: /admin
+        CreationInfo:
+          OwnerUid: '10001'
+          OwnerGid: '10001'
+          Permissions: '0700'
+      AccessPointTags:
+        - { Key: project, Value: !Ref ProjectTag }
+        - { Key: Name, Value: !Sub '${BackendName}-admin-data' }
+
+  AdminFileSystemMountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref AdminFileSystem
+      SubnetId: !Select [0, !Ref SubnetIds]
+      SecurityGroups: [!Ref AdminFileSystemSecurityGroup]
+
+  AdminFileSystemMountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref AdminFileSystem
+      SubnetId: !Select [1, !Ref SubnetIds]
+      SecurityGroups: [!Ref AdminFileSystemSecurityGroup]
+
+  AdminFileSystemMountTargetC:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref AdminFileSystem
+      SubnetId: !Select [2, !Ref SubnetIds]
+      SecurityGroups: [!Ref AdminFileSystemSecurityGroup]
 
   # ---------------------------------------------------------- load balancing
   LoadBalancer:
@@ -497,6 +579,18 @@ Resources:
               - Effect: Allow
                 Action: [s3:ListBucket, s3:GetBucketLocation]
                 Resource: !GetAtt DataLayerBucket.Arn
+        - PolicyName: admin-file-system
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !GetAtt AdminFileSystem.Arn
+                Condition:
+                  StringEquals:
+                    elasticfilesystem:AccessPointArn: !GetAtt AdminFileSystemAccessPoint.Arn
         - PolicyName: runtime-support
           PolicyDocument:
             Version: '2012-10-17'
@@ -734,6 +828,12 @@ Outputs:
   BackendSecretArn:
     Value: !Ref BackendSecret
     Export: { Name: !Sub '${AWS::StackName}-BackendSecretArn' }
+  AdminFileSystemId:
+    Value: !Ref AdminFileSystem
+    Export: { Name: !Sub '${AWS::StackName}-AdminFileSystemId' }
+  AdminFileSystemAccessPointId:
+    Value: !Ref AdminFileSystemAccessPoint
+    Export: { Name: !Sub '${AWS::StackName}-AdminFileSystemAccessPointId' }
   # Retention lives here, next to the tables that enforce it via TTL; the service
   # stack imports these into the container environment so the backend stamps
   # `expires_at` consistently. One source of truth for both halves.

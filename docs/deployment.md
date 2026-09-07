@@ -712,11 +712,41 @@ For the frontend:
    }
    ```
 
-This is intentionally a single-instance pilot design. An ECS deployment must mount a
-durable volume at `ADMIN_USER_DB_PATH`; an ephemeral task filesystem would lose users
-and sessions when the task is replaced. Admin reads emit structured audit lines to the
-service logs; retained conversations expand into complete inline timelines and CSV export
-is an explicit administrator action. Onboarding profiles remain anonymous.
+This is intentionally a single-instance pilot design. The foundation stack owns a retained,
+encrypted EFS filesystem with automatic backups, three mount targets, and an access point
+restricted to UID/GID 10001. The service mounts it at `/var/lib/sgs-llm` with TLS and IAM
+authorization. Only administrator password hashes and sessions live in SQLite; conversations
+and feedback remain in DynamoDB. Keep SQLite's default `delete` journal mode; do not enable
+WAL on EFS.
+
+`DesiredCount` is limited to 0 or 1. Deployments stop the old task before starting its
+replacement (`MinimumHealthyPercent=0`, `MaximumPercent=100`), and Availability Zone
+rebalancing is disabled because it requires overlapping tasks. This avoids concurrent backend
+instances accessing SQLite, at the cost of a brief outage during each deployment. Move the
+identity store to DynamoDB or PostgreSQL before enabling multiple backend instances.
+
+The filesystem and its access point are exported as `AdminFileSystemId` and
+`AdminFileSystemAccessPointId`. Keep both the foundation resources and service mount in the
+versioned templates: removing only the mount silently starts a new, empty container-local
+database. Routine image deployments preserve volumes and mount points from the running task
+definition. For a service-stack update, pass the **currently running image tag** explicitly
+(`ImageTag=<running-tag>`); the stack's saved image parameter can lag behind CI deployments.
+
+For a migration from container-local storage, take a consistent SQLite backup using
+`sqlite3.Connection.backup` before stopping the old task. Inspect and back up any existing
+EFS database before merging accounts and unexpired sessions; do not blindly overwrite it.
+Use a temporary task with the same EFS access point to prepare the database before switching
+the service. Stop that task after migration. Verify authentication, replace the serving task,
+then verify both the previous session and a fresh login on the replacement.
+
+EFS Standard in Frankfurt was $0.36/GB-month on 2026-09-07 ([AWS pricing](https://aws.amazon.com/efs/pricing/)).
+Bursting throughput has no provisioned-throughput charge. This admin database is only tens
+of KiB, so storage is far below one cent per month; backup storage is billed separately.
+There is no additional database server. The existing filesystem is reused.
+
+Admin reads emit structured audit lines to the service logs; retained conversations expand
+into complete inline timelines and CSV export is an explicit administrator action.
+Onboarding profiles remain anonymous.
 
 ### Environment contract
 
