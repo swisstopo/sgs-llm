@@ -712,37 +712,43 @@ For the frontend:
    }
    ```
 
-This is intentionally a single-instance pilot design. The foundation stack owns a retained,
-encrypted EFS filesystem with automatic backups, three mount targets, and an access point
-restricted to UID/GID 10001. The service mounts it at `/var/lib/sgs-llm` with TLS and IAM
-authorization. Only administrator password hashes and sessions live in SQLite; conversations
-and feedback remain in DynamoDB. Keep SQLite's default `delete` journal mode; do not enable
-WAL on EFS.
+Production admin accounts and sessions live in the foundation stack's on-demand DynamoDB
+`AdminUserTable`. `ADMIN_USER_TABLE` selects this store; SQLite remains the default for
+local development. Passwords are still salted scrypt hashes, and sessions contain only a
+hash of the browser token. Strongly consistent reads make logins and logouts visible to
+all serving tasks immediately. Session expiry is checked by the application; DynamoDB TTL
+only cleans up expired records later. The table has point-in-time recovery and is retained
+if the stack is deleted.
 
-`DesiredCount` is limited to 0 or 1. Deployments stop the old task before starting its
-replacement (`MinimumHealthyPercent=0`, `MaximumPercent=100`), and Availability Zone
-rebalancing is disabled because it requires overlapping tasks. This avoids concurrent backend
-instances accessing SQLite, at the cost of a brief outage during each deployment. Move the
-identity store to DynamoDB or PostgreSQL before enabling multiple backend instances.
+The service runs one task normally. During a rolling deployment, the old task keeps serving
+until its replacement is healthy (`MinimumHealthyPercent=100`, `MaximumPercent=200`). Both
+use the same DynamoDB table, so deployments do not require a stop-before-start outage or
+share a SQLite file. The extra task is billed only while the replacement overlaps.
 
-The filesystem and its access point are exported as `AdminFileSystemId` and
-`AdminFileSystemAccessPointId`. Keep both the foundation resources and service mount in the
-versioned templates: removing only the mount silently starts a new, empty container-local
-database. Routine image deployments preserve volumes and mount points from the running task
-definition. For a service-stack update, pass the **currently running image tag** explicitly
+To create a production account from a trusted shell with the backend dependencies installed:
+
+```bash
+AWS_REGION=eu-central-1 python manage_admin.py admin@example.ch --table sgs-llm-backend-admin-users
+```
+
+For a one-time migration, first take a consistent SQLite backup using
+`sqlite3.Connection.backup`, keeping the backup private. Before switching production, run:
+
+```bash
+python migrate_admin.py --db /private/path/admin-backup.sqlite3 --table sgs-llm-backend-admin-users
+```
+
+This copies the existing password hashes and unexpired sessions and refuses to overwrite
+a different destination record. Avoid creating accounts during the migration. Do not rerun
+it after cutover, since the old snapshot no longer reflects new sessions or logouts. Keep
+the legacy EFS filesystem and its backups for recovery; the new service does not mount it.
+After cutover, rollback must also keep `ADMIN_USER_TABLE` and a DynamoDB-capable image.
+
+For a service-stack update, pass the **currently running image tag** explicitly
 (`ImageTag=<running-tag>`); the stack's saved image parameter can lag behind CI deployments.
-
-For a migration from container-local storage, take a consistent SQLite backup using
-`sqlite3.Connection.backup` before stopping the old task. Inspect and back up any existing
-EFS database before merging accounts and unexpired sessions; do not blindly overwrite it.
-Use a temporary task with the same EFS access point to prepare the database before switching
-the service. Stop that task after migration. Verify authentication, replace the serving task,
-then verify both the previous session and a fresh login on the replacement.
-
-EFS Standard in Frankfurt was $0.36/GB-month on 2026-09-07 ([AWS pricing](https://aws.amazon.com/efs/pricing/)).
-Bursting throughput has no provisioned-throughput charge. This admin database is only tens
-of KiB, so storage is far below one cent per month; backup storage is billed separately.
-There is no additional database server. The existing filesystem is reused.
+The DynamoDB store requires no always-running database server: storage, requests and backup
+storage are billed by usage ([AWS pricing](https://aws.amazon.com/dynamodb/pricing/on-demand/)).
+At this pilot's admin usage, these costs should be small.
 
 Admin reads emit structured audit lines to the service logs; retained conversations expand
 into complete inline timelines and CSV export is an explicit administrator action.
@@ -771,6 +777,7 @@ ECS from Secrets Manager at task start.
 | `APERTUS_REGION` | environment (`eu-central-1`) | Where the endpoint runs. Reported in logs and eval rows; residency is a stated concern for every model in this pilot |
 | `FEEDBACK_TABLE` / `CONVERSATION_TABLE` | foundation stack | DynamoDB table names |
 | `FEEDBACK_TTL_DAYS` / `CONVERSATION_TTL_DAYS` | parameters (0) | Days ahead to stamp `expires_at`; 0 = write no stamp (keep forever) |
+| `ADMIN_USER_TABLE` | production: foundation `AdminUserTable`; local: empty | Shared DynamoDB admin accounts and sessions; when set, SQLite is not used |
 | `ADMIN_USER_DB_PATH` | local: `./admin-users.sqlite3`; image: `/var/lib/sgs-llm/admin-users.sqlite3` | SQLite file containing administrator hashes and sessions; the image directory is owned by its non-root user |
 | `ADMIN_SESSION_HOURS` | environment (8) | Lifetime of an authenticated administrator session |
 | `ADMIN_COOKIE_SECURE` | environment (`false`) | Set `true` when the admin API is served over HTTPS |

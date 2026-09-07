@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.admin import router
-from app.admin_users import AdminUserStore
 from app.config import Settings
 
 
@@ -183,7 +182,7 @@ class MixedSubmissionStore(AdminStore):
 
 
 @pytest.fixture
-def client(tmp_path: Any) -> TestClient:
+def client(admin_identity_store: Any) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.state.settings = Settings(
@@ -191,7 +190,7 @@ def client(tmp_path: Any) -> TestClient:
         conversation_table="turns",
         feedback_table="feedback",
     )
-    app.state.admin_users = AdminUserStore(str(tmp_path / "admins.sqlite3"))
+    app.state.admin_users = admin_identity_store
     app.state.admin_users.initialize()
     app.state.admin_users.create_user("admin@example.ch", "CorrectHorse!1")
     app.state.store = AdminStore()

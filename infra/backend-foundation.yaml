@@ -216,8 +216,8 @@ Resources:
       SourceSecurityGroupId: !Ref TaskSecurityGroup
       Description: NFS from the backend tasks only
 
-  # The pilot keeps administrator password hashes and revocable sessions in SQLite.
-  # Fargate task storage is ephemeral, so this file system is the durable boundary.
+  # Retained legacy SQLite storage for migration/recovery. Production identities
+  # now use AdminUserTable so rolling deployments do not share a database file.
   AdminFileSystem:
     Type: AWS::EFS::FileSystem
     DeletionPolicy: Retain
@@ -363,6 +363,29 @@ Resources:
   # ---------------------------------------------------------------- persistence
   # Retained on stack deletion: this is user-submitted content, not disposable
   # infrastructure. Teardown deletes it explicitly (docs/deployment.md).
+  AdminUserTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${BackendName}-admin-users'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - { Key: project, Value: !Ref ProjectTag }
+
   FeedbackTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -579,6 +602,17 @@ Resources:
               - Effect: Allow
                 Action: [s3:ListBucket, s3:GetBucketLocation]
                 Resource: !GetAtt DataLayerBucket.Arn
+        - PolicyName: admin-identities
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt AdminUserTable.Arn
         - PolicyName: admin-file-system
           PolicyDocument:
             Version: '2012-10-17'
@@ -828,6 +862,9 @@ Outputs:
   BackendSecretArn:
     Value: !Ref BackendSecret
     Export: { Name: !Sub '${AWS::StackName}-BackendSecretArn' }
+  AdminUserTableName:
+    Value: !Ref AdminUserTable
+    Export: { Name: !Sub '${AWS::StackName}-AdminUserTableName' }
   AdminFileSystemId:
     Value: !Ref AdminFileSystem
     Export: { Name: !Sub '${AWS::StackName}-AdminFileSystemId' }

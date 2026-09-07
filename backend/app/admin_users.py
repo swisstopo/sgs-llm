@@ -15,6 +15,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 SCRYPT_N = 2**14
 SCRYPT_R = 8
@@ -65,7 +66,7 @@ class AdminUserStore:
     def create_user(self, email: str, password: str) -> AdminUser:
         normalized = email.strip().lower()
         salt = secrets.token_bytes(SALT_BYTES)
-        password_hash = self._derive(password, salt)
+        password_hash = derive_password(password, salt)
         created_at = datetime.now(UTC).isoformat()
         try:
             with self._connect() as connection:
@@ -105,9 +106,9 @@ class AdminUserStore:
             ).fetchone()
         if row is None or not row["enabled"]:
             # Do equivalent expensive work for unknown users to reduce account probing.
-            self._derive(password, bytes(SALT_BYTES))
+            derive_password(password, bytes(SALT_BYTES))
             return None
-        actual = self._derive(password, row["password_salt"])
+        actual = derive_password(password, row["password_salt"])
         if not hmac.compare_digest(actual, row["password_hash"]):
             return None
         return AdminUser(email=row["email"], enabled=True, created_at=row["created_at"])
@@ -163,13 +164,20 @@ class AdminUserStore:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
-    @staticmethod
-    def _derive(password: str, salt: bytes) -> bytes:
-        return hashlib.scrypt(
-            password.encode(),
-            salt=salt,
-            n=SCRYPT_N,
-            r=SCRYPT_R,
-            p=SCRYPT_P,
-            dklen=HASH_BYTES,
-        )
+
+def derive_password(password: str, salt: bytes) -> bytes:
+    return hashlib.scrypt(
+        password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=HASH_BYTES
+    )
+
+
+class AdminIdentityStore(Protocol):
+    """Identity operations shared by local SQLite and production DynamoDB."""
+
+    def initialize(self) -> None: ...
+    def create_user(self, email: str, password: str) -> AdminUser: ...
+    def list_users(self) -> list[AdminUser]: ...
+    def authenticate(self, email: str, password: str) -> AdminUser | None: ...
+    def create_session(self, email: str, *, hours: int) -> str: ...
+    def session_user(self, token: str) -> AdminUser | None: ...
+    def delete_session(self, token: str) -> None: ...

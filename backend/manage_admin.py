@@ -7,13 +7,16 @@ import getpass
 import sys
 
 from app.admin import EMAIL_PATTERN, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
-from app.admin_users import AdminUserStore, UserAlreadyExistsError
+from app.admin_dynamo import DynamoAdminUserStore
+from app.admin_users import AdminIdentityStore, AdminUserStore, UserAlreadyExistsError
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("email", help="Administrator email address")
-    parser.add_argument("--db", default="./admin-users.sqlite3", help="SQLite database path")
+    storage = parser.add_mutually_exclusive_group()
+    storage.add_argument("--db", default="./admin-users.sqlite3", help="Local SQLite database path")
+    storage.add_argument("--table", help="Production DynamoDB admin table")
     args = parser.parse_args()
     email = args.email.strip().lower()
     if not EMAIL_PATTERN.fullmatch(email):
@@ -30,7 +33,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    users = AdminUserStore(args.db)
+    users: AdminIdentityStore = (
+        DynamoAdminUserStore(args.table) if args.table else AdminUserStore(args.db)
+    )
     users.initialize()
     try:
         users.create_user(email, password)

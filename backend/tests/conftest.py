@@ -193,3 +193,42 @@ class FakeStore:
 
     async def record_turn(self, **kwargs: Any) -> None:
         self.turns.append(kwargs)
+
+
+@pytest.fixture
+def dynamo_admin_table(monkeypatch: pytest.MonkeyPatch) -> Any:
+    import boto3
+    from moto import mock_aws
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_REGION", "eu-central-1")
+    with mock_aws():
+        client = boto3.client("dynamodb", region_name="eu-central-1")
+        client.create_table(
+            TableName="test-admin-users",
+            BillingMode="PAY_PER_REQUEST",
+            AttributeDefinitions=[
+                {"AttributeName": "pk", "AttributeType": "S"},
+                {"AttributeName": "sk", "AttributeType": "S"},
+            ],
+            KeySchema=[
+                {"AttributeName": "pk", "KeyType": "HASH"},
+                {"AttributeName": "sk", "KeyType": "RANGE"},
+            ],
+        )
+        yield client
+
+
+@pytest.fixture(params=["sqlite", "dynamodb"])
+def admin_identity_store(request: pytest.FixtureRequest, tmp_path: Path) -> Any:
+    from app.admin_dynamo import DynamoAdminUserStore
+    from app.admin_users import AdminUserStore
+
+    if request.param == "dynamodb":
+        request.getfixturevalue("dynamo_admin_table")
+        store = DynamoAdminUserStore("test-admin-users")
+    else:
+        store = AdminUserStore(str(tmp_path / "admins.sqlite3"))
+    store.initialize()
+    return store

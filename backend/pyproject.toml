@@ -36,7 +36,11 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+    "error::DeprecationWarning",
+    # Starlette's test client still imports this compatibility alias in AnyIO 4.15.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning:starlette.testclient",
+]
 # "." is backend/ (the app package); ".." is the repo root, which is where mcp_dummy
 # lives - the same two roots the Dockerfile puts on the path.
 pythonpath = [".", "..", "../exploration-mcp/src"]

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     # A deliberately small application-user store for the admin dashboard. Passwords
     # are scrypt hashes and browser sessions are stored as revocable token hashes.
+    admin_user_table: str = ""
     admin_user_db_path: str = "./admin-users.sqlite3"
     admin_session_hours: int = 8
     admin_cookie_secure: bool = False

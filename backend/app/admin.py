@@ -17,7 +17,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
-from .admin_users import AdminUserStore, UserAlreadyExistsError
+from .admin_users import AdminIdentityStore, UserAlreadyExistsError
 from .config import Settings
 from .store.dynamo import Store
 
@@ -50,8 +50,8 @@ def _error(request: Request, status: int, detail: str) -> JSONResponse:
     return JSONResponse({"detail": detail}, status_code=status, headers=_cors(request))
 
 
-def _users(request: Request) -> AdminUserStore:
-    return cast(AdminUserStore, request.app.state.admin_users)
+def _users(request: Request) -> AdminIdentityStore:
+    return cast(AdminIdentityStore, request.app.state.admin_users)
 
 
 async def _principal(request: Request) -> str | None:

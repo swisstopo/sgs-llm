@@ -261,16 +261,6 @@ Resources:
         Fn::Sub: '${FoundationStackName}-TaskExecutionRoleArn'
       TaskRoleArn: !ImportValue
         Fn::Sub: '${FoundationStackName}-TaskRoleArn'
-      Volumes:
-        - Name: admin-data
-          EFSVolumeConfiguration:
-            FilesystemId: !ImportValue
-              Fn::Sub: '${FoundationStackName}-AdminFileSystemId'
-            TransitEncryption: ENABLED
-            AuthorizationConfig:
-              AccessPointId: !ImportValue
-                Fn::Sub: '${FoundationStackName}-AdminFileSystemAccessPointId'
-              IAM: ENABLED
       ContainerDefinitions:
         - Name: !Ref BackendName
           Image: !Sub
@@ -278,10 +268,6 @@ Resources:
             - Repo: !ImportValue
                 Fn::Sub: '${FoundationStackName}-EcrRepositoryUri'
           Essential: true
-          MountPoints:
-            - SourceVolume: admin-data
-              ContainerPath: /var/lib/sgs-llm
-              ReadOnly: false
           PortMappings:
             - ContainerPort: !Ref ContainerPort
               Protocol: tcp
@@ -320,10 +306,10 @@ Resources:
             # retention at whatever it was on day one.
             - { Name: FEEDBACK_TTL_DAYS, Value: !Ref FeedbackTtlDays }
             - { Name: CONVERSATION_TTL_DAYS, Value: !Ref ConversationTtlDays }
-            # Password hashes and sessions live on the foundation's retained EFS
-            # volume, using its access point's UID/GID 10001 and TLS + IAM auth.
-            # Keep secure cookies enabled for the public HTTPS origin.
-            - { Name: ADMIN_USER_DB_PATH, Value: /var/lib/sgs-llm/admin-users.sqlite3 }
+            # Shared identities let the old and new task overlap during deployments.
+            - Name: ADMIN_USER_TABLE
+              Value: !ImportValue
+                Fn::Sub: '${FoundationStackName}-AdminUserTableName'
             - { Name: ADMIN_SESSION_HOURS, Value: !Ref AdminSessionHours }
             - { Name: ADMIN_COOKIE_SECURE, Value: 'true' }
             - Name: DATA_LAYER_BUCKET
@@ -376,16 +362,14 @@ Resources:
       LaunchType: FARGATE
       PlatformVersion: LATEST
       EnableExecuteCommand: true
-      # Rebalancing requires overlapping tasks, incompatible with singleton SQLite.
-      AvailabilityZoneRebalancing: DISABLED
+      AvailabilityZoneRebalancing: ENABLED
       PropagateTags: SERVICE
       # Give a new task time to boot before the ALB verdict counts against it.
       HealthCheckGracePeriodSeconds: 60
       DeploymentConfiguration:
-        # SQLite has one serving task even during deployments. Replacement causes
-        # a brief availability gap; do not enable WAL on this network filesystem.
-        MinimumHealthyPercent: 0
-        MaximumPercent: 100
+        # One task normally; keep it serving until its replacement is healthy.
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
         # A task that never goes healthy rolls back to the previous definition
         # instead of leaving the service down — the safety net for deploys that
         # happen while nobody is watching.

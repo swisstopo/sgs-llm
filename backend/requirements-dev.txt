@@ -22,3 +22,6 @@ jsonschema==4.26.0
 # Eval question set. Stubs because mypy checks evals/ too.
 PyYAML==6.0.3
 types-PyYAML==6.0.12.20250915
+
+# Exercise shared administrator identities against an AWS-compatible emulator.
+moto[dynamodb]==5.2.3

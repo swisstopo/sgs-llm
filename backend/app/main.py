@@ -18,6 +18,7 @@ from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 
 from .admin import router as admin_router
+from .admin_dynamo import DynamoAdminUserStore
 from .admin_users import AdminUserStore
 from .agent.router import ModelRouter
 from .config import Settings, get_settings
@@ -51,7 +52,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.models = ModelRouter(settings)
     app.state.limiter = RateLimiter(settings.rate_limit_messages_per_minute)
     app.state.connections = ConnectionRegistry(limit=settings.max_connections_per_ip)
-    app.state.admin_users = AdminUserStore(settings.admin_user_db_path)
+    app.state.admin_users = (
+        DynamoAdminUserStore(settings.admin_user_table)
+        if settings.admin_user_table
+        else AdminUserStore(settings.admin_user_db_path)
+    )
     app.state.admin_users.initialize()
 
     # The bundled stand-in is never wired up here; the tests and eval harness construct
