@@ -24,6 +24,25 @@ _NAME_KEYS = ("name", "label", "title", "value")
 _KIND_KEYS = ("kind", "type", "level")
 
 
+def _declared_types(declared: dict[str, Any]) -> set[str]:
+    """The types a property may take, with an optional's null branch removed.
+
+    Pydantic renders `str | None` as {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    so reading `type` directly finds nothing for any optional parameter - which is every
+    parameter the weaker models get the shape of wrong.
+    """
+    declared_type = declared.get("type")
+    if isinstance(declared_type, str):
+        return {declared_type} - {"null"}
+    if isinstance(declared_type, list):
+        return {t for t in declared_type if isinstance(t, str)} - {"null"}
+    found: set[str] = set()
+    for branch in declared.get("anyOf") or declared.get("oneOf") or []:
+        if isinstance(branch, dict):
+            found |= _declared_types(branch)
+    return found - {"null"}
+
+
 def normalise_arguments(arguments: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
     """`arguments` repaired where `schema` says unambiguously what was meant."""
     properties = schema.get("properties")
@@ -38,13 +57,13 @@ def normalise_arguments(arguments: dict[str, Any], schema: dict[str, Any]) -> di
             result[key] = value
             continue
 
-        wanted = declared.get("type")
+        wanted = _declared_types(declared)
 
         if value is None and key not in required:
             logger.info("dropping null optional argument %r", key)
             continue
 
-        if wanted == "string" and isinstance(value, dict):
+        if "string" in wanted and isinstance(value, dict):
             name = next((value[k] for k in _NAME_KEYS if isinstance(value.get(k), str)), None)
             if name is not None:
                 result[key] = name
@@ -58,11 +77,11 @@ def normalise_arguments(arguments: dict[str, Any], schema: dict[str, Any]) -> di
                 logger.info("flattened object argument %r", key)
                 continue
 
-        if wanted == "string" and isinstance(value, list) and len(value) == 1:
+        if "string" in wanted and isinstance(value, list) and len(value) == 1:
             result[key] = value[0]
             continue
 
-        if wanted == "array" and not isinstance(value, list):
+        if "array" in wanted and not isinstance(value, list):
             result[key] = [value]
             continue
 
