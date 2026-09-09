@@ -17,6 +17,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
+from .arguments import normalise_arguments
 from .schema import to_tool_spec
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,10 @@ class ToolOutcome:
     # Parsed JSON, when the tool returned any - used to build LayerSpecs.
     data: Any | None
     is_error: bool
+    # A tool that declined and said what to do instead, rather than a transport failure.
+    # The model gets the whole message either way; the user does not need a failed step
+    # for a turn that recovers from one.
+    recoverable: bool = False
 
 
 class ToolSession:
@@ -105,9 +110,17 @@ class ToolSession:
     def tool_names(self) -> list[str]:
         return [spec["toolSpec"]["name"] for spec in self._tool_specs]
 
+    def _schema_for(self, name: str) -> dict[str, Any]:
+        for spec in self._tool_specs:
+            tool = spec.get("toolSpec") or {}
+            if tool.get("name") == name:
+                return (tool.get("inputSchema") or {}).get("json") or {}
+        return {}
+
     async def call(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
         if self._session is None:
             return ToolOutcome(text=f"Tool {name} is not available.", data=None, is_error=True)
+        arguments = normalise_arguments(arguments, self._schema_for(name))
         try:
             result = await self._session.call_tool(name, arguments)
         except (Exception, BaseExceptionGroup) as exc:
@@ -133,12 +146,14 @@ class ToolSession:
                 data = None
 
         semantic_error = _semantic_error(data)
+        is_error = bool(getattr(result, "is_error", False)) or semantic_error is not None
+        text = (semantic_error or payload)[:MAX_TOOL_RESULT_CHARS] or "(no output)"
 
-        return ToolOutcome(
-            text=(semantic_error or payload)[:MAX_TOOL_RESULT_CHARS] or "(no output)",
-            data=data,
-            is_error=bool(getattr(result, "is_error", False)) or semantic_error is not None,
-        )
+        if is_error:
+            # Logged because the user is no longer shown a failed step for this.
+            logger.warning("tool %s declined: %s", name, text[:200])
+
+        return ToolOutcome(text=text, data=data, is_error=is_error, recoverable=is_error)
 
 
 NO_TOOLS = ToolSession(None, [])

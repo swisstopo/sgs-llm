@@ -358,13 +358,14 @@ async def _log_turn(
     elapsed_ms: int,
 ) -> None:
     logger.info(
-        "turn %s lang=%s model=%s tools=%s layers=%d %dms%s",
+        "turn %s lang=%s model=%s tools=%s layers=%d %dms%s%s",
         message.id,
         message.language,
         stats.model_id or "-",
         ",".join(stats.tool_calls) or "-",
         stats.layer_count,
         elapsed_ms,
+        f" retried={','.join(stats.failed_tool_calls)}" if stats.failed_tool_calls else "",
         f" error={stats.error_code}" if stats.error_code else "",
     )
     await websocket.app.state.store.record_turn(

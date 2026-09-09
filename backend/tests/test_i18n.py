@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.i18n import TOOL_RUNNING, tool_running
+from app.i18n import TOOL_FAILED, TOOL_RETRYING, TOOL_RUNNING, tool_retrying, tool_running
 
 # Romansh is absent from these tables by design and falls back to German.
 LABELLED = set(TOOL_RUNNING["search_layers"])
@@ -34,3 +34,11 @@ def test_the_geosearch_tools_are_all_labelled() -> None:
 
 def test_an_unknown_tool_still_names_itself() -> None:
     assert tool_running("summarise_wetlands", "de") == "Führe Werkzeug aus: summarise_wetlands"
+
+
+def test_a_recovered_step_is_labelled_as_an_adjustment_in_every_language() -> None:
+    """swisstopo saw "Schritt fehlgeschlagen" on turns that answered correctly."""
+    assert set(TOOL_RETRYING) == set(TOOL_FAILED)
+    assert tool_retrying("de") == "Passe die Abfrage an …"
+    assert tool_retrying("fr") == "Ajustement de la requête …"
+    assert tool_retrying("en") == "Adjusting the query …"

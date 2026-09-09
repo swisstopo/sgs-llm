@@ -13,7 +13,11 @@ from typing import Any
 # is less tolerant of unexpected schema keys than Claude.
 _DROPPED_KEYS = frozenset({"title", "$schema", "definitions", "additionalProperties"})
 
-MAX_DESCRIPTION_CHARS = 900
+# A guard against a pathological schema, not a context budget. It was 900, which cut
+# geosearch's 1242-char filter_features contract off before the sentence saying its
+# result_id goes to display_layer - so the model was told how to fetch features and not
+# how to show them.
+MAX_DESCRIPTION_CHARS = 4000
 
 
 def _clean(node: Any) -> Any:
@@ -37,12 +41,20 @@ def normalise_input_schema(schema: Any) -> dict[str, Any]:
     return cleaned
 
 
+def _truncate(text: str) -> str:
+    if len(text) <= MAX_DESCRIPTION_CHARS:
+        return text
+    cut = text[: MAX_DESCRIPTION_CHARS - 1]
+    head, separator, _ = cut.rpartition(" ")
+    return (head if separator else cut) + "…"
+
+
 def to_tool_spec(name: str, description: str | None, input_schema: Any) -> dict[str, Any]:
     """One entry of Bedrock's `toolConfig.tools`."""
     return {
         "toolSpec": {
             "name": name,
-            "description": (description or name)[:MAX_DESCRIPTION_CHARS],
+            "description": _truncate(description or name),
             "inputSchema": {"json": normalise_input_schema(input_schema)},
         }
     }

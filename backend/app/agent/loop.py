@@ -7,6 +7,7 @@ two terminal events.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -42,6 +43,15 @@ from .router import ModelRouter
 logger = logging.getLogger(__name__)
 
 THINKING_STEP = "s0"
+
+REPEATED_TOOL_CALL_NUDGE = (
+    "You already called this tool with exactly these arguments and it did not work. "
+    "Change the arguments or move to the next step; do not repeat it."
+)
+
+# filter_features gets two, because the prompt asks for one retry after a connection
+# closed before a complete response. Every other tool gets one attempt per argument set.
+_CALL_ALLOWANCE = {"filter_features": 2}
 
 RETRY_TOOL_CALL_NUDGE = (
     "That tool call was incomplete - it named no tool. Either call one of the available "
@@ -135,6 +145,7 @@ def _verify_named_filter(name: str, arguments: dict[str, Any], outcome: ToolOutc
         ),
         data=None,
         is_error=True,
+        recoverable=True,
     )
 
 
@@ -145,6 +156,10 @@ class TurnStats:
 
     model_id: str = ""
     tool_calls: list[str] = field(default_factory=list)
+    # Every call that errored, recoverable or not. Recoverable ones no longer render as a
+    # failed step, so this is the only place a turn that recovered still records that it
+    # had to - which the eval harness scores and the log line reports.
+    failed_tool_calls: list[str] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
     layer_count: int = 0
@@ -199,6 +214,7 @@ async def run_turn(
     catalog_layers: list[CatalogLayerRef] = []
     focus_bbox: BBox | None = None
     failed_named_filters: dict[str, _NamedFilterScope] = {}
+    attempted: dict[tuple[str, str], int] = {}
 
     yield Intermediate(
         message_id=message_id, step_id=THINKING_STEP, status="started", label=i18n.thinking(lang)
@@ -340,6 +356,22 @@ async def run_turn(
                 arguments = _restore_failed_named_scope(
                     use.name, use.arguments, failed_named_filters
                 )
+
+                signature = (use.name, json.dumps(arguments, sort_keys=True, default=str))
+                if attempted.get(signature, 0) >= _CALL_ALLOWANCE.get(use.name, 1):
+                    logger.info("%s refused a repeated identical call", use.name)
+                    blocks.append(
+                        tool_result_block(use.tool_use_id, REPEATED_TOOL_CALL_NUDGE, is_error=True)
+                    )
+                    yield Intermediate(
+                        message_id=message_id,
+                        step_id=step_id,
+                        status="finished",
+                        label=i18n.tool_retrying(lang),
+                    )
+                    continue
+                attempted[signature] = attempted.get(signature, 0) + 1
+
                 outcome = _verify_named_filter(
                     use.name,
                     arguments,
@@ -351,17 +383,29 @@ async def run_turn(
                 )
 
                 if outcome.is_error:
+                    stats.failed_tool_calls.append(use.name)
                     scope = _named_filter_scope(use.name, arguments)
                     layer_id = _string_argument(arguments, "layer_id")
                     if scope is not None and layer_id is not None:
                         failed_named_filters[layer_id] = scope
-                    yield Intermediate(
-                        message_id=message_id,
-                        step_id=step_id,
-                        status="failed",
-                        label=i18n.tool_failed(lang),
-                        detail=outcome.text[:400],
-                    )
+                    if outcome.recoverable:
+                        # The tool said what to do instead and the model has the whole
+                        # message; a red step carrying pydantic's error URL is not what
+                        # the user needs from a turn that then answers.
+                        yield Intermediate(
+                            message_id=message_id,
+                            step_id=step_id,
+                            status="finished",
+                            label=i18n.tool_retrying(lang),
+                        )
+                    else:
+                        yield Intermediate(
+                            message_id=message_id,
+                            step_id=step_id,
+                            status="failed",
+                            label=i18n.tool_failed(lang),
+                            detail=outcome.text[:400],
+                        )
                     continue
 
                 layer_id = _string_argument(arguments, "layer_id")

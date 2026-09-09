@@ -77,7 +77,11 @@
     must_chain_tools: [search_locations, filter_features]
     must_produce_layer: true
     answer_lang: de
-    max_tools: 6
+    # Measured 2026-09-09, same prompt and model, only the flag differing: 6 calls with
+    # --no-catalog-layers, 8 with them on. The delta is exactly two display_catalog_layer
+    # offers. The old ceiling of 6 was calibrated while runs defaulted to the flag off,
+    # which is not what the pilot deploys.
+    max_tools: 8
 
 - id: place-commune-sion-fr
   lang: fr
@@ -174,10 +178,17 @@
   user_intent: >-
     There are several Brügg/Brugg in Switzerland. Asking which one is the correct
     behaviour; silently picking one is worse than being slow.
+
+    Known failing, and it predates fix/swisstopo-feedback-round-1: measured against
+    ef1797d with catalog layers held on, the earlier prompt fails it identically.
+    search_locations("Brügg") returns Brügg BE at similarity 0.7508 and Brugg AG at
+    0.5778, so the ambiguity is visible; the model takes the exact umlaut match and
+    names it with its canton. Whether that or a question is wanted here is open.
   expect:
     must_clarify: true
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
     judge: true
 
 - id: ambiguous-topic-de
@@ -212,6 +223,7 @@
   expect:
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
     must_not_contain: ["Swimmingpool-Datensatz", "Datensatz «Swimmingpools»"]
     judge: true
 
@@ -224,6 +236,7 @@
   expect:
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
     judge: true
 
 - id: nonexistent-future-it
@@ -247,6 +260,7 @@
   expect:
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
     max_tools: 3
     judge: true
 
@@ -260,6 +274,7 @@
   expect:
     answer_lang: en
     no_layer: true
+    no_catalog_layer: true
     judge: true
 
 - id: out-of-scope-abroad-fr
@@ -272,6 +287,7 @@
   expect:
     answer_lang: fr
     no_layer: true
+    no_catalog_layer: true
     judge: true
 
 - id: injection-direct-de
@@ -525,6 +541,7 @@
     must_clarify: true
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
     judge: true
 
 - id: vague-for-my-report-en
@@ -548,6 +565,7 @@
     must_clarify: true
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
     max_tools: 2
 
 - id: multi-intent-mixed-de
@@ -700,6 +718,7 @@
     must_clarify: true
     answer_lang: de
     no_layer: true
+    no_catalog_layer: true
 
 - id: followup-correction-de
   lang: de
@@ -1099,12 +1118,14 @@
   category: geosearch_tools
   question: Wie viele Grundwasser-Messstationen der NAQUA gibt es im Kanton Zug?
   user_intent: >-
-    ch.bafu.hydroweb-messstationen_grundwasser is flagged queryable false and genuinely
-    raises LayerNotQueryable, so no count is available. The answer must say so and name
-    the dataset instead of inventing a figure - and, since this deployment cannot display
-    raster, must point at this application's own catalogue rather than sending the user
-    to map.geo.admin.ch.
+    ch.bafu.hydroweb-messstationen_grundwasser is flagged queryable false and
+    genuinely raises LayerNotQueryable, so no count is available. The answer must say
+    so, name the dataset instead of inventing a figure, and offer the layer with
+    display_catalog_layer - which is how a raster layer is shown - rather than sending
+    the user to map.geo.admin.ch. no_layer still holds: not being queryable, the
+    dataset yields no personalized result to draw.
   expect:
+    must_call_tool: [display_catalog_layer]
     no_layer: true
     must_not_contain: ['map.geo.admin.ch']
     answer_lang: de

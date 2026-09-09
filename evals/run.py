@@ -26,6 +26,10 @@ prompt variant that produced it, so two runs can be compared only when both matc
     # against a running geosearch instead of the bundled stand-in
     python evals/run.py --mcp-url http://127.0.0.1:8790/mcp --only geosearch_tools --model ...
 
+    # the swisstopo feedback regression set instead of the benchmark
+    python evals/run.py --questions evals/swisstopo-feedback.yaml \
+      --mcp-url http://127.0.0.1:8790/mcp --model ...
+
 Credentials come from the normal boto3 chain, so AWS_BEARER_TOKEN_BEDROCK works exactly
 as it does for scripts/ask-llm.py (VPN required). Apertus needs no AWS credential, but its
 endpoint only answers from inside the VPC or the askEarth gateway IP, and only during
@@ -70,9 +74,12 @@ APERTUS_KEYWORD = "apertus"
 QUESTIONS = Path(__file__).parent / "questions.yaml"
 RESULTS_DIR = Path(__file__).parent / "results"
 
-# Recorded with every row. Two runs are only comparable if this and the prompt variant
-# match, so a report states both rather than leaving a reader to assume it.
-QUESTION_SET = hashlib.sha256(QUESTIONS.read_bytes()).hexdigest()[:12]
+
+def question_set_hash(path: Path) -> str:
+    """Recorded with every row. Two runs are only comparable if this and the prompt
+    variant match, so a report states both rather than leaving a reader to assume it."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
 
 JUDGE_PROMPT = """\
 You are grading one answer from a geodata assistant for Swiss federal data.
@@ -117,8 +124,8 @@ class InjectingSwisstopo(Swisstopo):
         return features
 
 
-def load_questions(only: str | None, ids: list[str] | None) -> list[dict[str, Any]]:
-    questions: list[dict[str, Any]] = yaml.safe_load(QUESTIONS.read_text(encoding="utf-8"))
+def load_questions(path: Path, only: str | None, ids: list[str] | None) -> list[dict[str, Any]]:
+    questions: list[dict[str, Any]] = yaml.safe_load(path.read_text(encoding="utf-8"))
     if only:
         questions = [q for q in questions if q.get("category") == only]
     if ids:
@@ -164,14 +171,6 @@ def wants_judge(question: dict[str, Any]) -> bool:
     return bool((question.get("expect") or {}).get("judge"))
 
 
-def _tool_for_step(step_id: str, calls: list[str]) -> str:
-    if step_id.startswith("t") and step_id[1:].isdigit():
-        index = int(step_id[1:]) - 1
-        if 0 <= index < len(calls):
-            return calls[index]
-    return step_id
-
-
 async def ask(
     question: dict[str, Any],
     *,
@@ -195,7 +194,6 @@ async def ask(
 
     stats = TurnStats()
     observed = Observation()
-    failed_steps: list[str] = []
     started = time.monotonic()
 
     # Pinning the handle measures one model rather than the fallback chain.
@@ -221,24 +219,31 @@ async def ask(
             async for event in turn:
                 if event.type == "final":
                     observed.answer = event.content_markdown
-                    # Both kinds count as "put something on the map". Recording only
-                    # `layers` made catalog references invisible to must_produce_layer.
-                    observed.layers = [layer.name for layer in (event.layers or [])] + [
+                    # Kept apart: a personalized layer is drawn on the map, a catalog
+                    # reference is only offered for the user to click. must_produce_layer
+                    # accepts either (Observation.all_layers); no_layer forbids only the
+                    # first, and no_catalog_layer only the second.
+                    observed.layers = [layer.name for layer in (event.layers or [])]
+                    observed.catalog_layers = [
                         ref.name or ref.id for ref in (event.catalog_layers or [])
+                    ]
+                    observed.layer_feature_counts = [
+                        layer.feature_count
+                        for layer in (event.layers or [])
+                        if layer.feature_count is not None
                     ]
                 elif event.type == "error":
                     observed.error_code = event.code
-                elif event.type == "intermediate" and event.status == "failed":
-                    failed_steps.append(event.step_id)
     except TimeoutError:
         observed.error_code = "timeout"
     except Exception as exc:
         observed.error_code = f"harness:{type(exc).__name__}"
 
     observed.tool_calls = stats.tool_calls
-    # A failed step's label is localized progress text, not the tool name, so the report
-    # would otherwise read "tool(s) failed: t1". Step `tN` is the Nth tool call.
-    observed.failed_tools = [_tool_for_step(step, stats.tool_calls) for step in failed_steps]
+    # From the turn's own record, not from the progress events: a recoverable tool error
+    # renders as an adjustment rather than a failed step, and scoring the presentation
+    # would make must_not_fail_tools unable to see the very thing it exists to catch.
+    observed.failed_tools = stats.failed_tool_calls
     observed.model_id = stats.model_id or str(handle)
     observed.latency_ms = int((time.monotonic() - started) * 1000)
     observed.input_tokens = stats.input_tokens
@@ -259,7 +264,7 @@ async def judge(
         intent=question.get("user_intent", "a correct, honest answer"),
         answer=observed.answer or "(no answer)",
         tools=", ".join(observed.tool_calls) or "none",
-        layers=", ".join(observed.layers) or "none",
+        layers=", ".join(observed.all_layers) or "none",
     )
     try:
         result = await models.converse(
@@ -285,6 +290,7 @@ async def run_model(
     judge_handle: ModelHandle | None,
     sink: Callable[[dict[str, Any]], None] | None = None,
     mcp_url: str = "",
+    question_set: str = "",
 ) -> list[dict[str, Any]]:
     models = ModelRouter(settings)
     rows: list[dict[str, Any]] = []
@@ -322,7 +328,7 @@ async def run_model(
                 )
                 row = {
                     "model": str(handle),
-                    "question_set": QUESTION_SET,
+                    "question_set": question_set,
                     "prompt_variant": prompt_variant_for(handle.model_id),
                     "catalog_layers": settings.enable_catalog_layers,
                     # Two servers answer the same question differently, so rows from them
@@ -508,6 +514,14 @@ async def main() -> None:
     parser.add_argument("--judge", action="store_true", help="Also model-grade the judge questions")
     parser.add_argument("--list", action="store_true", help="List the question set and exit")
     parser.add_argument(
+        "--questions",
+        type=Path,
+        default=QUESTIONS,
+        help="Question set to run. Default: evals/questions.yaml, the 87-question "
+        "benchmark. evals/swisstopo-feedback.yaml holds the customer regression cases, "
+        "kept separate so the benchmark's hash and its stored baselines stay valid.",
+    )
+    parser.add_argument(
         "--mcp-url",
         default="",
         help="Run against an MCP server already listening there (e.g. a local geosearch "
@@ -522,14 +536,18 @@ async def main() -> None:
     )
     parser.add_argument(
         "--catalog-layers",
-        action="store_true",
-        help="Enable the proposed catalog_layers capability. Off by default so a run "
-        "measures what the deployed pilot does; use this to produce evidence for the "
-        "protocol proposal (docs/protocol.md).",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Whether official catalog layers can be offered. On by default because that "
+        "is what the pilot deploys: Settings.enable_catalog_layers is True and no "
+        "deployment overrides it. --no-catalog-layers measures the fallback prompt "
+        "instead (prompts.NO_RASTER_DISPLAY_NOTE), which tells the model it cannot show "
+        "raster layers at all. Every result row records which was used, so rows recorded "
+        "under one setting are not a controlled comparison against the other.",
     )
     args = parser.parse_args()
 
-    questions = load_questions(args.only, args.ids)
+    questions = load_questions(args.questions, args.only, args.ids)
     if not questions:
         sys.exit("No questions matched.")
 
@@ -576,6 +594,7 @@ async def main() -> None:
                     judge_handle=judge_handle,
                     sink=sink,
                     mcp_url=args.mcp_url,
+                    question_set=question_set_hash(args.questions),
                 )
             )
 

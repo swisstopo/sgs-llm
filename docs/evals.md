@@ -57,13 +57,70 @@ no tool was called. Without the second kind, a model that responds "which did yo
 everything would score well while being useless - the benchmark would be gameable by pure
 caution. Over-asking is a real failure mode, so it gets its own stage: `over_clarified`.
 
+## The swisstopo feedback set
+
+[`evals/swisstopo-feedback.yaml`](../evals/swisstopo-feedback.yaml) - 16 cases from
+swisstopo's test round of 2026-09-08, including the two-turn conversations and two
+over-clarification counter-cases. Run it with `--questions`:
+
+```bash
+python evals/run.py --questions evals/swisstopo-feedback.yaml --catalog-layers \
+  --mcp-url http://127.0.0.1:8790/mcp --model <id> --region <region>
+```
+
+`--catalog-layers` is now the default for both sets, because that is what the pilot
+deploys: `Settings.enable_catalog_layers` is **True** and no deployment overrides it.
+`--no-catalog-layers` measures the fallback prompt (`prompts.NO_RASTER_DISPLAY_NOTE`),
+which tells the agent it cannot show raster layers at all.
+
+## Two kinds of map output, two expectations
+
+A **personalized layer** is drawn on the map; a **catalog reference** is only offered as a
+clickable title. Both used to land in one `Observation.layers` list, so `no_layer` failed
+any question whose model called `search_layers`. They are now separate, and so are the
+expectations:
+
+| Expectation | Fails when |
+| --- | --- |
+| `must_produce_layer` | neither kind was produced |
+| `no_layer` | a **personalized** layer was drawn |
+| `no_catalog_layer` | an official layer was **offered** |
+
+Nine questions carry `no_catalog_layer` — the out-of-scope, no-such-dataset and vague
+ones, where offering a Swiss layer for Lyon is exactly the behaviour the question exists
+to catch. `dataset-lookup-flood-de` deliberately does not: naming the flood datasets and
+offering them to click is a good answer to "what data does the Confederation have".
+
+`gs-not-queryable-fallback-de` required the answer to point at the application's own
+catalogue rather than show the layer, which held only while runs defaulted to
+`--no-catalog-layers`. It now requires `display_catalog_layer`.
+
+**Stored baselines recorded before this change are not comparable to runs after it.**
+Every row carries its `catalog_layers` setting, so the two are distinguishable, but the
+87-question set needs one re-baseline run under the new default.
+
+It is a **separate file, not extra categories in `questions.yaml`**: every result row
+records the question set's sha256, and two runs are only comparable when those match, so
+appending customer regression cases to the benchmark would invalidate every baseline
+already stored under `evals/results/`.
+
+The cases are written to the correct answer even where the defect is in the MCP server
+rather than the agent, so `swisstopo-parks-bern-en` fails on `must_report_features: 8`
+until geosearch stops clipping discrete objects.
+
 ## How a question is scored
 
 Rule checks first - deterministic, free, and useful while only one model is reachable.
 Each failure carries a **stage**, so the report says *where* a model broke down rather
 than only that it failed: `no_tool_call`, `wrong_tool`, `chain_broken`, `no_layer`,
 `unexpected_layer`, `too_many_tools`, `wrong_language`, `missing_mention`,
-`forbidden_content`, `no_clarification`, `over_clarified`, `exchange_error`, `empty_answer`.
+`forbidden_content`, `no_clarification`, `over_clarified`, `exchange_error`, `empty_answer`,
+`failed_tools`, `unexpected_catalog_layer`, `wrong_feature_count`.
+
+`failed_tools` reads the turn's own record of which calls errored, not the progress
+events: a tool that declines and says what to do instead reports to the user as an
+adjustment rather than a failed step (`app/agent/loop.py`), so scoring the presentation
+would leave `must_not_fail_tools` unable to see a recovered error at all.
 
 Where correctness is a matter of degree - "did it refuse gracefully", "is that figure
 right" - the question carries `judge: true` and `--judge` has a model grade it 1-5 with a

@@ -89,9 +89,99 @@ class TestSchemaConversion:
     def test_falls_back_to_the_name_when_a_tool_has_no_description(self) -> None:
         assert to_tool_spec("t", None, {})["toolSpec"]["description"] == "t"
 
-    def test_truncates_an_enormous_description(self) -> None:
-        spec = to_tool_spec("t", "x" * 5000, {})
-        assert len(spec["toolSpec"]["description"]) <= 900
+    def test_keeps_a_long_real_tool_description_intact(self) -> None:
+        """geosearch's filter_features description is 1242 chars, and the sentence saying
+        its result_id goes to display_layer is the last one in it."""
+        description = "word " * 248 + "final."
+        assert len(description) > 1200
+        spec = to_tool_spec("filter_features", description, {})
+        assert spec["toolSpec"]["description"] == description
+
+    def test_truncates_an_enormous_description_on_a_word_boundary(self) -> None:
+        spec = to_tool_spec("t", "word " * 2000, {})
+        description = spec["toolSpec"]["description"]
+        assert len(description) <= 4000
+        assert description.endswith("…")
+        assert "wor…" not in description
+
+
+class TestArgumentRepairIsWired:
+    async def test_repairs_arguments_before_calling_the_tool(self) -> None:
+        """Asserted on what the session was handed, not on the return value: a test that
+        only checked the result would pass with the wiring removed."""
+        session_double = FakeSession(FakeResult([FakeBlock('{"feature_count": 1}')]))
+        specs = [
+            {
+                "toolSpec": {
+                    "name": "filter_features",
+                    "description": "d",
+                    "inputSchema": {
+                        "json": {
+                            "type": "object",
+                            "properties": {
+                                "layer_id": {"type": "string"},
+                                "place": {"type": "string"},
+                                "place_kind": {"type": "string"},
+                            },
+                            "required": ["layer_id"],
+                        }
+                    },
+                }
+            }
+        ]
+        session = ToolSession(session_double, specs)
+
+        await session.call(
+            "filter_features",
+            {"layer_id": "ch.bafu.x", "place": {"name": "Bern", "kind": "kanton"}},
+        )
+
+        assert session_double.calls[-1] == (
+            "filter_features",
+            {"layer_id": "ch.bafu.x", "place": "Bern", "place_kind": "kanton"},
+        )
+
+    async def test_passes_arguments_through_when_no_schema_is_known(self) -> None:
+        session_double = FakeSession(FakeResult([FakeBlock("{}")]))
+        session = ToolSession(session_double, [])
+        await session.call("filter_features", {"place": {"name": "Bern"}})
+        assert session_double.calls[-1] == ("filter_features", {"place": {"name": "Bern"}})
+
+
+class TestErrorClassification:
+    """A tool that declined and said what to do instead is not a transport failure, and
+    the two must not render the same way (swisstopo Q1/Q5)."""
+
+    async def test_marks_a_tool_declared_error_recoverable(self) -> None:
+        payload = {"error": "Give an area: `place` from search_locations, or a bbox."}
+        session = ToolSession(FakeSession(FakeResult([FakeBlock(json.dumps(payload))])), [])
+        outcome = await session.call("filter_features", {"layer_id": "ch.bafu.x"})
+        assert outcome.is_error
+        assert outcome.recoverable
+
+    async def test_marks_an_is_error_result_recoverable(self) -> None:
+        result = FakeResult([FakeBlock("1 validation error for filter_featuresArguments")], True)
+        session = ToolSession(FakeSession(result), [])
+        outcome = await session.call("filter_features", {"place": {"name": "Bern"}})
+        assert outcome.is_error
+        assert outcome.recoverable
+
+    async def test_does_not_mark_a_transport_failure_recoverable(self) -> None:
+        session = ToolSession(FakeSession(TimeoutError("timed out")), [])
+        outcome = await session.call("filter_features", {"layer_id": "ch.bafu.x"})
+        assert outcome.is_error
+        assert not outcome.recoverable
+
+    async def test_does_not_mark_an_unavailable_tool_recoverable(self) -> None:
+        outcome = await NO_TOOLS.call("filter_features", {})
+        assert outcome.is_error
+        assert not outcome.recoverable
+
+    async def test_a_successful_call_is_neither(self) -> None:
+        session = ToolSession(FakeSession(FakeResult([FakeBlock('{"feature_count": 3}')])), [])
+        outcome = await session.call("filter_features", {"layer_id": "ch.bafu.x"})
+        assert not outcome.is_error
+        assert not outcome.recoverable
 
 
 class TestToolSession:

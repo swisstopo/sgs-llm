@@ -115,6 +115,13 @@ TOOL_FAILED = {
     "en": "Step failed",
 }
 
+TOOL_RETRYING = {
+    "de": "Passe die Abfrage an …",
+    "fr": "Ajustement de la requête …",
+    "it": "Adeguamento della richiesta …",
+    "en": "Adjusting the query …",
+}
+
 # Keyed by MCP tool name. An unknown tool falls back to a generic label plus the raw
 # name, so a tool we have not seen never renders as a blank progress step.
 TOOL_RUNNING = {
@@ -241,3 +248,7 @@ def tool_running(tool: str, lang: ProtocolLang) -> str:
 
 def tool_failed(lang: ProtocolLang) -> str:
     return _pick(TOOL_FAILED, lang)
+
+
+def tool_retrying(lang: ProtocolLang) -> str:
+    return _pick(TOOL_RETRYING, lang)

@@ -1,0 +1,277 @@
+# swisstopo test round 1, 2026-09-08 (260908_TestResults.docx).
+#
+# Kept out of questions.yaml on purpose: that file's sha256 gates run comparability, so
+# folding customer regression cases into it would invalidate every stored baseline.
+#
+# Each `expect` encodes what the report said was wrong, so a pass here means the reported
+# behaviour is gone - not that the answer is merely plausible. Where a finding is
+# Ageospatial's, the case is written to the correct answer anyway and is expected to fail
+# until their fix lands; that is the point of it.
+#
+# Run:
+#   python evals/run.py --questions evals/swisstopo-feedback.yaml \
+#     --mcp-url http://127.0.0.1:8790/mcp --model <id> --region <region>
+#
+# The production tool surface is required. Against mcp_dummy these measure a smaller tool
+# set than the deployment has (docs/evals.md).
+#
+# --catalog-layers is required, not optional: the pilot deploys with
+# Settings.enable_catalog_layers True and nothing overrides it, and without the flag the
+# agent is told it cannot show raster layers at all, which no deployed user ever sees.
+
+- id: swisstopo-parks-bern-en
+  lang: en
+  category: swisstopo_feedback
+  question: Show me all regional natural parks in the canton Bern
+  user_intent: >-
+    Every regional nature park intersecting canton Bern, as whole objects, on the map.
+    Ground truth 8, from a QGIS selection of
+    ch.bafu.schutzgebiete-paerke_nationaler_bedeutung against SWISSBOUNDARIES3D.
+    Currently 6: geosearch's clip() drops three of the nine fetched candidates and keeps
+    two whose surviving area is below 1e-5 of the original.
+  expect:
+    # search_locations' position is incidental - Sonnet calls it after search_layers -
+    # so only the real dependency order is required. Place scoping is asserted by the
+    # feature count instead.
+    must_chain_tools: [search_layers, filter_features, display_layer]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: en
+    # Not must_mention: ["8"] - a single digit matches any area figure in the table, so
+    # that expectation passed on an answer that said 6. This asserts the result itself.
+    must_report_features: 8
+
+- id: swisstopo-wanderwegsperrungen-be-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir die Wanderwegsperrungen im Kanton Bern
+  user_intent: >-
+    Trail closures in canton Bern, fetched and shown. Floor case: reported working, and a
+    change that buys another case at the cost of this one is not an improvement.
+  expect:
+    must_call_tool: [filter_features]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+
+- id: swisstopo-bushaltestellen-stadt-bern-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir alle Bushaltestellen in der Stadt Bern
+  user_intent: >-
+    Bus stops in the commune of Bern, not the canton. The administrative word belongs in
+    place_kind, not in the name. For scale: ch.bav.haltestellen-oev returns 818 features
+    for place_kind gemeinde and 7892 for kanton, so a canton fallback is an order of
+    magnitude out.
+  expect:
+    must_call_tool: [filter_features]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+    # Not must_not_contain: [Kanton Bern] - the disambiguation rule now requires the
+    # answer to name the level it used and offer the other, so that phrase is expected.
+    # This asserts the level named is the commune.
+    must_mention: ["Gemeinde Bern"]
+
+- id: swisstopo-unesco-bern-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir alle UNESCO Welterbe Kulturstätten in Bern
+  user_intent: >-
+    "in Bern" reads as either the canton or the commune. A good answer takes the likelier
+    reading, names the level it used, and offers the other. Judged rather than
+    rule-checked: whether the level was named is a matter of degree.
+  expect:
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+    judge: true
+
+- id: swisstopo-chasseral-fr
+  lang: fr
+  category: swisstopo_feedback
+  question: Quelle est la délimitation du parc naturel du Chasseral ?
+  user_intent: >-
+    The park's perimeter. It names a feature, not a place: search_locations answers
+    "Chasseral" with Chesières, Chessel and Le Châtelard, so the dataset has to be
+    filtered by name instead. No tool errors expected on the way.
+  expect:
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: fr
+    must_mention: [Chasseral]
+
+- id: swisstopo-katasterplan-belp-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir den Katasterplan der Gemeinde Belp
+  user_intent: >-
+    A named official raster plan, asked for in its own right. CadastralWebMap is the
+    answer; an administrative boundary or the ÖREB availability layer is not.
+  expect:
+    must_call_tool: [display_catalog_layer]
+    must_not_fail_tools: true
+    answer_lang: de
+    must_not_contain: [ÖREB]
+
+- id: swisstopo-parzelle-belp-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir die Parzelle 20
+  history:
+    - role: user
+      content: Zeige mir den Katasterplan der Gemeinde Belp
+    - role: assistant
+      content: >-
+        Der amtliche Katasterplan (CadastralWebMap) deckt die Gemeinde Belp ab. Sie können
+        ihn als amtliche Kartenebene hinzufügen.
+  user_intent: >-
+    Two parcels are named "Belp 20", with different EGRIDs, so the answer asks which
+    rather than picking one. Known failing: the behaviour varies between runs. The parcel
+    polygon comes from ch.swisstopo-vd.amtliche-vermessung, which search_layers does not
+    retrieve for parcel vocabulary.
+  expect:
+    must_clarify: true
+    no_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+    must_mention: [EGRID]
+
+- id: swisstopo-parzelle-egrid-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir die Parzelle mit EGRID CH 3435 4679 1597
+  user_intent: >-
+    A parcel by EGRID, given in the spaced form the tools print in their own labels.
+    SearchServer resolves CH343546791597 and returns nothing for CH 3435 4679 1597, so the
+    spaces have to be stripped before the call. The answer is the parcel polygon.
+  expect:
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+    must_mention: [Belp]
+
+- id: swisstopo-gemeindegrenzen-belp-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir die Gemeindegrenzen von Belp
+  user_intent: >-
+    A commune boundary, drawn from stored data without a dataset lookup. Floor case.
+  expect:
+    must_call_tool: [display_division]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+
+- id: swisstopo-gebaeude-belp-de
+  lang: de
+  category: swisstopo_feedback
+  question: Wie viele Gebäude gibt es?
+  history:
+    - role: user
+      content: Zeige mir die Gemeindegrenzen von Belp
+    - role: assistant
+      content: Hier ist die Gemeindegrenze von Belp.
+  user_intent: >-
+    A count scoped to the commune from the previous turn, with the counted features also
+    shown. The answer must not name a button label: labels are translated and will not
+    match the answer's language.
+  expect:
+    must_chain_tools: [filter_features, analyze_features, display_layer]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+    must_not_contain: ["Show result on map", "Ergebnis auf Karte anzeigen"]
+
+- id: swisstopo-batiments-proteges-berne-fr
+  lang: fr
+  category: swisstopo_feedback
+  question: Y a-t-il des bâtiments protégés à Berne ?
+  user_intent: >-
+    Protected buildings in Bern, counted and shown. Showing what was counted is the rule
+    under test.
+  expect:
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: fr
+
+- id: swisstopo-baden-bern-de
+  lang: de
+  category: swisstopo_feedback
+  question: Wo kann ich in der Stadt Bern baden?
+  user_intent: >-
+    Bathing spots in the commune of Bern, shown on the map.
+  expect:
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+
+- id: swisstopo-groesste-gemeinde-gr-de
+  lang: de
+  category: swisstopo_feedback
+  question: Welche Gemeinde hat die grösste Fläche im Kanton Graubünden?
+  user_intent: >-
+    The largest commune by area in Graubünden. Requires a fetch and then an analysis; no
+    figure may be estimated.
+  expect:
+    must_chain_tools: [filter_features, analyze_features]
+    must_not_fail_tools: true
+    answer_lang: de
+
+- id: swisstopo-randonnee-schwarzsee-fr
+  lang: fr
+  category: swisstopo_feedback
+  question: Affiche les itinéraires de randonnée dans la région de Schwarzsee
+  user_intent: >-
+    Hiking routes in the Schwarzsee region, fetched and shown. Floor case.
+  expect:
+    must_call_tool: [filter_features]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: fr
+
+- id: swisstopo-denivele-schwarzsee-fr
+  lang: fr
+  category: swisstopo_feedback
+  question: Tu peux montrer les dénivelés ?
+  history:
+    - role: user
+      content: Affiche les itinéraires de randonnée dans la région de Schwarzsee
+    - role: assistant
+      content: Voici les itinéraires de randonnée dans la région du Schwarzsee.
+  user_intent: >-
+    Elevation profiles for the routes shown in the previous turn. No profile tool exists in
+    the catalogue, though geo.admin.ch's profile.json does, so the answer says so and
+    invents no ascent or descent figures. Judged. Flips to must_call_tool once a tool
+    exists.
+  expect:
+    must_not_fail_tools: true
+    answer_lang: fr
+    judge: true
+
+# Counter-cases for the disambiguation rule. Without these, a prompt that asks "canton or
+# commune?" about everything would score well on swisstopo-unesco-bern-de while being
+# useless - over-asking is a tracked failure mode with its own stage (docs/evals.md).
+
+- id: swisstopo-no-overclarify-kanton-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir alle UNESCO Welterbe Kulturstätten im Kanton Bern
+  user_intent: >-
+    The request names the canton, so asking which level is meant is over-clarification.
+  expect:
+    must_not_clarify: true
+    must_call_tool: [filter_features]
+    answer_lang: de
+
+- id: swisstopo-no-overclarify-stadt-de
+  lang: de
+  category: swisstopo_feedback
+  question: Zeige mir alle UNESCO Welterbe Kulturstätten in der Stadt Bern
+  user_intent: >-
+    The request names the city, so asking is over-clarification. Also exercises "Stadt"
+    becoming place_kind rather than part of the name.
+  expect:
+    must_not_clarify: true
+    must_call_tool: [filter_features]
+    answer_lang: de

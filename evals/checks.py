@@ -187,12 +187,25 @@ class Observation:
     answer: str = ""
     tool_calls: list[str] = field(default_factory=list)
     failed_tools: list[str] = field(default_factory=list)
+    # Personalized result layers only - the ones actually drawn on the map.
     layers: list[str] = field(default_factory=list)
+    # Official layers offered as a clickable title. Separate because the two answer
+    # different questions: `no_layer` asks whether a result was put on the map,
+    # `no_catalog_layer` whether display_catalog_layer was actually called.
+    catalog_layers: list[str] = field(default_factory=list)
+    # Feature counts of the personalized layers produced, so a question can assert the
+    # size of the result rather than hunting for a digit in the prose.
+    layer_feature_counts: list[int] = field(default_factory=list)
     error_code: str | None = None
     model_id: str = ""
     latency_ms: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+
+    @property
+    def all_layers(self) -> list[str]:
+        """Everything the answer put in front of the user, drawn or offered."""
+        return [*self.layers, *self.catalog_layers]
 
 
 def _contains(haystack: str, needle: str) -> bool:
@@ -239,11 +252,32 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         stage = "no_tool_call" if not observed.tool_calls else "chain_broken"
         failures.append(Failure(stage, f"expected {chain} in order, called {observed.tool_calls}"))
 
-    if expect.get("must_produce_layer") and not observed.layers:
+    if expect.get("must_produce_layer") and not observed.all_layers:
         failures.append(Failure("no_layer", "expected a map layer, none produced"))
+
+    wanted_features = expect.get("must_report_features")
+    if wanted_features is not None and wanted_features not in observed.layer_feature_counts:
+        failures.append(
+            Failure(
+                "wrong_feature_count",
+                f"expected a layer of {wanted_features} features, got "
+                f"{observed.layer_feature_counts or 'none'}",
+            )
+        )
+
+    if expect.get("must_not_fail_tools") and observed.failed_tools:
+        failures.append(
+            Failure("failed_tools", f"tools reported failures: {observed.failed_tools}")
+        )
 
     if expect.get("no_layer") and observed.layers:
         failures.append(Failure("unexpected_layer", f"put {observed.layers} on the map"))
+
+    # Keyed on the call, not on `catalog_layers`: search_layers attaches every displayable
+    # candidate before the model chooses one, so the references alone say nothing about
+    # whether the answer actually offered a layer.
+    if expect.get("no_catalog_layer") and "display_catalog_layer" in observed.tool_calls:
+        failures.append(Failure("unexpected_catalog_layer", f"offered {observed.catalog_layers}"))
 
     ceiling = expect.get("max_tools")
     if isinstance(ceiling, int) and len(observed.tool_calls) > ceiling:
@@ -276,7 +310,7 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
         # Asking counts only if it happened instead of answering. Most answers close with
         # "would you like more detail?", so the marker alone passed a model that silently
         # picked one reading. Fetching data or showing a layer means a choice was made.
-        answered_anyway = bool(observed.layers) or any(
+        answered_anyway = bool(observed.all_layers) or any(
             call in ("filter_features", "analyze_features", "display_catalog_layer")
             for call in observed.tool_calls
         )
@@ -287,7 +321,7 @@ def evaluate(question: dict[str, Any], observed: Observation) -> Verdict:
                 Failure(
                     "no_clarification",
                     "answered a genuinely ambiguous request instead of asking "
-                    f"(tools: {observed.tool_calls}, layers: {len(observed.layers)})",
+                    f"(tools: {observed.tool_calls}, layers: {len(observed.all_layers)})",
                 )
             )
 

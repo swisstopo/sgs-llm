@@ -35,6 +35,9 @@ KNOWN_EXPECT_KEYS = {
     "must_clarify",
     "must_not_clarify",
     "no_layer",
+    "no_catalog_layer",
+    "must_not_fail_tools",
+    "must_report_features",
     "judge",
 }
 # Union of both servers' tool sets; four tools are exclusive to production geosearch.
@@ -70,6 +73,23 @@ class TestQuestionSet:
         for question in QUESTIONS:
             unknown = set(question.get("expect") or {}) - KNOWN_EXPECT_KEYS
             assert not unknown, f"{question['id']}: {unknown}"
+
+    def test_the_swisstopo_set_is_guarded_the_same_way(self) -> None:
+        """It is a second file, so the guard above skipped it entirely - a typo in one of
+        its expectations would have been silently unchecked."""
+        import yaml as _yaml
+        from evals.run import QUESTIONS as _path
+
+        extra = _yaml.safe_load(
+            (_path.parent / "swisstopo-feedback.yaml").read_text(encoding="utf-8")
+        )
+        for question in extra:
+            unknown = set(question.get("expect") or {}) - KNOWN_EXPECT_KEYS
+            assert not unknown, f"{question['id']}: {unknown}"
+            named = set(question["expect"].get("must_call_tool") or []) | set(
+                question["expect"].get("must_chain_tools") or []
+            )
+            assert not named - KNOWN_TOOLS, f"{question['id']}: {named - KNOWN_TOOLS}"
 
     def test_expected_tools_exist(self) -> None:
         for question in QUESTIONS:
@@ -450,3 +470,183 @@ class TestEvalBudget:
 
         assert settings.turn_timeout_for("primary") == 600.0
         assert settings.turn_timeout_for("apertus") == 600.0
+
+
+class TestSwisstopoFeedbackSet:
+    """The 2026-09-08 swisstopo findings live in their own file: questions.yaml's hash
+    gates run comparability, so appending to it would invalidate every stored baseline."""
+
+    def test_must_not_fail_tools_fails_when_a_tool_failed(self) -> None:
+        question = {"id": "x", "expect": {"must_not_fail_tools": True}}
+        verdict = evaluate(question, Observation(answer="ok", failed_tools=["filter_features"]))
+        assert not verdict.passed
+        assert "failed_tools" in verdict.stages
+
+    def test_must_not_fail_tools_passes_when_none_failed(self) -> None:
+        question = {"id": "x", "expect": {"must_not_fail_tools": True}}
+        assert evaluate(question, Observation(answer="ok")).passed
+
+    def test_the_set_loads_and_every_question_has_expectations(self) -> None:
+        from evals.run import load_questions
+
+        path = QUESTIONS_PATH.parent / "swisstopo-feedback.yaml"
+        questions = load_questions(path, None, None)
+        assert len(questions) >= 13
+        assert all(question.get("expect") for question in questions)
+        assert all(question.get("user_intent") for question in questions)
+        assert len({question["id"] for question in questions}) == len(questions)
+
+    def test_the_question_set_hash_differs_per_file(self) -> None:
+        from evals.run import question_set_hash
+
+        path = QUESTIONS_PATH.parent / "swisstopo-feedback.yaml"
+        assert question_set_hash(path) != question_set_hash(QUESTIONS_PATH)
+
+
+class TestFeatureCountCheck:
+    """`must_mention: ["8"]` passed an answer that said 6, because a single digit matches
+    any area figure in the table. The claim has to be asserted on the result."""
+
+    def test_fails_when_the_layer_has_a_different_count(self) -> None:
+        question = {"id": "x", "expect": {"must_report_features": 8}}
+        verdict = evaluate(question, Observation(answer="6 parks", layer_feature_counts=[6]))
+        assert not verdict.passed
+        assert "wrong_feature_count" in verdict.stages
+
+    def test_fails_when_no_layer_carried_a_count(self) -> None:
+        question = {"id": "x", "expect": {"must_report_features": 8}}
+        assert not evaluate(question, Observation(answer="8 parks")).passed
+
+    def test_passes_when_a_layer_has_the_expected_count(self) -> None:
+        question = {"id": "x", "expect": {"must_report_features": 8}}
+        assert evaluate(question, Observation(answer="acht", layer_feature_counts=[1, 8])).passed
+
+    def test_is_not_applied_when_the_question_does_not_ask_for_it(self) -> None:
+        assert evaluate({"id": "x", "expect": {}}, Observation(answer="ok")).passed
+
+
+def test_eval_settings_match_the_deployed_catalog_layer_setting() -> None:
+    """The default was off, with help text claiming that was what the pilot does. It is
+    not: Settings.enable_catalog_layers is True and no deployment overrides it, so every
+    run was measuring the NO_RASTER_DISPLAY_NOTE prompt instead of the real one."""
+    import argparse
+
+    from evals.run import eval_settings
+
+    from app.config import Settings
+
+    # The pilot runs with them on, so --catalog-layers is what measures production.
+    on = argparse.Namespace(timeout=None, catalog_layers=True)
+    assert eval_settings(on).enable_catalog_layers is Settings().enable_catalog_layers is True
+
+    # The default stays off so the 14 no_layer questions keep their recorded baselines.
+    off = argparse.Namespace(timeout=None, catalog_layers=False)
+    assert eval_settings(off).enable_catalog_layers is False
+
+
+def test_the_parks_chain_accepts_the_order_sonnet_actually_uses() -> None:
+    """Recorded from the live run: search_layers comes before search_locations, and
+    describe_layer sits in the middle. Requiring search_locations first failed a correct
+    sequence."""
+    import yaml as _yaml
+    from evals.run import QUESTIONS as _Q
+
+    path = _Q.parent / "swisstopo-feedback.yaml"
+    parks = next(
+        q for q in _yaml.safe_load(path.read_text()) if q["id"] == "swisstopo-parks-bern-en"
+    )
+    observed_sequence = [
+        "search_layers",
+        "search_locations",
+        "describe_layer",
+        "filter_features",
+        "filter_features",
+        "filter_features",
+        "display_layer",
+        "display_division",
+    ]
+    verdict = evaluate(
+        parks,
+        Observation(
+            answer="8 regional natural parks",
+            tool_calls=observed_sequence,
+            layers=["Parks"],
+            layer_feature_counts=[8],
+        ),
+    )
+    assert verdict.passed, verdict.failures
+
+
+class TestLayerSemanticsAreSeparate:
+    """A personalized layer is drawn on the map; a catalog reference is only offered for
+    the user to click. Both used to land in Observation.layers, so `no_layer` failed any
+    question whose model called search_layers with catalog layers enabled - which is what
+    the pilot deploys."""
+
+    def test_must_produce_layer_accepts_either_kind(self) -> None:
+        question = {"id": "x", "expect": {"must_produce_layer": True}}
+        assert evaluate(question, Observation(answer="a", layers=["result"])).passed
+        assert evaluate(question, Observation(answer="a", catalog_layers=["official"])).passed
+        assert not evaluate(question, Observation(answer="a")).passed
+
+    def test_no_layer_ignores_an_offered_catalog_layer(self) -> None:
+        question = {"id": "x", "expect": {"no_layer": True}}
+        assert evaluate(question, Observation(answer="a", catalog_layers=["Hochwasser"])).passed
+        verdict = evaluate(question, Observation(answer="a", layers=["my result"]))
+        assert not verdict.passed
+        assert "unexpected_layer" in verdict.stages
+
+    def test_no_catalog_layer_forbids_calling_display_catalog_layer(self) -> None:
+        question = {"id": "x", "expect": {"no_catalog_layer": True}}
+        offered = Observation(
+            answer="a",
+            tool_calls=["search_layers", "display_catalog_layer"],
+            catalog_layers=["Hochwasser"],
+        )
+        verdict = evaluate(question, offered)
+        assert not verdict.passed
+        assert "unexpected_catalog_layer" in verdict.stages
+        assert evaluate(question, Observation(answer="a")).passed
+
+    def test_clarifying_still_fails_if_it_offered_a_layer_instead(self) -> None:
+        """Offering an official layer is answering anyway, not asking."""
+        question = {"id": "x", "expect": {"must_clarify": True}}
+        observed = Observation(answer="Hier ist die Karte.", catalog_layers=["Gefahrenkarte"])
+        assert not evaluate(question, observed).passed
+
+    def test_the_declining_questions_forbid_offers_too(self) -> None:
+        """Under production config `no_layer` alone would let an out-of-scope answer
+        offer a Swiss layer for Lyon, which is the behaviour the question exists for."""
+        import yaml as _yaml
+        from evals.run import QUESTIONS
+
+        by_id = {q["id"]: q for q in _yaml.safe_load(QUESTIONS.read_text(encoding="utf-8"))}
+        for qid in ("out-of-scope-abroad-fr", "nonexistent-pools-de", "vague-that-thing-de"):
+            assert by_id[qid]["expect"].get("no_catalog_layer"), qid
+
+
+class TestNoCatalogLayerKeysOnTheOffer:
+    """search_layers attaches every displayable candidate before the model chooses one
+    (app/agent/loop.py), so keying this on harvested references measured "did
+    search_layers run" rather than "did the answer offer a layer". nonexistent-pools-de
+    failed while correctly saying no dataset matched."""
+
+    def test_candidates_alone_are_not_an_offer(self) -> None:
+        question = {"id": "x", "expect": {"no_catalog_layer": True}}
+        observed = Observation(
+            answer="Kein passender Datensatz.",
+            tool_calls=["search_locations", "search_layers"],
+            catalog_layers=["Messstationen", "Naturschutzgebiete"],
+        )
+        assert evaluate(question, observed).passed
+
+    def test_calling_display_catalog_layer_is_an_offer(self) -> None:
+        question = {"id": "x", "expect": {"no_catalog_layer": True}}
+        observed = Observation(
+            answer="Hier ist die Karte.",
+            tool_calls=["search_layers", "display_catalog_layer"],
+            catalog_layers=["Gefährdungskarte"],
+        )
+        verdict = evaluate(question, observed)
+        assert not verdict.passed
+        assert "unexpected_catalog_layer" in verdict.stages

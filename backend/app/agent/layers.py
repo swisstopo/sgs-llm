@@ -34,8 +34,8 @@ _GEOMETRY_ALIASES = {
     "multipolygon": "polygon",
 }
 
-# Only formats the protocol declares. `parquet` stays recognised because it is stable
-# in the contract, even though the frontend shows it as not yet displayable.
+# Only formats the protocol declares. geosearch publishes personalized results as
+# GeoParquet, which the frontend decodes in a worker (frontend/src/map/geoparquet.ts).
 _EXTENSION_FORMATS = {".geojson": "geojson", ".json": "geojson", ".parquet": "parquet"}
 
 MAX_LAYERS_PER_ANSWER = 6

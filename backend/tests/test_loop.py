@@ -144,6 +144,108 @@ async def test_failed_tool_is_reported_and_the_turn_still_answers(settings) -> N
     assert events[-1].type == "final"
 
 
+async def test_a_recoverable_tool_error_is_not_a_failed_step(settings) -> None:
+    """swisstopo Q1/Q5: geosearch's own "give me an area" guidance rendered as a red
+    Step failed with pydantic's error URL under it, on turns that then answered."""
+    from tests.conftest import FakeModels
+
+    guidance = "Give an area: `place` from search_locations, or a bbox in WGS84."
+    tools = FakeToolSession(
+        {"filter_features": ToolOutcome(text=guidance, data=None, is_error=True, recoverable=True)},
+        specs=["filter_features"],
+    )
+    models = FakeModels(
+        [
+            tool_result("filter_features", {"layer_id": "ch.bafu.x"}),
+            text_result("Ich habe die Abfrage angepasst."),
+        ]
+    )
+
+    stats = TurnStats()
+    events = await _collect(_message(), models, FakeGateway(tools), settings, stats)
+    steps = [e for e in events if e.type == "intermediate" and e.step_id != "s0"]
+
+    assert not any(step.status == "failed" for step in steps)
+    assert [step.label for step in steps] == [
+        i18n.tool_running("filter_features", "de"),
+        i18n.tool_retrying("de"),
+    ]
+    assert all(step.detail is None for step in steps)
+    # The user no longer sees it; the model must, or it cannot recover.
+    tool_block = models.calls[1]["messages"][-1]["content"][0]["toolResult"]
+    assert tool_block["status"] == "error"
+    assert tool_block["content"] == [{"text": guidance}]
+    # And the turn must still record that it happened, or the eval harness scores the
+    # presentation and must_not_fail_tools can never fail on a recovered error.
+    assert stats.failed_tool_calls == ["filter_features"]
+    assert events[-1].type == "final"
+
+
+async def test_an_identical_repeated_tool_call_is_answered_not_executed(settings) -> None:
+    """Apertus repeated the same invalid filter_features call verbatim. The second one
+    cannot succeed, so spending an iteration and a round trip on it is waste."""
+    from tests.conftest import FakeModels
+
+    tools = FakeToolSession(
+        {"search_layers": ToolOutcome(text="no matches", data=None, is_error=True)}
+    )
+    arguments = {"query": "Naturpark"}
+    models = FakeModels(
+        [
+            tool_result("search_layers", arguments, "tu-1"),
+            tool_result("search_layers", arguments, "tu-2"),
+            text_result("Ich habe keinen passenden Datensatz gefunden."),
+        ]
+    )
+
+    events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
+
+    assert tools.calls == [("search_layers", arguments)]
+    second_block = models.calls[2]["messages"][-1]["content"][0]["toolResult"]
+    assert second_block["toolUseId"] == "tu-2"
+    assert "already called" in second_block["content"][0]["text"]
+    assert events[-1].type == "final"
+
+
+async def test_filter_features_keeps_one_repeat_for_the_connection_retry(settings) -> None:
+    """The prompt asks for exactly one filter_features retry after a connection closed
+    early, so the duplicate guard must not take that away."""
+    from tests.conftest import FakeModels
+
+    payload = {"result_id": "fs_1", "clipped_to": "kanton Genève"}
+
+    class ScriptedTools(FakeToolSession):
+        def __init__(self) -> None:
+            super().__init__({}, specs=["filter_features"])
+            self._script = [
+                ToolOutcome(text="connection closed", data=None, is_error=True),
+                ToolOutcome(text=json.dumps(payload), data=payload, is_error=False),
+            ]
+
+        async def call(self, name, arguments):
+            self.calls.append((name, arguments))
+            return self._script.pop(0)
+
+    arguments = {
+        "layer_id": "ch.swisstopo.vec25-gebaeude",
+        "place": "Genève",
+        "place_kind": "kanton",
+    }
+    tools = ScriptedTools()
+    models = FakeModels(
+        [
+            tool_result("filter_features", arguments, "tu-1"),
+            tool_result("filter_features", arguments, "tu-2"),
+            text_result("Die Gebäude im Kanton Genf sind abgefragt."),
+        ]
+    )
+
+    events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
+
+    assert len(tools.calls) == 2
+    assert events[-1].type == "final"
+
+
 async def test_failed_named_place_filter_keeps_its_scope_on_bbox_retry(settings) -> None:
     """A transport retry must not turn a canton into its rectangular bounding box."""
 
@@ -226,11 +328,12 @@ async def test_named_place_filter_fails_closed_without_clipping_provenance(setti
 
     events = await _collect(_message(), models, FakeGateway(tools), settings, TurnStats())
 
-    failed = [
-        event for event in events if event.type == "intermediate" and event.status == "failed"
-    ]
-    assert len(failed) == 1
-    assert "did not confirm clipping" in (failed[0].detail or "")
+    # Fails closed towards the model, not towards the user: the guard fires on turns that
+    # then retry successfully, so it reports as an adjustment rather than a red step.
+    assert not any(event.type == "intermediate" and event.status == "failed" for event in events)
+    assert any(
+        event.type == "intermediate" and event.label == i18n.tool_retrying("de") for event in events
+    )
     tool_block = models.calls[1]["messages"][-1]["content"][0]["toolResult"]
     assert tool_block["status"] == "error"
     assert (
