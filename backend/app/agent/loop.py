@@ -142,7 +142,8 @@ def _verify_named_filter(name: str, arguments: dict[str, Any], outcome: ToolOutc
         return outcome
     return ToolOutcome(
         text=(
-            "Tool filter_features did not confirm the requested spatial operation for the named place; "
+            "Tool filter_features did not confirm the requested spatial operation "
+            "for the named place; "
             "do not describe the result as covering that named area. Retry with the same "
             "place and place_kind."
         ),
