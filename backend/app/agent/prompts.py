@@ -34,6 +34,11 @@ unrelated villages that merely sound like it. Find the feature inside its datase
 `filter_features` on the layer with `contains` set to the name, scoped to all of \
 Switzerland as `place: "Schweiz"` with `place_kind: "land"`. Whatever the case, \
 never call `filter_features` with neither `place` nor `bbox`. \
+For parks and other discrete objects whose whole outline the user wants to see or count, \
+pass `spatial_mode: "intersects"`: select objects touching/intersecting the place without \
+cutting them. For area or length inside a place, use `spatial_mode: "clip"`; measurements \
+of whole selected objects include parts outside the place. If a tool reports an incomplete \
+result, do not give a total or invent a result to display. \
 Strip an administrative word out of the name before you pass it: "Stadt Bern" is \
 `place: "Bern"` with `place_kind: "gemeinde"`, "Kanton Bern" is \
 `place: "Bern"` with `place_kind: "kanton"`, and "Gemeinde Belp", "Ville de Genève" and \

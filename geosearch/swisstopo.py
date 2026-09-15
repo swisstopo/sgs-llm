@@ -92,6 +92,10 @@ DIVISIONS = (
 )
 
 
+class IncompleteFeatureFetch(RuntimeError):
+    """Some requested features could not be fetched; never return a partial total."""
+
+
 class LayerNotQueryable(Exception):
     """The dataset exists but has no queryable feature table.
 
@@ -501,7 +505,10 @@ class Swisstopo:
         if failed:
             # Never silent: a dropped cell is a hole in the map, and the count derived
             # from it would otherwise be reported as a total.
-            logger.warning("%s: %d/%d grid cells failed", layer_id, failed, len(cells))
+            raise IncompleteFeatureFetch(
+                f"{failed}/{len(cells)} query cells failed. Retry or narrow the area; "
+                "no complete result is available."
+            )
         logger.info("%s: %d unique features from %d cells", layer_id, len(features), len(cells))
         return features[:max_features] if max_features else features
 
@@ -570,7 +577,7 @@ class Swisstopo:
                 for row in rows:
                     geometry = row.get("geometry")
                     if not isinstance(geometry, dict):
-                        continue
+                        raise IncompleteFeatureFetch("A fetched feature has no geometry.")
                     out.append(
                         {
                             "type": "Feature",
@@ -582,7 +589,9 @@ class Swisstopo:
                 if len(rows) < PAGE:
                     break
             else:
-                logger.warning("%s: cell hit the %d-page cap", layer_id, MAX_PAGES)
+                raise IncompleteFeatureFetch(
+                    f"Query cell reached its {MAX_PAGES}-page limit. Narrow the area."
+                )
         return out
 
     async def fetch_divisions(

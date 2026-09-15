@@ -26,12 +26,13 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-from .geometry import bounding_box, clip, geometry_type, measure, summarise_properties
+from .geometry import (GeometryProcessingError, bounding_box, clip, geometry_type, measure,
+                       select_intersecting, summarise_properties)
 from .index import INDEX_DIR, GeoIndex, confidence
 from .rerank import Reranker
 from .results import ResultCache
 from .s3 import BoundaryStore, S3Store, start_local_s3
-from .swisstopo import LayerNotQueryable, Swisstopo
+from .swisstopo import IncompleteFeatureFetch, LayerNotQueryable, Swisstopo
 
 logger = logging.getLogger(__name__)
 
@@ -576,6 +577,7 @@ def build_server(
         place_kind: str | None = None,
         filters: list[dict[str, Any]] | None = None,
         time: str | None = None,
+        spatial_mode: str = "clip",
     ) -> dict[str, Any]:
         """Fetch features of one dataset inside a place, or inside a bounding box.
 
@@ -594,12 +596,19 @@ def build_server(
         greater_than, greater_or_equal, less_than, less_or_equal. Never pass a raw API
         expression. `contains` remains as a compatibility-wide text search.
 
-        This fetches ALL features in the area, not a page of them, so the count it
-        reports is a real total rather than a cap.
+        `spatial_mode="intersects"` selects whole objects that intersect or touch the
+        boundary: use it to show/count parks or other discrete objects without cutting
+        their outlines. `spatial_mode="clip"` (default) cuts to the boundary for area or
+        length INSIDE the place, discarding border-only contacts and tiny slivers.
+        Never describe measurements of whole selected objects as inside-place totals.
+
+        Fetches every feature or returns an error; partial results are never cached.
 
         Returns a summary plus a `result_id` handle - not the features themselves. Pass
         the handle to analyze_features for figures, or to display_layer to put it on the map.
         """
+        if spatial_mode not in {"clip", "intersects"}:
+            return {"error": "spatial_mode must be clip or intersects."}
         boundary = None
         clipped_to = None
         if place:
@@ -622,6 +631,8 @@ def build_server(
             features = await swisstopo.fetch_features(
                 layer_id, bbox, lang=lang, time_instant=time
             )
+        except IncompleteFeatureFetch as exc:
+            return {"error": str(exc), "complete": False}
         except LayerNotQueryable:
             # An answerable fact, not a failure. Reported as one so the model picks a
             # different dataset instead of retrying this one until it runs out of turns.
@@ -652,7 +663,20 @@ def build_server(
         # Cut after `contains` rather than before: the text filter is free and the
         # intersection is not, so it runs on the smaller set.
         if boundary is not None:
-            features = clip(features, boundary)
+            try:
+                features = (
+                    select_intersecting(features, boundary)
+                    if spatial_mode == "intersects"
+                    else clip(features, boundary)
+                )
+            except GeometryProcessingError as exc:
+                return {"error": str(exc), "complete": False}
+        spatial_scope = {"spatial_mode": spatial_mode} if boundary is not None else {}
+        if clipped_to:
+            spatial_scope["selected_by" if spatial_mode == "intersects" else "clipped_to"] = clipped_to
+        # Whole-object selection is not clipping; keep that distinction in later analysis.
+        if spatial_mode == "intersects":
+            clipped_to = None
         if not features:
             where = f"in {place}" if place else "in this area"
             return _with_clipping_scope(
@@ -675,8 +699,10 @@ def build_server(
                 clipped_to,
             )
 
-        entry = cache.put(layer_id, layer_id, features)
+        entry = cache.put(layer_id, layer_id, features, spatial_scope=spatial_scope)
         result = {
+            **spatial_scope,
+            "complete": True,
             "result_id": entry.result_id,
             "layer_id": layer_id,
             "feature_count": len(features),
@@ -761,7 +787,9 @@ def build_server(
         }
         if wanted not in allowed:
             return {"error": f"Unsupported analysis operation '{operation}'."}
-        result: dict[str, Any] = {"result_id": result_id, "count": len(entry.features)}
+        result: dict[str, Any] = {
+            "result_id": result_id, "count": len(entry.features), **entry.spatial_scope
+        }
         if wanted in ("area", "length", "summary"):
             result.update(measure(entry.features))
         if wanted in ("extent", "summary"):
