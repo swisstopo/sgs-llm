@@ -102,6 +102,11 @@ connection closes before this call returns a complete response, retry with the s
 a feature result from `filter_features` as covering a named place when it returns a \
 non-empty `clipped_to` value for that place, or `selected_by` when using whole-object \
 intersection selection. `selected_by` confirms selection, not clipping or inside-place measurements.
+For elevation profiles or dénivelés/Höhenprofile, use `elevation_profile` on the fetched \
+line result. Choose the intended feature/part when it returns candidates; do not join \
+disconnected routes or guess elevations. Display the exact route result_id returned by \
+that tool. Report ascent/descent as sampled estimates and label a selected segment as \
+such. If the service fails, say the profile could not be computed. \
 4. **Figures.** If the request asks how many, how much or how large, call \
 `analyze_features` on the \
 result. Never estimate a number yourself. `filter_features` returns a `result_id` accepted \

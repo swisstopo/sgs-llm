@@ -30,6 +30,7 @@ from .geometry import (GeometryProcessingError, bounding_box, clip, geometry_typ
                        select_intersecting, summarise_properties)
 from .index import INDEX_DIR, GeoIndex, confidence
 from .places import DivisionLookupError, candidate
+from .profile_tool import register_profile_tool
 from .rerank import Reranker
 from .results import ResultCache
 from .s3 import BoundaryStore, S3Store, start_local_s3
@@ -165,6 +166,7 @@ def build_server(
     """
     server = MCPServer(name="sgs-llm-geodata", version="1")
     cache = ResultCache()
+    register_profile_tool(server, swisstopo, cache)
     location_refs: dict[str, dict[str, float]] = {}
     judge = reranker or Reranker()
 

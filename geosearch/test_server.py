@@ -146,7 +146,7 @@ async def _call(
     return result.structured_content
 
 
-async def test_phase_one_exposes_the_intended_ten_tools() -> None:
+async def test_exposes_the_intended_tools() -> None:
     server = build_server(
         StubIndex(), StubSwisstopo([]), RecordingArtifacts(), StubBoundaries()
     )
@@ -161,6 +161,7 @@ async def test_phase_one_exposes_the_intended_ten_tools() -> None:
         "identify_at_point",
         "filter_features",
         "analyze_features",
+        "elevation_profile",
         "display_division",
         "display_catalog_layer",
         "display_layer",

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,8 @@ from urllib.parse import urljoin
 
 import httpx
 from pyproj import Transformer
+
+from .elevation import MAX_SAMPLES, PROFILE_URL, project_route, summarize_profile
 
 logger = logging.getLogger(__name__)
 
@@ -453,6 +456,21 @@ class Swisstopo:
         return features
 
     # ----------------------------------------------------------------- features
+
+    async def elevation_profile(
+        self, geometry: dict[str, Any], *, samples: int = 200
+    ) -> dict[str, Any]:
+        if not 2 <= samples <= MAX_SAMPLES:
+            raise ValueError("samples must be between 2 and 200.")
+        route = project_route(geometry)
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=_TIMEOUT)
+        response = await self._client.post(
+            PROFILE_URL,
+            data={"geom": json.dumps(route), "sr": "2056", "nb_points": str(samples)},
+        )
+        response.raise_for_status()
+        return summarize_profile(response.json(), route)
 
     async def fetch_features(
         self,

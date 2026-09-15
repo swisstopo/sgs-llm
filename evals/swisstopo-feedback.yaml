@@ -240,10 +240,13 @@
     - role: assistant
       content: Voici les itinéraires de randonnée dans la région du Schwarzsee.
   user_intent: >-
-    Elevation profiles for the routes shown in the previous turn. No profile tool exists in
-    the catalogue, though geo.admin.ch's profile.json does, so the answer says so and
-    invents no ascent or descent figures. Judged. Flips to must_call_tool once a tool
-    exists.
+    Elevation profiles for routes shown in the previous turn. elevation_profile is now
+    available: reuse a cached route or fetch it again if the handle is unavailable.
+    If several routes or disconnected parts remain, ask which one to profile rather
+    than silently choosing the first. Numeric elevations/ascent/descent must come from
+    the profile tool, and sampled estimates or a selected segment must be labelled.
+    Do not claim the capability is missing or invent figures. Judged because this
+    history has no concrete selected route or reusable tool result handle.
   expect:
     must_not_fail_tools: true
     answer_lang: fr

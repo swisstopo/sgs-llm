@@ -1,0 +1,39 @@
+{
+  "official_example": {
+    "complete": true,
+    "sample_count": 20,
+    "returned_sample_count": 20,
+    "samples_summarized": false,
+    "distance_m": 12895.6,
+    "min_elevation_m": 623.6,
+    "max_elevation_m": 1292.1,
+    "ascent_m": 562.4,
+    "descent_m": 743.7,
+    "source_url": "https://api3.geo.admin.ch/rest/services/profile.json",
+    "attribution": "swisstopo / geo.admin.ch",
+    "note": "Ascent and descent are estimates from sampled elevations in the line's coordinate order."
+  },
+  "schwarzsee_segment": {
+    "layer_id": "ch.swisstopo.swisstlm3d-wanderwege",
+    "bbox": [
+      7.28,
+      46.67,
+      7.3,
+      46.68
+    ],
+    "feature_id": 3813246,
+    "selection": "longest fetched LineString segment",
+    "complete": true,
+    "sample_count": 421,
+    "returned_sample_count": 200,
+    "samples_summarized": true,
+    "distance_m": 3404.2,
+    "min_elevation_m": 1140.1,
+    "max_elevation_m": 1620.4,
+    "ascent_m": 21.9,
+    "descent_m": 502.2,
+    "source_url": "https://api3.geo.admin.ch/rest/services/profile.json",
+    "attribution": "swisstopo / geo.admin.ch",
+    "note": "Ascent and descent are estimates from sampled elevations in the line's coordinate order."
+  }
+}

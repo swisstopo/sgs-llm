@@ -21,6 +21,7 @@ A `result_id` is a temporary server-side handle. It must be copied exactly and u
 | `display_division` | Prepares an official administrative boundary as a personalized GeoParquet result layer. |
 | `filter_features` | Retrieves all queryable features inside a named boundary or map bounding box, with safe attribute and time filters. |
 | `display_catalog_layer` | Offers an official WMS, WMTS, or GeoJSON catalogue layer for optional addition to the map. |
+| `elevation_profile` | Samples elevations and estimates ascent/descent on one selected fetched line. |
 | `analyze_features` | Computes counts, measurements, extents, groups, frequent values, and numeric statistics over a fetched result. |
 | `display_layer` | Publishes a fetched or identified feature result as a personalized GeoParquet layer. |
 
@@ -746,3 +747,35 @@ Copy the selected reference into `filter_features(place_ref=...)` or
 kinds in different cantons and are looked up in the index, never used as arbitrary paths.
 A named boundary supplies its own full bounding box; an unrelated caller bbox cannot
 silently narrow the result while claiming coverage of the whole place.
+
+
+## 11. `elevation_profile`
+
+Use the exact `result_id` of a fetched line feature set. The tool calls the official
+[geo.admin.ch profile service](https://docs.geo.admin.ch/access-data/get-elevation-profile.html)
+with a LineString transformed from WGS84 into LV95, explicitly specifying `sr=2056`.
+
+| Input | Requirement |
+| --- | --- |
+| `result_id` | Required cached feature result from `filter_features` |
+| `feature_index` | Zero-based index; required when the result has more than one feature |
+| `part_index` | Zero-based part; required for MultiLineString with multiple parts |
+| `samples` | 2 through 200, default 200 |
+
+A source line may contain 2 through 5,000 vertices. The tool neither silently simplifies
+longer geometry nor connects disconnected parts. Ambiguity returns bounded candidates
+and their total count; the user must select a route/part or narrow the source result.
+
+A successful response includes `samples` with `distance_m` and `elevation_m`, total
+`distance_m`, min/max elevation, estimated `ascent_m`/`descent_m`, `sample_count`,
+source attribution, and scope. The service can retain more source vertices than the
+requested sample count. Metrics use every service sample; the model-facing series is
+bounded to 200 entries with `returned_sample_count` and `samples_summarized` indicating
+that reduction. Estimates depend on sampling and follow the line's
+coordinate order; a selected part is not the entire route/network.
+
+The returned `result_id` holds the exact profiled line. Pass it to `display_layer` so
+the displayed geometry matches the profile; `source_result_id` identifies the input.
+Missing elevations, malformed/partial profiles and service errors return no derived
+result handle or numeric totals. This provides profile data and a matching map line;
+it does not introduce a dedicated frontend chart component.
