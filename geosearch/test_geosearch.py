@@ -369,10 +369,11 @@ def test_identical_names_rank_coarsest_first(tiny_index_with_levels):
     assert [h.row["kind"] for h in hits] == ["kanton", "bezirk", "gemeinde", "ortschaft"]
 
 
-def test_an_unqualified_name_resolves_to_the_coarsest_division(tiny_index_with_levels):
-    # Zürich is a canton, a district, a commune and a locality. Unqualified, the largest
-    # of them is the safe answer; a locality would put one postcode area on the map.
-    assert tiny_index_with_levels.division_by_name("Zürich")["kind"] == "kanton"
+def test_an_unqualified_name_returns_candidates(tiny_index_with_levels):
+    from .places import DivisionLookupError
+    with pytest.raises(DivisionLookupError) as exc:
+        tiny_index_with_levels.division_by_name("Zürich")
+    assert [row["kind"] for row in exc.value.candidates] == ["kanton", "bezirk", "gemeinde", "ortschaft"]
     assert tiny_index_with_levels.division_by_name("Zürich", kind="ortschaft")["feature_count"] == 24
 
 

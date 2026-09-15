@@ -32,6 +32,7 @@ import faiss
 import numpy as np
 
 from .catalog_terms import CATALOG_TERMS, alias_matches
+from .places import DivisionLookupError, candidate, division_query
 
 logger = logging.getLogger(__name__)
 
@@ -335,8 +336,13 @@ class GeoIndex:
         "Genève" and "Zurich" to "Zürich", which an exact-match lookup on the
         gazetteer does not.
         """
-        vector = self.embedder.encode_query(query)
+        query, inferred = division_query(query, None)
         wanted = set(kinds) if kinds else None
+        if inferred:
+            if wanted and inferred not in wanted:
+                return []
+            wanted = {inferred}
+        vector = self.embedder.encode_query(query)
         scores, ids = _search(self.division_name, vector, max(limit * 5, 100))
 
         # FAISS does not order exact ties, and since the locality register was added there
@@ -344,8 +350,14 @@ class GeoIndex:
         # vector, one score. Tie-break on rid, which runs coarsest first, so the commune
         # leads its locality instead of whichever the heap happened to pop - an agent that
         # takes the top bbox at face value should get the bigger, safer one.
+        by_rid = {int(r): float(s) for s, r in zip(scores, ids) if r >= 0}
+        exact = self.db.execute(
+            "SELECT rid FROM divisions WHERE lower(name) = lower(?)", [query]
+        ).fetchall()
+        for (rid,) in exact:
+            by_rid[int(rid)] = 1.1
         ranked = sorted(
-            ((float(s), int(r)) for s, r in zip(scores, ids) if r >= 0),
+            ((score, rid) for rid, score in by_rid.items()),
             key=lambda pair: (-pair[0], pair[1]),
         )
 
@@ -374,19 +386,36 @@ class GeoIndex:
         out["bbox"] = list(out["bbox"]) if out["bbox"] is not None else None
         return out
 
-    def division_by_name(self, name: str, kind: str | None = None) -> dict[str, Any] | None:
+    def division_by_name(
+        self, name: str, kind: str | None = None, division_ref: str | None = None
+    ) -> dict[str, Any] | None:
+        name, kind = division_query(name, kind)
+        if division_ref:
+            found = self.db.execute(
+                "SELECT rid FROM divisions WHERE s3_key = ?", [division_ref]
+            ).fetchall()
+            if len(found) != 1:
+                raise DivisionLookupError("Unknown division_ref. Call search_locations again.")
+            row = self._division_row(int(found[0][0]))
+            if (name and name.casefold() != str(row["name"]).casefold()) or (
+                kind and kind != row["kind"]
+            ):
+                raise DivisionLookupError("division_ref conflicts with the supplied name or kind.")
+            return row
         sql = "SELECT rid FROM divisions WHERE lower(name) = lower(?)"
         params: list[Any] = [name]
         if kind:
             sql += " AND kind = ?"
             params.append(kind)
-        # One name can be four levels at once - Zürich is a canton, a district, a commune
-        # and a locality. rid follows DIVISIONS, which is ordered coarsest first, so an
-        # unqualified name draws the largest thing that bears it. Ordering explicitly
-        # because it is a behaviour, not an accident of insertion.
-        sql += " ORDER BY rid LIMIT 1"
-        row = self.db.execute(sql, params).fetchone()
-        return self._division_row(row[0]) if row else None
+        found = self.db.execute(sql + " ORDER BY rid", params).fetchall()
+        rows = [self._division_row(int(row[0])) for row in found]
+        if len(rows) > 1:
+            raise DivisionLookupError(
+                "Several divisions match. Choose a candidate and pass its division_ref.",
+                [candidate(row) for row in rows],
+            )
+        # Approximate names are suggestions, never permission to silently fetch another place.
+        return rows[0] if rows else None
 
     def counts(self) -> dict[str, int]:
         def one(sql: str) -> int:

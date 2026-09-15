@@ -29,6 +29,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from .geometry import (GeometryProcessingError, bounding_box, clip, geometry_type, measure,
                        select_intersecting, summarise_properties)
 from .index import INDEX_DIR, GeoIndex, confidence
+from .places import DivisionLookupError, candidate
 from .rerank import Reranker
 from .results import ResultCache
 from .s3 import BoundaryStore, S3Store, start_local_s3
@@ -505,8 +506,10 @@ def build_server(
         semantic, so accents and spelling variants resolve ("Geneve" → "Genève",
         "Zurich" → "Zürich"). Use this whenever the question names a place.
 
-        Pass the `name` and `kind` of the hit you chose to filter_features as `place` and
-        `place_kind`, not the `bbox`: the bbox is only the rectangle around the place, and
+        Pass the chosen `division_ref` as filter_features' `place_ref` or as
+        display_division's `division_ref`. Alternatively pass `name`/`kind` as `place`/
+        `place_kind`. A reference distinguishes identically named divisions. Do not pass
+        the `bbox` for a named place: the bbox is only the rectangle around the place, and
         filtering by it answers with the neighbours in the corners too.
 
         Returns [] if the place is unknown - never invent one.
@@ -517,10 +520,7 @@ def build_server(
         return {
             "places": [
                 {
-                    "name": h.row["name"],
-                    "kind": h.row["kind"],
-                    "canton": h.row["canton"],
-                    "bbox": h.row["bbox"],
+                    **candidate(h.row),
                     "similarity": round(h.score, 4),
                 }
                 for h in hits
@@ -528,10 +528,13 @@ def build_server(
         }
 
     @server.tool()
-    async def display_division(name: str, kind: str | None = None) -> dict[str, Any]:
+    async def display_division(
+        name: str = "", kind: str | None = None, division_ref: str | None = None
+    ) -> dict[str, Any]:
         """Prepare an administrative boundary as a clickable chat map layer.
 
-        `name` is a place from search_locations; `kind` is one of "land", "kanton",
+        Prefer `division_ref` copied from search_locations or an ambiguity response.
+        Otherwise `name` is a place from search_locations; `kind` is one of "land", "kanton",
         "bezirk", "gemeinde", "ortschaft" and disambiguates the many cases where one name
         names several levels (Zug and Bern are a commune and a canton; Zürich is also a
         district and a locality).
@@ -541,7 +544,10 @@ def build_server(
         its layer id to analyze_features. Only filter_features produces analyzable
         result ids.
         """
-        row = index.division_by_name(name, kind)
+        try:
+            row = index.division_by_name(name, kind, division_ref)
+        except DivisionLookupError as exc:
+            return {"error": str(exc), "candidates": exc.candidates}
         if row is None:
             return {
                 "error": f"No division named '{name}'. Call search_locations first."
@@ -550,13 +556,13 @@ def build_server(
         collection = store.get_geojson(row["s3_key"])
         features = collection.get("features") or []
         url = await artifacts.publish_geoparquet(
-            f"division-{row['kind']}-{name}.parquet", features
+            f"division-{row['kind']}-{row['name']}.parquet", features
         )
         if url is None:
             return {"error": "Could not publish the layer."}
         return {
             "layer": {
-                "id": f"division-{row['kind']}-{name}",
+                "id": f"division-{row['kind']}-{row['name']}",
                 "name": row["name"],
                 "format": "parquet",
                 "url": url,
@@ -578,11 +584,14 @@ def build_server(
         filters: list[dict[str, Any]] | None = None,
         time: str | None = None,
         spatial_mode: str = "clip",
+        place_ref: str | None = None,
     ) -> dict[str, Any]:
         """Fetch features of one dataset inside a place, or inside a bounding box.
 
         `layer_id` comes from search_layers. Give the area one of two ways:
 
+        - `place_ref` - the exact `division_ref` from search_locations or an ambiguity
+          response; also works for identically named places in different cantons.
         - `place` (+ `place_kind`) - the `name` and `kind` of a hit from search_locations.
           **Prefer this.** The result is cut to the real boundary, so counts, figures and
           the map all describe the place itself.
@@ -611,8 +620,11 @@ def build_server(
             return {"error": "spatial_mode must be clip or intersects."}
         boundary = None
         clipped_to = None
-        if place:
-            row = index.division_by_name(place, place_kind)
+        if place or place_ref:
+            try:
+                row = index.division_by_name(place or "", place_kind, place_ref)
+            except DivisionLookupError as exc:
+                return {"error": str(exc), "candidates": exc.candidates}
             if row is None:
                 return {
                     "error": f"No Swiss place named '{place}'. Call search_locations first."
@@ -620,7 +632,7 @@ def build_server(
             boundary = store.get_geojson(row["s3_key"]).get("features") or []
             clipped_to = f"{row['kind']} {row['name']}"
             # The boundary decides what is inside; its box is only how much to ask for.
-            bbox = bbox or row["bbox"]
+            bbox = row["bbox"]
         if not bbox or len(bbox) != 4:
             return {
                 "error": "Give an area: `place` from search_locations, or a bbox "
@@ -673,6 +685,8 @@ def build_server(
                 return {"error": str(exc), "complete": False}
         spatial_scope = {"spatial_mode": spatial_mode} if boundary is not None else {}
         if clipped_to:
+            assert row is not None  # a scope is only set after resolving a division
+            spatial_scope["division_ref"] = row["s3_key"]
             spatial_scope["selected_by" if spatial_mode == "intersects" else "clipped_to"] = clipped_to
         # Whole-object selection is not clipping; keep that distinction in later analysis.
         if spatial_mode == "intersects":

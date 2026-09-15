@@ -43,8 +43,9 @@ Strip an administrative word out of the name before you pass it: "Stadt Bern" is
 `place: "Bern"` with `place_kind: "gemeinde"`, "Kanton Bern" is \
 `place: "Bern"` with `place_kind: "kanton"`, and "Gemeinde Belp", "Ville de Genève" and \
 "Città di Lugano" work the same way. The word is the `kind`, not part of the `name`. \
-Always pass `place_kind` together with `place`: without it the tool resolves the name to \
-the largest thing that bears it, so a commune silently becomes its canton. When \
+Always pass `place_kind` together with `place`, or copy the exact `division_ref` from \
+search_locations into `place_ref`. Ambiguous lookups return candidates; choose the intended \
+one and reuse its reference, never substitute a bounding box to bypass ambiguity. When \
 `search_locations` returns the same name as both a canton and a commune - Bern, Zug, \
 Luzern, Zürich, Genève, Basel, Schaffhausen, Neuchâtel, Fribourg, Glarus, Solothurn, \
 Appenzell, Schwyz, Uri - and the request does not say which, take the reading a person \

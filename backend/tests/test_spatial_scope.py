@@ -38,3 +38,21 @@ def test_bbox_retry_preserves_whole_object_selection():
         "place_kind": "kanton",
         "spatial_mode": "intersects",
     }
+
+
+def test_reference_scope_is_verified_and_preserved_on_bbox_retry():
+    arguments = {
+        "layer_id": "ch.parks",
+        "place_ref": "divisions/BE/bern",
+        "spatial_mode": "intersects",
+    }
+    scope = _named_filter_scope("filter_features", arguments)
+    restored = _restore_failed_named_scope(
+        "filter_features", {"layer_id": "ch.parks", "bbox": [7, 46, 8, 47]}, {"ch.parks": scope}
+    )
+    assert restored == arguments
+    data = {"result_id": "fs_1", "selected_by": "kanton Bern", "division_ref": "divisions/BE/bern"}
+    outcome = ToolOutcome(text="selected", data=data, is_error=False)
+    assert _verify_named_filter("filter_features", arguments, outcome) is outcome
+    data["division_ref"] = "divisions/ZG/zug"
+    assert _verify_named_filter("filter_features", arguments, outcome).is_error

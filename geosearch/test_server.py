@@ -23,7 +23,7 @@ def _point(index: int, *, keep: bool = True, x: float = 7.0) -> dict[str, Any]:
 
 class StubIndex:
     def division_by_name(
-        self, name: str, kind: str | None = None
+        self, name: str, kind: str | None = None, division_ref: str | None = None
     ) -> dict[str, Any] | None:
         if name != "Bern":
             return None

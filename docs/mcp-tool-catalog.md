@@ -731,3 +731,18 @@ Use the returned `location_ref` for point identification to preserve precision.
 CadastralWebMap. These aliases are applied when reading existing catalogue rows and
 are also supplied to the relevance judge; they do not require a vector rebuild or
 replace official titles. Parcel queries and cadastral-map queries remain distinct.
+
+### Place qualifiers and ambiguous names
+
+`search_locations`, `filter_features` and `display_division` recognize administrative
+prefixes such as Stadt Bern, Kanton Bern, Ville de Genève and Città di Lugano.
+An explicit conflicting kind is rejected. Exact names are preferred by search;
+approximate matches remain suggestions for the caller to choose.
+
+Lookup no longer silently picks the largest division when a name has several matches.
+It returns an error with candidates containing name, kind, canton, bbox and `division_ref`.
+Copy the selected reference into `filter_features(place_ref=...)` or
+`display_division(division_ref=...)`. References also distinguish identical names and
+kinds in different cantons and are looked up in the index, never used as arbitrary paths.
+A named boundary supplies its own full bounding box; an unrelated caller bbox cannot
+silently narrow the result while claiming coverage of the whole place.

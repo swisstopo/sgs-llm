@@ -64,7 +64,7 @@ FINAL_ANSWER_NUDGE = (
     "determine."
 )
 
-_NamedFilterScope = tuple[str, str | None, str]
+_NamedFilterScope = dict[str, str]
 
 
 def _append_user_text(messages: list[dict[str, Any]], text: str) -> None:
@@ -90,14 +90,12 @@ def _string_argument(arguments: dict[str, Any], name: str) -> str | None:
 def _named_filter_scope(name: str, arguments: dict[str, Any]) -> _NamedFilterScope | None:
     if name != "filter_features":
         return None
-    place = _string_argument(arguments, "place")
-    if place is None:
-        return None
-    return (
-        place,
-        _string_argument(arguments, "place_kind"),
-        str(arguments.get("spatial_mode", "clip")),
-    )
+    scope = {
+        key: value
+        for key in ("place", "place_kind", "place_ref", "spatial_mode")
+        if (value := _string_argument(arguments, key)) is not None
+    }
+    return scope if scope.get("place") or scope.get("place_ref") else None
 
 
 def _restore_failed_named_scope(
@@ -106,22 +104,19 @@ def _restore_failed_named_scope(
     failed_scopes: dict[str, _NamedFilterScope],
 ) -> dict[str, Any]:
     """Keep a named filter retry semantic even if the model falls back to its bbox."""
-    if name != "filter_features" or _string_argument(arguments, "place") is not None:
+    if name != "filter_features" or _named_filter_scope(name, arguments) is not None:
         return arguments
     layer_id = _string_argument(arguments, "layer_id")
     scope = failed_scopes.get(layer_id or "")
     if scope is None:
         return arguments
 
-    place, place_kind, spatial_mode = scope
     restored = {
-        key: value for key, value in arguments.items() if key not in {"bbox", "place", "place_kind"}
+        key: value
+        for key, value in arguments.items()
+        if key not in {"bbox", "place", "place_kind", "place_ref", "spatial_mode"}
     }
-    restored["place"] = place
-    if spatial_mode != "clip":
-        restored["spatial_mode"] = spatial_mode
-    if place_kind is not None:
-        restored["place_kind"] = place_kind
+    restored.update(scope)
     return restored
 
 
@@ -138,7 +133,11 @@ def _verify_named_filter(name: str, arguments: dict[str, Any], outcome: ToolOutc
     # still forbids claiming named-area coverage without `clipped_to`.
     if not isinstance(outcome.data, dict) or not isinstance(outcome.data.get("result_id"), str):
         return outcome
-    if _clipping_confirmed(outcome.data, str(arguments.get("spatial_mode", "clip"))):
+    requested_ref = _string_argument(arguments, "place_ref")
+    reference_matches = requested_ref is None or outcome.data.get("division_ref") == requested_ref
+    if reference_matches and _clipping_confirmed(
+        outcome.data, str(arguments.get("spatial_mode", "clip"))
+    ):
         return outcome
     return ToolOutcome(
         text=(
