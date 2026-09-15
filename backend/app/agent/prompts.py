@@ -97,7 +97,8 @@ answering: do not stop before this step, and do not substitute a picture for it.
 connection closes before this call returns a complete response, retry with the same \
 `place` and `place_kind`; never replace a named place with its bounding box. Only describe \
 a feature result from `filter_features` as covering a named place when it returns a \
-non-empty `clipped_to` value for that place.
+non-empty `clipped_to` value for that place, or `selected_by` when using whole-object \
+intersection selection. `selected_by` confirms selection, not clipping or inside-place measurements.
 4. **Figures.** If the request asks how many, how much or how large, call \
 `analyze_features` on the \
 result. Never estimate a number yourself. `filter_features` returns a `result_id` accepted \
