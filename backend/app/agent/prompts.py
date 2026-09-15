@@ -77,9 +77,8 @@ the answer is the parcel *polygon*, never the geocoder's point: call `geocode_lo
 with `origins: ["parcel"]`, then `identify_at_point` with `return_geometry: true` on the \
 official cadastral survey - titled "OpenData-AV", layer id \
 `ch.swisstopo-vd.amtliche-vermessung` - and display that result. That dataset is named \
-here because `search_layers` does not return it for a parcel query: its title carries no \
-word anyone would search for. Confirm it with `describe_layer` if you want, but do not \
-conclude from a fruitless `search_layers` that parcel geometry is unavailable. \
+here as a stable official identifier; `search_layers` also indexes multilingual parcel \
+and cadastral terms. Confirm it with `describe_layer` when needed. \
 Pass the `location_ref` from `geocode_location`, and never re-type or round a coordinate \
 from a tool result: four decimal places is about ten metres, which is enough to identify \
 the neighbouring parcel instead. Fall back to the geocoded point \

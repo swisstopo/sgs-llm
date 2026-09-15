@@ -277,6 +277,11 @@ class Swisstopo:
             "parcel",
         }
         selected = [value for value in (origins or []) if value in allowed]
+        # EGRID labels themselves contain spaces. Normalize only a complete identifier;
+        # ordinary addresses and mixed free-text searches retain their word boundaries.
+        compact = re.sub(r"\s+", "", query)
+        if re.fullmatch(r"CH[0-9]{12}", compact, flags=re.IGNORECASE):
+            query = compact.upper()
         params: dict[str, Any] = {
             "searchText": query,
             "type": "locations",

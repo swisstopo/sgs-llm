@@ -65,7 +65,9 @@ def _render(candidates: Sequence[dict[str, Any]]) -> str:
     for i, row in enumerate(candidates, 1):
         kind = "vector, queryable" if row.get("queryable") else "raster, display only"
         summary = (row.get("description") or "")[:ABSTRACT_CHARS]
-        lines.append(f"{i}. {row.get('title')} [{kind}]\n   {summary}")
+        terms = ", ".join(row.get("search_terms") or [])
+        aliases = f"\n   Catalogue search aliases: {terms}" if terms else ""
+        lines.append(f"{i}. {row.get('title')} [{kind}]\n   {summary}{aliases}")
     return "\n".join(lines)
 
 

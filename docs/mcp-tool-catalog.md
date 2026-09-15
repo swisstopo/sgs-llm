@@ -720,3 +720,14 @@ Acceptance criteria:
 - The agent does not invent a layer or Swiss place.
 - The response explains that no matching official Swiss geodata was found.
 - No generated or official map layer is emitted.
+
+### Parcel search vocabulary
+
+`geocode_location` normalizes whitespace and letter case only when the entire query is
+an EGRID (`CH` plus 12 digits). Addresses and other free text retain their spacing.
+Use the returned `location_ref` for point identification to preserve precision.
+
+`search_layers` indexes multilingual aliases for OpenData-AV parcel geometry and for
+CadastralWebMap. These aliases are applied when reading existing catalogue rows and
+are also supplied to the relevance judge; they do not require a vector rebuild or
+replace official titles. Parcel queries and cadastral-map queries remain distinct.
