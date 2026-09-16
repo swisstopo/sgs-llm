@@ -506,6 +506,11 @@ def build_server(
         semantic, so accents and spelling variants resolve ("Geneve" → "Genève",
         "Zurich" → "Zürich"). Use this whenever the question names a place.
 
+        Interpret administrative wording in the user's request yourself: for "Stadt Bern",
+        search for "Bern", then choose the returned `gemeinde` candidate. The tool does
+        not infer an administrative level from the query. Preserve words that are part
+        of the actual place name. Search ranking alone does not decide the intended place.
+
         Pass the chosen `division_ref` as filter_features' `place_ref` or as
         display_division's `division_ref`. Alternatively pass `name`/`kind` as `place`/
         `place_kind`. A reference distinguishes identically named divisions. Do not pass

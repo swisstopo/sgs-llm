@@ -39,9 +39,11 @@ class TestPlaceKindDiscipline:
     def test_requires_place_kind_alongside_place(self, prompt: str) -> None:
         assert "Always pass `place_kind` together with `place`" in prompt
 
-    def test_strips_the_administrative_word_into_the_kind(self, prompt: str) -> None:
+    def test_model_interprets_the_name_and_selects_a_returned_level(self, prompt: str) -> None:
         assert "Stadt Bern" in prompt
-        assert "The word is the `kind`, not part of the `name`." in prompt
+        assert 'query "Bern" and choose the `gemeinde` candidate' in prompt
+        assert "Preserve words that belong to the actual place name." in prompt
+        assert "lookup tools do not interpret administrative wording" in prompt
 
     def test_names_the_level_it_chose_when_a_name_is_canton_and_commune(self, prompt: str) -> None:
         """Sonnet resolved "in Bern" to the commune and said so, which is the behaviour

@@ -32,7 +32,7 @@ import faiss
 import numpy as np
 
 from .catalog_terms import CATALOG_TERMS, alias_matches
-from .places import DivisionLookupError, candidate, division_query
+from .places import DivisionLookupError, candidate
 
 logger = logging.getLogger(__name__)
 
@@ -336,20 +336,16 @@ class GeoIndex:
         "Genève" and "Zurich" to "Zürich", which an exact-match lookup on the
         gazetteer does not.
         """
-        query, inferred = division_query(query, None)
+        query = " ".join(query.split())
         wanted = set(kinds) if kinds else None
-        if inferred:
-            if wanted and inferred not in wanted:
-                return []
-            wanted = {inferred}
         vector = self.embedder.encode_query(query)
         scores, ids = _search(self.division_name, vector, max(limit * 5, 100))
 
         # FAISS does not order exact ties, and since the locality register was added there
         # are thousands of them: "Baar" is a commune *and* a locality, so one name, one
         # vector, one score. Tie-break on rid, which runs coarsest first, so the commune
-        # leads its locality instead of whichever the heap happened to pop - an agent that
-        # takes the top bbox at face value should get the bigger, safer one.
+        # leads its locality instead of whichever the heap happened to pop. This is only
+        # a stable display order; the caller must choose the intended division.
         by_rid = {int(r): float(s) for s, r in zip(scores, ids) if r >= 0}
         exact = self.db.execute(
             "SELECT rid FROM divisions WHERE lower(name) = lower(?)", [query]
@@ -389,7 +385,7 @@ class GeoIndex:
     def division_by_name(
         self, name: str, kind: str | None = None, division_ref: str | None = None
     ) -> dict[str, Any] | None:
-        name, kind = division_query(name, kind)
+        name = " ".join(name.split())
         if division_ref:
             found = self.db.execute(
                 "SELECT rid FROM divisions WHERE s3_key = ?", [division_ref]

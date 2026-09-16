@@ -156,8 +156,12 @@ both come from `objektart_lookup`.
 **One name at several levels ranks coarsest first.** "Baar" is a commune *and* a locality:
 one name, one vector, one score — and FAISS does not order exact ties, so which one led
 was whatever the heap happened to pop. `search_divisions` breaks ties on `rid`, which the
-build writes coarsest first, and `division_by_name` orders the same way. An agent that
-takes the top bbox at face value gets the larger, safer one.
+build writes coarsest first. This is a stable display order, not a choice of boundary.
+The LLM interprets the place name and administrative level from the request, searches
+for the name, and selects a returned candidate. Lookup code only normalizes whitespace
+and matches names without case sensitivity; it does not parse administrative prefixes.
+`division_by_name` returns candidates when more than one record matches. Subsequent
+calls use the chosen `division_ref` to preserve the exact boundary.
 
 **`--reuse-layer-vectors` skips the embedding that never changes.** Embedding 896 abstracts
 is ~100 s of Bedrock calls and none of it moves when only the divisions do — it used to be

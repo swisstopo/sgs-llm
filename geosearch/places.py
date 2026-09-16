@@ -1,18 +1,8 @@
-"""Administrative qualifiers and explicit division lookup failures."""
+"""Explicit division lookup failures and candidate metadata."""
 
 from __future__ import annotations
 
-import re
 from typing import Any
-
-_QUALIFIERS = (
-    (
-        r"(?:stadt|gemeinde|commune(?: de)?|ville(?: de)?|comune(?: di)?|città(?: di)?|city of|municipality of)",
-        "gemeinde",
-    ),
-    (r"(?:kanton|canton(?: de| of)?|cantone(?: di)?)", "kanton"),
-    (r"(?:bezirk|district(?: de)?|distretto(?: di)?)", "bezirk"),
-)
 
 
 class DivisionLookupError(ValueError):
@@ -21,19 +11,6 @@ class DivisionLookupError(ValueError):
     ) -> None:
         super().__init__(message)
         self.candidates = candidates or []
-
-
-def division_query(name: str, kind: str | None) -> tuple[str, str | None]:
-    name = " ".join(name.split())
-    for pattern, inferred in _QUALIFIERS:
-        match = re.match(rf"^{pattern}\s+(.+)$", name, re.IGNORECASE)
-        if match:
-            if kind and kind != inferred:
-                raise DivisionLookupError(
-                    "The administrative qualifier conflicts with the requested kind."
-                )
-            return match.group(1), inferred
-    return name, kind
 
 
 def candidate(row: dict[str, Any]) -> dict[str, Any]:

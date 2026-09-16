@@ -1,4 +1,4 @@
-"""Scope, name qualifiers and ambiguous-place recovery at the MCP boundary."""
+"""Explicit scope and ambiguous-place recovery at the MCP boundary."""
 
 import asyncio
 
@@ -23,6 +23,7 @@ def places(tmp_path_factory):
         ("Lugano", "gemeinde", "TI"),
         ("Buchs", "gemeinde", "SG"),
         ("Buchs", "gemeinde", "ZH"),
+        ("Stadt Beispiel", "gemeinde", "BE"),  # Synthetic name with a prefix-like word.
     ]:
         records.append(
             {
@@ -41,27 +42,31 @@ def places(tmp_path_factory):
 @pytest.mark.parametrize(
     "name,expected,kind",
     [
-        ("Stadt Bern", "Bern", "gemeinde"),
-        ("Kanton Bern", "Bern", "kanton"),
-        ("Ville de Genève", "Genève", "gemeinde"),
-        ("Città di Lugano", "Lugano", "gemeinde"),
-        ("City of Bern", "Bern", "gemeinde"),
+        ("  bern\t", "Bern", "gemeinde"),
+        ("Bern", "Bern", "kanton"),
+        ("Genève", "Genève", "gemeinde"),
+        ("Lugano", "Lugano", "gemeinde"),
+        (" Stadt  Beispiel ", "Stadt Beispiel", "gemeinde"),
     ],
 )
-def test_lookup_and_search_share_administrative_qualifiers(
+def test_lookup_and_search_respect_explicit_scope_and_only_normalize_whitespace(
     places, name, expected, kind
 ):
-    assert places.division_by_name(name)["name"] == expected
-    assert places.division_by_name(name)["kind"] == kind
-    hits = places.search_divisions(name)
+    assert places.division_by_name(name, kind)["name"] == expected
+    assert places.division_by_name(name, kind)["kind"] == kind
+    hits = places.search_divisions(name, kinds=[kind])
     assert hits[0].row["name"] == expected
     assert all(h.row["kind"] == kind for h in hits)
 
 
-def test_conflicting_explicit_scope_is_not_overridden(places):
-    with pytest.raises(DivisionLookupError, match="conflicts"):
-        places.division_by_name("Stadt Bern", "kanton")
-    assert places.search_divisions("Stadt Bern", kinds=["kanton"]) == []
+def test_administrative_wording_does_not_silently_choose_a_level(places):
+    assert places.division_by_name("Stadt Bern") is None
+    assert places.division_by_name("Stadt Bern", "kanton") is None
+    # Search can suggest similar names, but must not infer a kind from a prefix.
+    hits = places.search_divisions("Stadt Bern")
+    assert {h.row["kind"] for h in hits if h.row["name"] == "Bern"} == {
+        "kanton", "gemeinde"
+    }
 
 
 def test_same_name_and_kind_can_be_disambiguated_by_reference(places):
@@ -74,6 +79,8 @@ def test_same_name_and_kind_can_be_disambiguated_by_reference(places):
     assert row["canton"] == "ZH"
     with pytest.raises(DivisionLookupError, match="conflicts"):
         places.division_by_name("Bern", division_ref=wanted["division_ref"])
+    with pytest.raises(DivisionLookupError, match="conflicts"):
+        places.division_by_name("Buchs", "kanton", wanted["division_ref"])
 
 
 def test_unknown_or_approximate_name_never_silently_fetches_another_place(places):
@@ -89,8 +96,17 @@ def test_mcp_ambiguity_does_not_fetch_and_reference_recovers(places):
     async def run():
         server = build_server(places, api, artifacts, StubBoundaries())
         async with Client(server) as client:
-            found = await client.call_tool("search_locations", {"query": "Stadt Bern"})
-            ref = found.structured_content["places"][0]["division_ref"]
+            unparsed = await client.call_tool(
+                "filter_features", {"layer_id": "ch.test", "place": "Stadt Bern"}
+            )
+            assert "error" in unparsed.structured_content
+            assert not api.fetch_kwargs
+            # Model interprets "Stadt Bern" and chooses a returned municipality.
+            found = await client.call_tool("search_locations", {"query": "Bern"})
+            ref = next(
+                row["division_ref"] for row in found.structured_content["places"]
+                if row["name"] == "Bern" and row["kind"] == "gemeinde"
+            )
             ambiguous = await client.call_tool(
                 "filter_features", {"layer_id": "ch.test", "place": "Bern"}
             )

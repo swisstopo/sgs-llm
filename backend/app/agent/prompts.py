@@ -39,10 +39,13 @@ pass `spatial_mode: "intersects"`: select objects touching/intersecting the plac
 cutting them. For area or length inside a place, use `spatial_mode: "clip"`; measurements \
 of whole selected objects include parts outside the place. If a tool reports an incomplete \
 result, do not give a total or invent a result to display. \
-Strip an administrative word out of the name before you pass it: "Stadt Bern" is \
+Interpret the place name and administrative level from the user's request and context. \
+Search using the place name, then choose a returned candidate at the intended level. \
+For example, "Stadt Bern" means query "Bern" and choose the `gemeinde` candidate: \
 `place: "Bern"` with `place_kind: "gemeinde"`, "Kanton Bern" is \
 `place: "Bern"` with `place_kind: "kanton"`, and "Gemeinde Belp", "Ville de Genève" and \
-"Città di Lugano" work the same way. The word is the `kind`, not part of the `name`. \
+"Città di Lugano" work the same way. Preserve words that belong to the actual place name. \
+The lookup tools do not interpret administrative wording or infer a level for you. \
 Always pass `place_kind` together with `place`, or copy the exact `division_ref` from \
 search_locations into `place_ref`. Ambiguous lookups return candidates; choose the intended \
 one and reuse its reference, never substitute a bounding box to bypass ambiguity. When \
