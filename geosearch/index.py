@@ -31,6 +31,8 @@ import duckdb
 import faiss
 import numpy as np
 
+from .catalog_terms import CATALOG_TERMS, alias_matches
+
 logger = logging.getLogger(__name__)
 
 # Cohere Embed v4 on Bedrock. The catalogue is de/fr/it/en/rm, so a multilingual model is
@@ -275,6 +277,8 @@ class GeoIndex:
                 title_overlap = len(query_tokens & title_tokens) / len(query_tokens)
                 description_overlap = len(query_tokens & description_tokens) / len(query_tokens)
                 lexical = max(0.7 * title_overlap, 0.5 * description_overlap)
+            if alias_matches(query, str(layer_id)):
+                lexical = max(lexical, 1.05)
             if lexical:
                 combined[int(rid)] = max(combined.get(int(rid), 0.0), lexical)
 
@@ -306,7 +310,9 @@ class GeoIndex:
             # a stale .faiss beside a rebuilt .duckdb. Say that, rather than raising
             # TypeError from zip() and sending whoever reads it looking in the wrong file.
             raise LookupError(f"layer rid {rid} is in the FAISS index but not in {self.directory}")
-        return dict(zip(keys, row))
+        result = dict(zip(keys, row))
+        result["search_terms"] = list(CATALOG_TERMS.get(str(result["layer_id"]), ()))
+        return result
 
     def layer_by_id(self, layer_id: str) -> dict[str, Any] | None:
         """Return catalogue metadata for an official layer identifier."""
