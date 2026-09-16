@@ -143,6 +143,12 @@ TOOL_RUNNING = {
         "it": "Caricamento dei geodati …",
         "en": "Fetching geodata …",
     },
+    "elevation_profile": {
+        "de": "Berechne Höhenprofil …",
+        "fr": "Calcul du profil altimétrique …",
+        "it": "Calcolo del profilo altimetrico …",
+        "en": "Computing elevation profile …",
+    },
     "analyze_features": {
         "de": "Berechne Auswertung …",
         "fr": "Calcul de l'analyse …",

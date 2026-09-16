@@ -333,7 +333,7 @@ on an image it never built — `index/` is gitignored, and CI cannot reproduce i
 
 ## Tools
 
-The Phase 1 production surface contains ten intent-oriented tools.
+The Phase 1 production surface contains eleven intent-oriented tools.
 
 | Tool | Purpose |
 | --- | --- |
@@ -345,6 +345,7 @@ The Phase 1 production surface contains ten intent-oriented tools.
 | `display_division` | puts a stored administrative boundary on the map without another API request |
 | `filter_features` | complete grid-subdivided area query, boundary clipping, timestamps and structured filters |
 | `display_catalog_layer` | returns an official-layer reference rendered as a clickable inline chat control |
+| `elevation_profile` | official sampled elevations and estimated ascent/descent for one fetched line or explicitly selected part |
 | `analyze_features` | count/area/length/extent plus grouping, top values and numeric statistics |
 | `display_layer` | publishes GeoParquet instead of GeoJSON; complete results only |
 
