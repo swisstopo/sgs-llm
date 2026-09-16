@@ -345,7 +345,18 @@ Geometry is retained in the MCP result cache rather than sent through the model.
 
 ## 7. `filter_features`
 
-**What it does:** Fetches complete queryable features and clips them either to a true named boundary or to the current rectangular map view.
+**What it does:** Fetches complete queryable features in a named boundary or map bounding box.
+For a named boundary, `spatial_mode="clip"` (default) cuts geometry for measurements
+inside the place. `spatial_mode="intersects"` selects whole objects, including those
+merely touching the boundary, for count/show requests such as regional parks in Bern.
+Selection returns `selected_by`; clipping returns `clipped_to`. Analysis retains this
+scope: whole-object area/length can include parts outside the place. Bounding-box queries
+retain the API's intersecting source geometry.
+
+A failed query cell, exhausted pagination, or unusable geometry prevents a complete
+result from being cached or reported as a total. Spatial errors return `complete: false`
+without a result handle. Invalid geometry is repaired before clipping; selection preserves
+the original geometry and uses a repaired geometry only for its predicate.
 
 ### Input
 

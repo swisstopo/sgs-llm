@@ -64,7 +64,7 @@ FINAL_ANSWER_NUDGE = (
     "determine."
 )
 
-_NamedFilterScope = tuple[str, str | None]
+_NamedFilterScope = tuple[str, str | None, str]
 
 
 def _append_user_text(messages: list[dict[str, Any]], text: str) -> None:
@@ -93,7 +93,11 @@ def _named_filter_scope(name: str, arguments: dict[str, Any]) -> _NamedFilterSco
     place = _string_argument(arguments, "place")
     if place is None:
         return None
-    return place, _string_argument(arguments, "place_kind")
+    return (
+        place,
+        _string_argument(arguments, "place_kind"),
+        str(arguments.get("spatial_mode", "clip")),
+    )
 
 
 def _restore_failed_named_scope(
@@ -109,22 +113,21 @@ def _restore_failed_named_scope(
     if scope is None:
         return arguments
 
-    place, place_kind = scope
+    place, place_kind, spatial_mode = scope
     restored = {
         key: value for key, value in arguments.items() if key not in {"bbox", "place", "place_kind"}
     }
     restored["place"] = place
+    if spatial_mode != "clip":
+        restored["spatial_mode"] = spatial_mode
     if place_kind is not None:
         restored["place_kind"] = place_kind
     return restored
 
 
-def _clipping_confirmed(data: Any) -> bool:
-    return (
-        isinstance(data, dict)
-        and isinstance(data.get("clipped_to"), str)
-        and bool(data["clipped_to"].strip())
-    )
+def _clipping_confirmed(data: Any, spatial_mode: str = "clip") -> bool:
+    key = "selected_by" if spatial_mode == "intersects" else "clipped_to"
+    return isinstance(data, dict) and isinstance(data.get(key), str) and bool(data[key].strip())
 
 
 def _verify_named_filter(name: str, arguments: dict[str, Any], outcome: ToolOutcome) -> ToolOutcome:
@@ -135,11 +138,12 @@ def _verify_named_filter(name: str, arguments: dict[str, Any], outcome: ToolOutc
     # still forbids claiming named-area coverage without `clipped_to`.
     if not isinstance(outcome.data, dict) or not isinstance(outcome.data.get("result_id"), str):
         return outcome
-    if _clipping_confirmed(outcome.data):
+    if _clipping_confirmed(outcome.data, str(arguments.get("spatial_mode", "clip"))):
         return outcome
     return ToolOutcome(
         text=(
-            "Tool filter_features did not confirm clipping to the requested named place; "
+            "Tool filter_features did not confirm the requested spatial operation "
+            "for the named place; "
             "do not describe the result as covering that named area. Retry with the same "
             "place and place_kind."
         ),

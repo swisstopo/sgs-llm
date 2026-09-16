@@ -83,7 +83,6 @@ def _to_lv95() -> Any:
 
 def measure(features: list[dict[str, Any]]) -> dict[str, float]:
     """Total projected area (km²) and length (km) of a feature set."""
-    from shapely.geometry import shape
     from shapely.ops import transform
 
     transformer = _to_lv95()
@@ -91,65 +90,114 @@ def measure(features: list[dict[str, Any]]) -> dict[str, float]:
     length_m = 0.0
     for feature in features:
         geometry = feature.get("geometry")
-        if not isinstance(geometry, dict):
-            continue
         try:
-            projected = transform(transformer.transform, shape(geometry))
-        except Exception:
-            logger.debug("skipping unprojectable geometry", exc_info=True)
-            continue
+            projected = transform(transformer.transform, _valid_geometry(geometry))
+            if not projected.is_valid:
+                raise ValueError("invalid projected geometry")
+        except Exception as exc:
+            raise GeometryProcessingError(
+                "Cannot measure every feature; no complete total."
+            ) from exc
         area_m2 += float(getattr(projected, "area", 0.0) or 0.0)
         length_m += float(getattr(projected, "length", 0.0) or 0.0)
-    return {"area_km2": round(area_m2 / 1_000_000, 4), "length_km": round(length_m / 1_000, 4)}
+    return {
+        "area_km2": round(area_m2 / 1_000_000, 4),
+        "length_km": round(length_m / 1_000, 4),
+    }
+
+
+class GeometryProcessingError(ValueError):
+    """A complete spatial result cannot be produced from the supplied geometry."""
+
+
+def _valid_geometry(geometry: Any) -> Any:
+    from shapely import make_valid
+    from shapely.geometry import shape
+
+    try:
+        if not isinstance(geometry, dict):
+            raise ValueError("missing geometry")
+        whole = shape(geometry)
+        if whole.is_empty:
+            raise ValueError("empty geometry")
+        if not whole.is_valid:
+            whole = make_valid(whole)
+        if whole.is_empty or not whole.is_valid:
+            raise ValueError("geometry repair failed")
+        return whole
+    except Exception as exc:
+        raise GeometryProcessingError(
+            "Cannot process every geometry. No complete spatial result is available."
+        ) from exc
+
+
+def _boundary_area(boundary: list[dict[str, Any]]) -> Any:
+    from shapely.ops import unary_union
+
+    if not boundary:
+        raise GeometryProcessingError("The place boundary is empty.")
+    try:
+        area = unary_union([_valid_geometry(f.get("geometry")) for f in boundary])
+        if area.is_empty or not area.is_valid:
+            raise ValueError("invalid boundary union")
+        return area
+    except Exception as exc:
+        raise GeometryProcessingError(
+            "Cannot process the complete place boundary."
+        ) from exc
+
+
+def select_intersecting(
+    features: list[dict[str, Any]], boundary: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Select whole objects, including boundary contact, without cutting their geometry.
+
+    Invalid geometry is repaired for predicates only; the selected source object is
+    preserved. Unlike clipping, touching and tiny overlaps intentionally count.
+    """
+    from shapely.prepared import prep
+
+    area = prep(_boundary_area(boundary))
+    try:
+        return [
+            f for f in features if area.intersects(_valid_geometry(f.get("geometry")))
+        ]
+    except Exception as exc:
+        raise GeometryProcessingError(
+            "Cannot select every feature; no complete result."
+        ) from exc
 
 
 def clip(
     features: list[dict[str, Any]], boundary: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Every feature cut to `boundary`, dropping whatever falls outside it.
+    """Cut features to the boundary for within-place measurements.
 
-    A bounding box is a rectangle drawn around a place, so fetching by one also answers
-    with the corners. Measured against the live API: the communes of canton Zug come back
-    as 42 features spread over five cantons, and `compute` then sums 808 km² for a canton
-    of 239. Nothing downstream can tell a neighbour from a member - they are the same
-    dataset with the same attributes - so the correction has to happen here, while the
-    boundary that defines "in" is still in hand.
-
-    Cutting rather than merely filtering is what makes the figures right as well as the
-    map: a forest or a river that straddles the border belongs to the place only in part.
+    Repair invalid source geometries before overlay. Unrepairable input aborts the
+    operation, so a missing feature cannot masquerade as a complete total. Polygon
+    border contacts and slivers remain excluded from this measurement mode.
     """
-    from shapely.geometry import mapping, shape
-    from shapely.ops import unary_union
+    from shapely.geometry import mapping
     from shapely.prepared import prep
 
-    area = unary_union(
-        [shape(f["geometry"]) for f in boundary if isinstance(f.get("geometry"), dict)]
-    )
-    if not area.is_valid:
-        # Cheapest repair that keeps the outline; an invalid boundary makes every
-        # intersection below raise, which would empty the result rather than trim it.
-        area = area.buffer(0)
+    area = _boundary_area(boundary)
     prepared_area = prep(area)
-
     kept: list[dict[str, Any]] = []
     for feature in features:
         geometry = feature.get("geometry")
-        if not isinstance(geometry, dict):
-            continue
+        whole = _valid_geometry(geometry)
+        assert isinstance(geometry, dict)  # validated above
         try:
-            whole = shape(geometry)
-            # A canton-sized bbox can contain tens of thousands of neighbours. Prepared
-            # predicates classify the wholly outside/inside majority without building an
-            # overlay geometry; only border-crossing features need the costly cut.
             if not prepared_area.intersects(whole):
                 continue
             if prepared_area.covers(whole):
-                kept.append(feature)
+                kept.append({**feature, "geometry": mapping(whole)})
                 continue
             piece = _same_dimension(whole.intersection(area), geometry.get("type"))
-        except Exception:
-            logger.debug("skipping unclippable geometry", exc_info=True)
-            continue
+        except Exception as exc:
+            raise GeometryProcessingError(
+                "Cannot clip every feature; no complete result."
+            ) from exc
         if piece is not None and _fraction(piece, whole) >= SLIVER:
             kept.append({**feature, "geometry": mapping(piece)})
     return kept
