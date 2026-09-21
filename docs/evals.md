@@ -213,3 +213,39 @@ merge can be restricted to rows where they match, instead of being quietly wrong
 
 The harness's own logic - the rule engine, the language heuristic, the report generator -
 is unit-tested in `backend/tests/test_evals.py` and runs in CI without touching Bedrock.
+
+## Parcel discovery without dataset hints (#30)
+
+`python -m geosearch.validate_parcel_discovery --mcp-url <geosearch-url> --output rankings.json`
+records the actual `search_layers` responses for **Parzelle**, **parcelle**, **EGRID** and
+**Katasterplan Belp**. The parcel survey or cadastral map must rank within the first three,
+ahead of the other cadastral product. Empty, malformed, duplicate, failed or vector-only
+fallback results fail the check. Failures still produce the JSON evidence file.
+
+Run from an environment that can reach the private geosearch MCP service. The public
+application's `/mcp` serves a different exploration tool set. A local server is suitable
+only if it loads the published index and uses the real embedding/reranking configuration;
+record the source index version and service/image revision alongside the report.
+
+Then run the real agent with fresh questions that contain no dataset names or ids:
+
+```sh
+python evals/run.py --questions evals/parcel-discovery.yaml \
+  --mcp-url <geosearch-url> --without-parcel-hints \
+  --model <model-id> --region <region>
+```
+
+Repeat for each deployed model. The flag changes only the evaluation's model input and
+records `:without-parcel-hints-v1` in each prompt variant. It removes the named parcel
+survey hint while preserving polygon, `location_ref` and coordinate-precision guidance.
+If the hint changes or remains elsewhere in the rendered prompt, the evaluation fails
+instead of silently testing the production hint. Production prompts stay unchanged.
+
+A passing tool-chain evaluation alone does not establish parcel geometry correctness:
+inspect the returned polygon/EGRID and the offered CadastralWebMap layer, keeping their
+roles distinct. Keep the ranking JSON, evaluation JSONL/report, deployed revision and
+geometry evidence together before removing the production workaround or closing #30.
+
+As of 2026-09-21, this harness has offline contract coverage; the deployed acceptance run
+is pending restored SGS AWS/VPC access (`InvalidClientTokenId` in the available SGS
+credentials). No live discovery success is claimed by the addition of this harness.
