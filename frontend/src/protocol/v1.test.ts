@@ -76,6 +76,23 @@ describe('parseServerEvent', () => {
     });
   });
 
+  it('preserves a usable conversation id without breaking older done events', () => {
+    expect(
+      parseServerEvent(
+        JSON.stringify({
+          type: 'done',
+          message_id: 'm1',
+          conversation_id: ' thread-1 ',
+        }),
+      ),
+    ).toEqual({ type: 'done', message_id: 'm1', conversation_id: 'thread-1' });
+    for (const conversation_id of [null, '', ' ', 42, 'x'.repeat(65)]) {
+      expect(
+        parseServerEvent(JSON.stringify({ type: 'done', message_id: 'm1', conversation_id })),
+      ).toEqual({ type: 'done', message_id: 'm1' });
+    }
+  });
+
   it('returns null for unknown types, missing ids, and malformed JSON', () => {
     expect(parseServerEvent(JSON.stringify({ type: 'fancy_new', message_id: 'm1' }))).toBeNull();
     expect(parseServerEvent(JSON.stringify({ type: 'done' }))).toBeNull();

@@ -1,5 +1,8 @@
 import { LitElement, css, html, nothing } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
+import { consume } from '@lit/context';
+import { chatServiceContext } from '../../context';
+import type { ChatService } from '../../services/ChatService';
 import { getRuntimeConfig } from '../../config';
 import { FEEDBACK_CATEGORIES, submitFeedback } from '../../feedback/submitFeedback';
 import type { FeedbackCategory } from '../../feedback/submitFeedback';
@@ -107,6 +110,18 @@ export class SgsFeedbackPanel extends LitElement {
   @state() private formState: FormState = 'idle';
   @state() private validationError = false;
 
+  @consume({ context: chatServiceContext })
+  private chatService?: ChatService;
+
+  private chatMessages?: ObservableController<unknown>;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    if (this.chatService) {
+      this.chatMessages ??= new ObservableController(this, this.chatService.messages$);
+    }
+  }
+
   @query('select') private categorySelect!: HTMLSelectElement;
   @query('textarea') private messageArea!: HTMLTextAreaElement;
   @query('input[type=email]') private emailInput!: HTMLInputElement;
@@ -146,6 +161,9 @@ export class SgsFeedbackPanel extends LitElement {
       </label>
       <input id="fb-email" type="email" autocomplete="email" />
 
+      ${this.chatService?.conversationId
+        ? html`<p class="hint">${t('feedback.conversationIncluded')}</p>`
+        : nothing}
       <div class="actions">
         <button
           class="submit"
@@ -170,11 +188,13 @@ export class SgsFeedbackPanel extends LitElement {
     this.formState = 'sending';
     try {
       const email = this.emailInput.value.trim();
+      const conversationId = this.chatService?.conversationId;
       await submitFeedback(getRuntimeConfig().feedbackUrl, {
         category: this.categorySelect.value as FeedbackCategory,
         message,
         email: email.length > 0 ? email : undefined,
         lang: currentLanguage(),
+        ...(conversationId ? { conversation_id: conversationId } : {}),
       });
       this.formState = 'success';
     } catch (error) {

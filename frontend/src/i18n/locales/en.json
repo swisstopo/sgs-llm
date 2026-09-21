@@ -174,7 +174,8 @@
     "submit": "Submit",
     "sending": "Sending …",
     "success": "Thank you for your feedback!",
-    "error": "The feedback could not be sent. Please try again."
+    "error": "The feedback could not be sent. Please try again.",
+    "conversationIncluded": "Your current conversation will be included with this feedback."
   },
   "about": {
     "description": "SGS LLM is an open-source prototype making Swiss federal geodata accessible through natural language: a chat interface, an interactive map, and connectors to the official swisstopo services. The project is developed in the context of the Swiss Geoinformation Strategy (SGS).",

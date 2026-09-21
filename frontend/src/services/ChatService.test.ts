@@ -200,4 +200,34 @@ describe('ChatService', () => {
       expect(event.model).toBe('primary');
     }
   });
+
+  it('tracks the server conversation id and updates it when the server changes threads', () => {
+    service.send('first');
+    client.events$.next({ type: 'done', message_id: lastUserMessageId(), conversation_id: 'c1' });
+    expect(service.conversationId).toBe('c1');
+    service.send('after reconnect');
+    client.events$.next({ type: 'done', message_id: lastUserMessageId(), conversation_id: 'c2' });
+    expect(service.conversationId).toBe('c2');
+    service.send('older server without an id');
+    client.events$.next({ type: 'done', message_id: lastUserMessageId() });
+    expect(service.conversationId).toBeUndefined();
+  });
+
+  it('clears the feedback link on reset and ignores late completion from the old chat', () => {
+    service.send('old chat');
+    const oldId = lastUserMessageId();
+    client.events$.next({ type: 'done', message_id: oldId, conversation_id: 'old-thread' });
+    service.clear();
+    expect(service.conversationId).toBeUndefined();
+    service.send('new chat');
+    client.events$.next({ type: 'done', message_id: oldId, conversation_id: 'old-thread' });
+    expect(service.conversationId).toBeUndefined();
+    expect(service.busy).toBe(true);
+    client.events$.next({
+      type: 'done',
+      message_id: lastUserMessageId(),
+      conversation_id: 'new-thread',
+    });
+    expect(service.conversationId).toBe('new-thread');
+  });
 });

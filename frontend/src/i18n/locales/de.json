@@ -174,7 +174,8 @@
     "submit": "Senden",
     "sending": "Wird gesendet …",
     "success": "Vielen Dank für Ihr Feedback!",
-    "error": "Das Feedback konnte nicht gesendet werden. Bitte versuchen Sie es erneut."
+    "error": "Das Feedback konnte nicht gesendet werden. Bitte versuchen Sie es erneut.",
+    "conversationIncluded": "Ihr aktuelles Gespräch wird diesem Feedback beigefügt."
   },
   "about": {
     "description": "SGS LLM ist ein Open-Source-Prototyp, der Schweizer Geodaten des Bundes über natürliche Sprache zugänglich macht: eine Chat-Oberfläche, eine interaktive Karte und Konnektoren zu den offiziellen Swisstopo-Diensten. Das Projekt entsteht im Rahmen der Strategie Geoinformation Schweiz (SGS).",

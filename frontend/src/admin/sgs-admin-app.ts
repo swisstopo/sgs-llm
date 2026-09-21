@@ -10,6 +10,7 @@ import {
   USER_GROUPS,
 } from '../onboarding/submitOnboarding';
 import { adminFetch, logout, signIn } from './auth';
+import { findConversation } from './findConversation';
 import type { AdminMetrics, AdminRecord, RecordPage } from './types';
 
 /** Bucket the backend metrics use for an optional survey question left unanswered. */
@@ -18,6 +19,13 @@ const UNANSWERED = 'unknown';
 type RecordKind = 'conversations' | 'profiles' | 'feedback';
 const copy = {
   en: {
+    viewConversation: 'View conversation',
+    linkedConversation: 'Linked conversation',
+    conversationLoading: 'Loading conversation…',
+    conversationMissing:
+      'No saved conversation found in these dates. Close this panel and try a wider date range; the conversation may also no longer be available.',
+    conversationFailed: 'The conversation could not be loaded. Please try again.',
+    conversationPeriod: 'Showing messages within the selected dates:',
     admin: 'Administration',
     title: 'Usage overview',
     subtitle: 'Product activity and retained records',
@@ -77,6 +85,13 @@ const copy = {
     failed: 'The dashboard could not load. Check your access and try again.',
   },
   de: {
+    viewConversation: 'Gespräch anzeigen',
+    linkedConversation: 'Verknüpftes Gespräch',
+    conversationLoading: 'Gespräch wird geladen…',
+    conversationMissing:
+      'In diesem Zeitraum wurde kein gespeichertes Gespräch gefunden. Schliessen Sie dieses Fenster und wählen Sie einen grösseren Zeitraum. Das Gespräch ist möglicherweise nicht mehr verfügbar.',
+    conversationFailed: 'Das Gespräch konnte nicht geladen werden. Bitte versuchen Sie es erneut.',
+    conversationPeriod: 'Nachrichten im ausgewählten Zeitraum:',
     admin: 'Administration',
     title: 'Nutzungsübersicht',
     subtitle: 'Produktaktivität und gespeicherte Einträge',
@@ -137,6 +152,13 @@ const copy = {
     failed: 'Die Übersicht konnte nicht geladen werden. Zugriff prüfen und erneut versuchen.',
   },
   fr: {
+    viewConversation: 'Voir la conversation',
+    linkedConversation: 'Conversation associée',
+    conversationLoading: 'Chargement de la conversation…',
+    conversationMissing:
+      'Aucune conversation enregistrée pour ces dates. Fermez ce panneau et élargissez la période ; la conversation peut aussi ne plus être disponible.',
+    conversationFailed: 'Impossible de charger la conversation. Veuillez réessayer.',
+    conversationPeriod: 'Messages de la période sélectionnée :',
     admin: 'Administration',
     title: "Vue d'ensemble",
     subtitle: 'Activité du produit et données conservées',
@@ -196,6 +218,13 @@ const copy = {
     failed: "Impossible de charger la vue d'ensemble. Vérifiez votre accès.",
   },
   it: {
+    viewConversation: 'Visualizza conversazione',
+    linkedConversation: 'Conversazione collegata',
+    conversationLoading: 'Caricamento della conversazione…',
+    conversationMissing:
+      'Nessuna conversazione salvata in queste date. Chiudi questo pannello e amplia il periodo; la conversazione potrebbe non essere più disponibile.',
+    conversationFailed: 'Impossibile caricare la conversazione. Riprova.',
+    conversationPeriod: 'Messaggi nel periodo selezionato:',
     admin: 'Amministrazione',
     title: "Panoramica dell'utilizzo",
     subtitle: 'Attività del prodotto e dati conservati',
@@ -255,6 +284,13 @@ const copy = {
     failed: 'Impossibile caricare la panoramica. Verifica il tuo accesso.',
   },
   rm: {
+    viewConversation: 'Mussar la conversaziun',
+    linkedConversation: 'Conversaziun colliada',
+    conversationLoading: 'Chargiar la conversaziun…',
+    conversationMissing:
+      'Nagina conversaziun memorisada per questas datas. Serra questa fanestra e tscherna in interval pli grond; la conversaziun n’è eventualmain betg pli disponibla.',
+    conversationFailed: 'La conversaziun na po betg vegnir chargiada. Emprova anc ina giada.',
+    conversationPeriod: 'Messadis en l’interval tschernì:',
     admin: 'Administraziun',
     title: 'Survista dal diever',
     subtitle: 'Activitad dal product e datas conservadas',
@@ -1220,6 +1256,9 @@ export class SgsAdminApp extends LitElement {
   @state() private records: AdminRecord[] = [];
   @state() private nextCursor: string | null = null;
   @state() private selected?: AdminRecord;
+  @state() private linkedConversation?: AdminRecord;
+  @state() private conversationLookup: 'idle' | 'loading' | 'ready' | 'missing' | 'failed' = 'idle';
+  private conversationRequest?: AbortController;
   @state() private expandedConversationId = '';
   @state() private from = this.isoDaysAgo(6);
   @state() private to = this.isoDaysAgo(0);
@@ -1240,6 +1279,11 @@ export class SgsAdminApp extends LitElement {
     } finally {
       this.loading = false;
     }
+  }
+
+  override disconnectedCallback(): void {
+    this.conversationRequest?.abort();
+    super.disconnectedCallback();
   }
 
   override render() {
@@ -1542,7 +1586,7 @@ export class SgsAdminApp extends LitElement {
     return html`<button
       class="record-row ${this.selected === record ? 'selected' : ''}"
       aria-label=${this.text.details}
-      @click=${() => (this.selected = record)}
+      @click=${() => this.selectRecord(record)}
     >
       <time>${this.formatDate(record.started_at ?? record.ts ?? record.log_date)}</time
       ><span class="lang">${String(record.lang ?? '—')}</span
@@ -1584,7 +1628,7 @@ export class SgsAdminApp extends LitElement {
     return html`<button
       class="record-row profile-grid profile-record ${this.selected === record ? 'selected' : ''}"
       aria-label=${`${this.text.details}: ${userType}, ${experience}, ${intendedUse}`}
-      @click=${() => (this.selected = record)}
+      @click=${() => this.selectRecord(record)}
     >
       <time>${this.formatDate(record.ts ?? record.log_date)}</time>
       <span class="lang">${String(record.lang ?? '—')}</span>
@@ -1695,13 +1739,68 @@ export class SgsAdminApp extends LitElement {
                 <pre class="content-block">${record.message}</pre>
               </section>`
             : nothing}
+          ${this.kind === 'feedback' && record.conversation_id
+            ? this.renderFeedbackConversation(record)
+            : nothing}
         </div>
       </aside>`;
   }
 
-  private renderConversationTimeline(turns: AdminRecord[]) {
+  private renderFeedbackConversation(record: AdminRecord) {
+    return html`<section aria-live="polite">
+      <p class="note">${this.text.conversationPeriod} ${this.from} – ${this.to}</p>
+      ${this.conversationLookup !== 'ready'
+        ? html`<button
+            class="button"
+            ?disabled=${this.conversationLookup === 'loading'}
+            @click=${() => this.loadFeedbackConversation(record)}
+          >
+            ${this.conversationLookup === 'loading'
+              ? this.text.conversationLoading
+              : this.text.viewConversation}
+          </button>`
+        : nothing}
+      ${this.conversationLookup === 'missing'
+        ? html`<p>${this.text.conversationMissing}</p>`
+        : this.conversationLookup === 'failed'
+          ? html`<p>${this.text.conversationFailed}</p>`
+          : nothing}
+      ${this.linkedConversation
+        ? this.renderConversationTimeline(
+            this.conversationTurns(this.linkedConversation),
+            this.text.linkedConversation,
+          )
+        : nothing}
+    </section>`;
+  }
+
+  private async loadFeedbackConversation(record: AdminRecord) {
+    this.conversationRequest?.abort();
+    const request = new AbortController();
+    this.conversationRequest = request;
+    this.linkedConversation = undefined;
+    this.conversationLookup = 'loading';
+    try {
+      const conversation = await findConversation(
+        String(record.conversation_id),
+        this.from,
+        this.to,
+        request.signal,
+      );
+      if (request.signal.aborted || this.selected !== record) return;
+      this.linkedConversation = conversation;
+      this.conversationLookup = conversation ? 'ready' : 'missing';
+    } catch {
+      if (!request.signal.aborted && this.selected === record) this.conversationLookup = 'failed';
+    }
+  }
+
+  private renderConversationTimeline(
+    turns: AdminRecord[],
+    heading: string = this.text.conversationDetails,
+  ) {
     return html`<section class="conversation-timeline">
-      <h3>${this.text.conversationDetails}</h3>
+      <h3>${heading}</h3>
       ${turns.map(
         (turn, index) =>
           html`<article class="conversation-turn">
@@ -1933,7 +2032,14 @@ export class SgsAdminApp extends LitElement {
     }
   }
   private closeDrawer() {
+    this.conversationRequest?.abort();
+    this.linkedConversation = undefined;
+    this.conversationLookup = 'idle';
     this.selected = undefined;
+  }
+  private selectRecord(record: AdminRecord) {
+    this.closeDrawer();
+    this.selected = record;
   }
   private drawerKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') this.closeDrawer();

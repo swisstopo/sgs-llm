@@ -106,6 +106,7 @@ export interface ErrorEvent {
 export interface DoneEvent {
   type: 'done';
   message_id: string;
+  conversation_id?: string;
 }
 
 export type ServerEvent = IntermediateEvent | FinalEvent | ErrorEvent | DoneEvent;
@@ -213,7 +214,15 @@ export function parseServerEvent(raw: string): ServerEvent | null {
       }
       return null;
     case 'done':
-      return { type: 'done', message_id: data.message_id };
+      return {
+        type: 'done',
+        message_id: data.message_id,
+        ...(typeof data.conversation_id === 'string' &&
+        data.conversation_id.trim().length > 0 &&
+        data.conversation_id.trim().length <= 64
+          ? { conversation_id: data.conversation_id.trim() }
+          : {}),
+      };
     default:
       return null;
   }
