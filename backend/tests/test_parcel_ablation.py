@@ -1,7 +1,7 @@
 import pytest
-from app.agent.prompts import system_prompt
-
 from evals.parcel_discovery import PARCEL_HINT, without_parcel_hints
+
+from app.agent.prompts import system_prompt
 
 
 @pytest.mark.parametrize("model", ["", "claude", "ministral", "apertus"])
@@ -31,10 +31,10 @@ def test_changed_or_additional_hints_fail_closed():
 
 @pytest.mark.parametrize("parcel_hints", [True, False])
 async def test_real_loop_model_input_uses_requested_variant(settings, parcel_hints):
+    from evals.run import ask
+
     from app.mcp.client import NO_TOOLS
     from tests.conftest import HANDLE, FakeGateway, FakeModels, text_result
-
-    from evals.run import ask
 
     models = FakeModels([text_result("Antwort")])
     observation = await ask(

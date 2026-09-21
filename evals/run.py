@@ -56,6 +56,9 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 import yaml  # noqa: E402
+from mcp_dummy.server import build_server  # noqa: E402
+from mcp_dummy.swisstopo import Swisstopo  # noqa: E402
+
 from app.agent.loop import TurnStats, run_turn  # noqa: E402
 from app.agent.models import ModelHandle, configured_model_handle, resolve_system  # noqa: E402
 from app.agent.prompts import prompt_variant_for  # noqa: E402
@@ -64,11 +67,8 @@ from app.config import Settings  # noqa: E402
 from app.mcp.client import ToolGateway  # noqa: E402
 from app.protocol import UserMessage  # noqa: E402
 from app.store.artifacts import ArtifactStore  # noqa: E402
-
 from evals.checks import Observation, evaluate  # noqa: E402
 from evals.parcel_discovery import without_parcel_hints  # noqa: E402
-from mcp_dummy.server import build_server  # noqa: E402
-from mcp_dummy.swisstopo import Swisstopo  # noqa: E402
 
 APERTUS_KEYWORD = "apertus"
 
