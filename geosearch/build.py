@@ -41,10 +41,12 @@ CantonLocator = Callable[[list[dict[str, Any]]], "str | None"]
 
 
 async def collect(
-    api: Swisstopo, lang: str, with_divisions: bool, mirror: Path
+    api: Swisstopo, lang: str, with_divisions: bool, mirror: Path,
+    *, layers: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     logger.info("fetching catalogue (%s)", lang)
-    layers = await api.catalog(lang)
+    if layers is None:
+        layers = await api.catalog(lang)
     logger.info("catalogue: %d layers, %d queryable", len(layers), sum(x["queryable"] for x in layers))
 
     divisions: list[dict[str, Any]] = []

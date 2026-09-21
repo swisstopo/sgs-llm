@@ -68,9 +68,9 @@ Resources:
   # `python -m geosearch.build` output: DuckDB rows, three .faiss files and the
   # 6272 division boundaries, ~143 MB. It takes ~12 minutes and a few thousand
   # requests to geo.admin.ch, and two runs a week apart produce two different
-  # indexes — so it is built by a human, published here, and copied into the image
-  # by CI. It is deliberately NOT the data-layer bucket: that one expires
-  # everything after 30 days, which is right for published layers and fatal here.
+  # indexes — so a separate monthly/manual job publishes it here, and code deploys
+  # copy the complete prebuilt bundle into the image. This is separate from the
+  # data-layer bucket, whose 30-day expiry is right for results and fatal here.
   IndexBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -322,14 +322,24 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Read-only on the index: CI copies it into the image and must never
-              # be able to overwrite the artifact it is building from.
+              # Builds read complete bundles. The refresh job publishes a new immutable
+              # bundle, then switches current.json; no delete permission is needed.
               - Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion]
                 Resource: !Sub '${IndexBucket.Arn}/*'
               - Effect: Allow
                 Action: [s3:ListBucket, s3:GetBucketLocation]
                 Resource: !GetAtt IndexBucket.Arn
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${IndexBucket.Arn}/index/*'
+              # The monthly build embeds with the EU Cohere v4 inference profile only.
+              # Cross-region inference also requires its backing foundation-model ARNs.
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/eu.cohere.embed-v4:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:eu-*::foundation-model/cohere.embed-v4:0'
               # deploy-geosearch.sh resolves the ECR repository URI from this
               # stack's outputs rather than hardcoding it.
               - Effect: Allow
@@ -379,7 +389,7 @@ Outputs:
     Export: { Name: !Sub '${AWS::StackName}-IndexBucketName' }
   IndexUri:
     Description: >-
-      Publish with `aws s3 sync index/ <this>/ --delete`, and set it as the
+      Base prefix for index_release publication; set it as the
       GEOSEARCH_INDEX_URI repository variable so CI can build the image.
     Value: !Sub 's3://${IndexBucket}/index'
   LogGroupName:

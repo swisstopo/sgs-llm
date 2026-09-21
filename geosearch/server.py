@@ -29,6 +29,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from .geometry import (GeometryProcessingError, bounding_box, clip, geometry_type, measure,
                        select_intersecting, summarise_properties)
 from .index import INDEX_DIR, GeoIndex, confidence
+from .index_metadata import health_metadata
 from .places import DivisionLookupError, candidate
 from .profile_tool import register_profile_tool
 from .rerank import Reranker
@@ -997,6 +998,7 @@ def main() -> None:
     )
 
     counts = index.counts()
+    metadata = health_metadata(directory, counts, index.embedder.model_name)
     logger.info("index: %s | %s", counts, index.embedder.model_name)
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
@@ -1007,7 +1009,7 @@ def main() -> None:
     # without speaking the protocol. Reporting the counts makes it an answer about the
     # index rather than about uvicorn: a container with no index is not healthy.
     app.router.routes.append(
-        Route("/health", lambda _request: JSONResponse({"status": "ok", **counts}))
+        Route("/health", lambda _request: JSONResponse({"status": "ok", **counts, **metadata}))
     )
     logger.info("geodata MCP server on http://%s:%d/mcp", args.host, args.port)
 

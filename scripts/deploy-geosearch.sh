@@ -15,16 +15,11 @@
 # The image needs a prebuilt index, which this script fetches from S3 rather than
 # building: `python -m geosearch.build` is ~12 minutes and a few thousand requests
 # to geo.admin.ch, and two runs a week apart produce two different indexes. Publish
-# one first, from a machine that has just built it:
+# one first through the manual "Refresh geosearch index" workflow (docs/deployment.md).
+# Python with boto3 is required for the bundle fetch; PYTHON can name a virtualenv Python.
+# Set USE_LOCAL_INDEX=1 to build from the already-fetched ./index.
 #
-#   python -m geosearch.build
-#   aws s3 sync index/ "$(aws cloudformation describe-stacks \
-#     --stack-name sgs-llm-geosearch-foundation \
-#     --query "Stacks[0].Outputs[?OutputKey=='IndexUri'].OutputValue" --output text)/" --delete
-#
-# Set INDEX_URI to skip the fetch and build from whatever is already in ./index.
-#
-# Deploys are immutable: the image is tagged with the commit sha and a NEW task
+# Image tags include the commit and index metadata hash, and a NEW task
 # definition revision is registered, so rolling back is just pointing the service
 # at the previous revision (the script prints how).
 set -euo pipefail
@@ -70,7 +65,10 @@ if [[ "$USE_LOCAL_INDEX" == "1" ]]; then
   echo ">> USE_LOCAL_INDEX=1 — building from ./index as it stands"
 else
   echo ">> Fetching the index from $INDEX_URI"
-  "${AWS[@]}" s3 sync "$INDEX_URI" index/
+  (
+    if [[ -n "$PROFILE" ]]; then export AWS_PROFILE="$PROFILE"; fi
+    "${PYTHON:-python3}" -m geosearch.index_release fetch --uri "$INDEX_URI" --directory index
+  )
 fi
 
 # Fail before the build rather than after: a missing index produces an image
@@ -81,7 +79,11 @@ if [[ ! -f index/geosearch.duckdb ]]; then
 fi
 echo "   index: $(du -sh index | cut -f1)"
 
-TAG="${TAG:-$(git rev-parse --short HEAD)$(git diff --quiet || echo '-dirty')}"
+INDEX_TAG=""
+if [[ -f index/meta.json ]]; then
+  INDEX_TAG="-idx$("${PYTHON:-python3}" -c 'import hashlib; print(hashlib.sha256(open("index/meta.json", "rb").read()).hexdigest()[:12])')"
+fi
+TAG="${TAG:-$(git rev-parse --short HEAD)${INDEX_TAG}$(git diff --quiet || echo '-dirty')}"
 
 # --platform because the task definition pins X86_64 and this is often run from an
 # Apple Silicon machine, where the default would be an image ECS cannot start.
@@ -160,6 +162,6 @@ Note: infra/geosearch-service.yaml's ImageTag parameter is now stale by design
 actually running so it does not revert: ImageTag=$TAG
 
 This script only swaps the image; it never updates the service stack, and it never
-rebuilds the index. A new index needs a fresh 'python -m geosearch.build', an
-'aws s3 sync' to $INDEX_URI, and then this script again.
+rebuilds the index. Use the "Refresh geosearch index" workflow for a guarded
+rebuild, publication and a queued deployment.
 EOF

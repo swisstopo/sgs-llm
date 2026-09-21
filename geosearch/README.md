@@ -321,15 +321,15 @@ the data-layer bucket, which deletes everything after 30 days.
 
 ```
 python -m geosearch.build
-aws s3 sync index/ s3://sgs-llm-index-<account>/index/ --delete   # publish
+python -m geosearch.index_release publish --uri s3://sgs-llm-index-<account>/index --directory index
 PROFILE=swisstopo ./scripts/deploy-geosearch.sh                   # fetch, build, push, roll
 ```
 
 `.github/workflows/geosearch.yml` does the same automatically on any change under
 `geosearch/`: ruff and the tests always, then build, smoke-test and deploy once the
 repository variable `GEOSEARCH_INDEX_URI` names the published prefix (the foundation
-stack's `IndexUri` output). Until it is set the deploy job skips loudly rather than passing
-on an image it never built — `index/` is gitignored, and CI cannot reproduce it.
+stack's `IndexUri` output). Until it is set the deploy job fails rather than claiming success
+for an image it never built — `index/` is gitignored, and CI cannot reproduce it.
 
 ## Tools
 
@@ -390,3 +390,24 @@ the browser resolves their WMS, WMTS, or GeoJSON configuration directly from geo
   would still rank better.
 - Rebuilding is manual. The catalogue changes slowly, but nothing currently notices when
   it does.
+
+
+## Monthly catalogue refresh
+
+The **Refresh geosearch index** workflow runs at 03:17 UTC on the first of each month.
+It compares the catalogue with the published index and skips unchanged scheduled runs.
+Use **Run workflow** on `main` for a manual rebuild; `force=true` (the default) also
+refreshes boundaries when the catalogue is unchanged, reusing the existing layer vectors.
+Ordinary code pushes still fetch a prebuilt bundle and run the normal deployment checks.
+
+The refresh rejects catalogue drops greater than 5%, missing boundary/index files, and
+inconsistent row/vector counts. It writes `meta.json` with `built_at`, `catalogue_layers`,
+`divisions` and `model`; `/health` exposes these plus the existing `layers` field. Older
+indices report an unknown (`null`) build date until refreshed.
+
+A complete release uploads before `current.json` switches to it. Download checksums catch
+corrupt files; failed uploads keep the previous pointer. The existing flat S3 layout is
+supported for migration. Never sync with `--delete` over the base prefix after migration.
+The existing deploy role needs the reviewed foundation-stack permissions update before
+its first refresh. See [deployment and rollback](../docs/deployment.md#scheduled-index-refresh-separate-from-code-deployment)
+for the manual acceptance run, queued deployment, `/health` verification and rollback.

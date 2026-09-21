@@ -1319,24 +1319,57 @@ geosearch task role cannot read the conversation tables.
 | Scale | desired 1, raisable | desired 1, **`MaxValue: 1`** | `result_id` handles live in the `ResultCache` inside one process ([`geosearch/results.py`](../geosearch/results.py)). A second task answers `analyze_features` or `display_layer` with "unknown result_id" for half the handles it just issued |
 | Deploy | 100/200 rolling, zero downtime | **0/100** — old task stops first | Same reason. The cost is a gap of a minute or two per deploy, during which the backend's tool calls fail. Raising either needs a shared result store or sticky routing first |
 
-### The index is built by a human, not by CI
+### Scheduled index refresh, separate from code deployment
 
-The image needs a prebuilt search index, and **the build must never run in the Dockerfile
-or in CI**: `python -m geosearch.build` takes ~12 minutes, makes a few thousand requests to
-`geo.admin.ch`, and two runs a week apart produce two different indexes — the opposite of a
-reproducible image.
+The image consumes a prebuilt search index. Ordinary code pushes and Docker builds never
+rebuild it. [Refresh geosearch index](../.github/workflows/geosearch-refresh.yml) checks the
+catalogue monthly, at **03:17 UTC on the first day of the month**. GitHub may delay scheduled
+runs. An unchanged catalogue exits without embedding, publishing or deploying.
 
-```text
-  workstation                     S3                        CI                    ECS
-  python -m geosearch.build  ──▶  sgs-llm-index-*/index  ──▶  docker build  ──▶  service
-  (~12 min, once per refresh)     (versioned, no expiry)     (copies it in)      (rolls)
-```
+A manual **Run workflow** on `main` defaults `force` to true: it refreshes the boundaries
+and build date even when the catalogue is unchanged, reusing the layer vectors in their
+original database order. With `force=false`, it behaves like the monthly check. Changed
+catalogue contents regenerate the layer vectors. The build takes roughly 12 minutes and
+uses `eu.cohere.embed-v4:0` through Bedrock.
+
+Before enabling the first refresh, apply the reviewed `geosearch-foundation.yaml` update:
+the existing deploy role needs `s3:PutObject` under the index prefix and `bedrock:InvokeModel`
+on the EU Cohere embedding profile and its backing model only. Keep `GEOSEARCH_INDEX_URI`
+set to the base `s3://.../index` prefix. PR checks do not assume this role or run a refresh.
+
+The job downloads and validates the published baseline, rejects an empty catalogue or a
+layer-count drop greater than 5%, and builds into a fresh candidate directory. It also
+checks division counts, all referenced boundary files, vector dimensions/counts and build
+metadata. A failure leaves the published pointer unchanged.
+
+Publication uploads a complete bundle under `index/releases/<unique-id>/`, then writes a
+single `index/current.json` pointer with the file checksums. Readers resolve that pointer
+once and verify every downloaded file. Interrupted uploads leave unreferenced bundles;
+they cannot mix a new database with old vectors. Existing flat-prefix indices remain
+readable until the first publication. Do not use `aws s3 sync --delete` against the base
+prefix after migration: that would remove the release history and current pointer.
+
+After publication, the job queues the normal **Geosearch** workflow. The workflows share
+a concurrency group, so the refresh dispatches without waiting. **Refresh success is not
+rollout success**: inspect the queued deployment's image smoke test and ECS stabilization,
+then check the private service's `/health` from the VPC. If dispatch fails after publication,
+rerun **Geosearch** manually; the complete published bundle is already available.
+
+For acceptance, keep the manual run URL, deployment URL and `/health` output showing the
+new `built_at`. Then run manually with `force=false` and confirm it reports unchanged with
+no publication/deployment. Live acceptance is pending until the IAM update and these runs
+are performed; local tests alone do not establish it.
+
+The bucket is versioned. To roll back the index, restore the previous version of
+`index/current.json` as its current object and dispatch **Geosearch**; retain its referenced
+release directory. To restore service immediately, use the previous ECS task revision.
+No release cleanup is automatic, so monitor storage growth and preserve rollback bundles.
 
 What ends up inside the image:
 
 | Baked in | Size | Rebuilt when |
 | --- | --- | --- |
-| DuckDB rows + three `.faiss` files | ~36 MB | a human runs `geosearch.build` |
+| DuckDB rows + three `.faiss` files | ~36 MB | scheduled/manual refresh |
 | 6272 division boundaries (GeoJSON) | ~108 MB | same |
 | **Layer catalogue and feature data** | — | **not baked** — fetched from `geo.admin.ch` per request |
 
@@ -1394,7 +1427,7 @@ python -m geosearch.build
 INDEX_URI=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" \
   --stack-name sgs-llm-geosearch-foundation \
   --query "Stacks[0].Outputs[?OutputKey=='IndexUri'].OutputValue" --output text)
-aws s3 sync index/ "$INDEX_URI/" --delete --profile "$PROFILE" --region "$REGION"
+AWS_PROFILE="$PROFILE" python -m geosearch.index_release publish --uri "$INDEX_URI" --directory index
 
 # First image, so the service stack has something to start. BUILD_ONLY skips the
 # ECS roll, which cannot work yet because the service does not exist.
@@ -1413,9 +1446,8 @@ build the image.
 `.github/workflows/geosearch.yml` runs the tests and then **fails the deploy job**. That is
 deliberate: the job cannot build an image without an index, and a green run that built and
 shipped nothing reads as a successful deploy to everyone who sees only the tick. The same
-job also fails if the sync finds no DuckDB file, no `.faiss` vectors or no boundaries under
-`s3/` — `aws s3 sync` exits 0 against an empty prefix, so the files are the check, not the
-transfer.
+job also fails if the bundle has no DuckDB file, no `.faiss` vectors or no boundaries
+under `s3/`, or if a release checksum does not match.
 
 #### Turn the chat on
 
@@ -1469,13 +1501,15 @@ container, and call the same script a human would:
 PROFILE=swisstopo ./scripts/deploy-geosearch.sh
 ```
 
-Deploys are immutable — the image is tagged with the commit sha and a **new task definition
-revision** is registered, so a rollback is pointing the service at the previous revision
+The image tag includes the commit SHA and, for new bundles, a hash of the build metadata.
+This keeps two index refreshes at the same commit independently recoverable. A **new task
+definition revision** is registered, so a rollback is pointing the service at the previous revision
 (the script prints the exact command). The circuit breaker rolls back automatically if the
 new task never becomes healthy, and the script then fails the job.
 
-`USE_LOCAL_INDEX=1` builds from `./index` as it stands instead of fetching; `BUILD_ONLY=1`
-publishes the image without touching the service.
+The fetch helper requires Python with boto3 (`pip install -r geosearch/requirements.txt`);
+set `PYTHON=/path/to/venv/bin/python` when needed. `USE_LOCAL_INDEX=1` builds from `./index`
+as it stands instead of fetching; `BUILD_ONLY=1` publishes the image without touching the service.
 
 #### Health checks
 
@@ -1483,8 +1517,12 @@ publishes the image without touching the service.
 so the server adds **`/health`** beside it — returning the index counts, not just `ok`:
 
 ```json
-{"status": "ok", "layers": 896, "divisions": 6272}
+{"status": "ok", "layers": 896, "catalogue_layers": 896, "divisions": 6272, "built_at": "2026-09-21T03:17:00+00:00", "model": "eu.cohere.embed-v4:0"}
 ```
+
+The example date is illustrative. `built_at` comes from `index/meta.json`; legacy bundles
+report `null`, never the container startup time. Counts and model must agree with the
+loaded database.
 
 With no load balancer, the **container** health check is what decides whether the task's IP
 is registered in the Service Connect namespace at all, so a task that started without an
@@ -1570,9 +1608,6 @@ unaffected — the cluster belongs to `sgs-llm-backend-service`.
 - **Scale geosearch past one task** — needs a shared `result_id` store (or sticky
   routing) first; until then `DesiredCount` is capped at 1 and every deploy takes a
   short outage. See [Three ways this differs from the backend](#three-ways-this-differs-from-the-backend).
-- **Automate the index refresh** — `python -m geosearch.build` is a manual ~25-minute
-  step today; a scheduled job that builds, publishes and opens a PR would keep the
-  searchable layer set current without a human.
 
 Done since the initial POC: ✔ GitHub Actions deploy on push to `main` (OIDC
 role, no static keys — see step 7 and "Redeploy the frontend"); ✔ agent backend on

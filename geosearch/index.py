@@ -32,6 +32,7 @@ import faiss
 import numpy as np
 
 from .catalog_terms import CATALOG_TERMS, alias_matches
+from .index_metadata import write_metadata
 from .places import DivisionLookupError, candidate
 
 logger = logging.getLogger(__name__)
@@ -453,6 +454,7 @@ def build(
 ) -> dict[str, int]:
     """Writes geosearch.duckdb and the three FAISS indexes. Overwrites any existing build."""
     directory.mkdir(parents=True, exist_ok=True)
+    (directory / "meta.json").unlink(missing_ok=True)
     db_path = directory / "geosearch.duckdb"
     db_path.unlink(missing_ok=True)
     db = duckdb.connect(str(db_path))
@@ -513,6 +515,7 @@ def build(
     names = embedder.encode_documents([r["name"] for r in divisions])
     faiss.write_index(_flat_index(names), str(directory / "division_name.faiss"))
 
+    write_metadata(directory, len(layers), len(divisions), embedder.model_name)
     return {"layers": len(layers), "divisions": len(divisions), "dim": dim}
 
 
