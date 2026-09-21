@@ -1,0 +1,67 @@
+name: Refresh geosearch index
+
+on:
+  schedule:
+    - cron: '17 3 1 * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and deploy even when the catalogue is unchanged
+        type: boolean
+        default: true
+
+# Shared with the normal deploy: a refresh cannot race an ECS rollout.
+concurrency:
+  group: geosearch-deploy
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+      actions: write
+    env:
+      INDEX_URI: ${{ vars.GEOSEARCH_INDEX_URI }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: geosearch/requirements.txt
+      - run: pip install -r geosearch/requirements.txt
+      - name: Require a published baseline
+        run: |
+          test -n "$INDEX_URI" || { echo '::error::GEOSEARCH_INDEX_URI is unset'; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::259789526488:role/github-actions-sgs-llm-geosearch-deploy
+          aws-region: eu-central-1
+      - name: Fetch the current bundle
+        run: python -m geosearch.index_release fetch --uri "$INDEX_URI" --directory published-index
+      - name: Build and validate a candidate
+        id: build
+        run: |
+          flags=()
+          if [ "$FORCE" = true ]; then flags+=(--force); fi
+          python -m geosearch.refresh_index --published published-index --out candidate-index "${flags[@]}"
+          if [ -f candidate-index/meta.json ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            cat candidate-index/meta.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Catalogue unchanged; no publication or deployment.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Publish complete bundle and switch pointer
+        if: steps.build.outputs.changed == 'true'
+        run: python -m geosearch.index_release publish --uri "$INDEX_URI" --directory candidate-index
+      - name: Queue the normal tested deployment
+        if: steps.build.outputs.changed == 'true'
+        # Dispatch without waiting: the deploy starts after this workflow releases the
+        # shared concurrency group. Its own CI/image/ECS checks report rollout success.
+        run: gh workflow run geosearch.yml --ref main

@@ -12,10 +12,12 @@ on:
       - '.dockerignore'
       - 'scripts/deploy-geosearch.sh'
       - '.github/workflows/geosearch.yml'
+      - '.github/workflows/geosearch-refresh.yml'
   pull_request:
     paths:
       - 'geosearch/**'
       - '.github/workflows/geosearch.yml'
+      - '.github/workflows/geosearch-refresh.yml'
   workflow_dispatch:
 
 # Never let two deploys race the same ECS service.
@@ -42,13 +44,9 @@ jobs:
 
   # Builds the image, proves it serves, and rolls the ECS service onto it.
   #
-  # This needs the prebuilt index, which is 143 MB of `python -m geosearch.build` output:
-  # ~12 minutes and a few thousand requests to geo.admin.ch, and two runs a week apart
-  # produce two different indexes. So it is built by a human and published, never rebuilt
-  # per commit:
-  #
-  #   python -m geosearch.build
-  #   aws s3 sync index/ s3://sgs-llm-index-<account>/index/ --delete
+  # Uses the published prebuilt bundle. The monthly/manual refresh workflow builds
+  # and validates a new one separately, so ordinary code pushes never rebuild it.
+  # See docs/deployment.md for publication, provenance and rollback.
   #
   # Set the repository variable GEOSEARCH_INDEX_URI to that prefix (it is the
   # geosearch-foundation stack's IndexUri output). Until then this job FAILS: it has no
@@ -91,9 +89,13 @@ jobs:
       # the transfer is not the check - the files are. All four are required together:
       # row `rid` in DuckDB is vector `rid` in the .faiss files, and a partial sync would
       # otherwise reach `docker build` and fail somewhere far less obvious.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install boto3==1.43.59
       - name: Fetch the index
         run: |
-          aws s3 sync "$INDEX_URI" index/
+          python -m geosearch.index_release fetch --uri "$INDEX_URI" --directory index
           missing=0
           for f in geosearch.duckdb layer_title.faiss layer_description.faiss division_name.faiss; do
             if [ ! -s "index/$f" ]; then
