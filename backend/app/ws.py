@@ -269,7 +269,7 @@ async def _reject_unparsed(
 async def _terminate(exchange: Exchange, message_id: str, *, code: Any, text: str) -> None:
     """Ends an exchange that never started, keeping the one-error-then-done rule."""
     await exchange.send(Error(message_id=message_id, code=code, message=text))
-    await exchange.send(Done(message_id=message_id))
+    await exchange.send(Done(message_id=message_id, conversation_id=exchange.conversation_id))
 
 
 async def _record(
@@ -339,7 +339,7 @@ async def _run(
             )
             terminated = True
     finally:
-        await exchange.send(Done(message_id=message.id))
+        await exchange.send(Done(message_id=message.id, conversation_id=exchange.conversation_id))
         exchange.active_message_id = None
         elapsed_ms = int((asyncio.get_running_loop().time() - started) * 1000)
         # Last statement of the turn task: anything escaping here surfaces as an

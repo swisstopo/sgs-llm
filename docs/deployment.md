@@ -859,6 +859,7 @@ aws cloudformation deploy --profile swisstopo --region eu-central-1 \
 | `log_date` + `ts` | `ByDay` GSI: `YYYY-MM-DD` + ISO-8601 timestamp, newest-first reads |
 | `category` | `bug` \| `feature` \| `improvement` \| `question` \| `other` |
 | `message`, `email?`, `lang` | as submitted by the form ([`submitFeedback.ts`](../frontend/src/feedback/submitFeedback.ts)) |
+| `conversation_id` | present only when the browser named the thread the feedback came from ([`protocol.md`](./protocol.md#attaching-a-thread-to-feedback)); it is the partition key of the conversations table below, so `read-db.sh conversations --conversation <id>` reads the transcript the feedback is about. With retention on, conversations expire first (90 days against 365), so an older link can name a thread that is already gone |
 | `expires_at` | absent while retention is off (`FEEDBACK_TTL_DAYS=0`); otherwise epoch seconds, enforced only when `RetentionAutoDelete=true` |
 
 Onboarding items use the same standalone-submission table and daily index, with

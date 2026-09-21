@@ -17,6 +17,7 @@ from app.protocol import (
     coerce_layer_spec,
     parse_client_event,
 )
+from tests.conftest import SERVER_EVENTS_SCHEMA
 
 
 def test_parses_a_user_message() -> None:
@@ -144,6 +145,18 @@ def test_frames_omit_absent_optionals() -> None:
     assert "layers" not in final
 
 
+def test_done_names_the_thread_the_turn_belonged_to() -> None:
+    """The browser has no thread identity of its own; `done` is where it learns one."""
+    frame = json.loads(Done(message_id="m", conversation_id="c1").frame())
+    assert frame["conversation_id"] == "c1"
+
+
+def test_the_published_schema_declares_the_conversation_id_on_done() -> None:
+    """docs/protocol/ is normative: a field the frontend may rely on has to be in it."""
+    schema = json.loads(SERVER_EVENTS_SCHEMA.read_text(encoding="utf-8"))
+    assert schema["$defs"]["done"]["properties"]["conversation_id"] == {"type": "string"}
+
+
 def test_frames_validate_against_the_published_schema(server_event_validator) -> None:
     layer = LayerSpec(
         id="l1",
@@ -168,7 +181,7 @@ def test_frames_validate_against_the_published_schema(server_event_validator) ->
             focus_bbox=(7.29, 46.91, 7.5, 46.99),
         ),
         Error(message_id="m", code="timeout", message="too slow"),
-        Done(message_id="m"),
+        Done(message_id="m", conversation_id="c1"),
     ]
     for event in frames:
         server_event_validator.validate(json.loads(event.frame()))

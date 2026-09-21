@@ -57,7 +57,8 @@
       "required": ["type", "message_id"],
       "properties": {
         "type": { "const": "done" },
-        "message_id": { "type": "string" }
+        "message_id": { "type": "string" },
+        "conversation_id": { "type": "string" }
       }
     },
     "catalogLayerRef": {

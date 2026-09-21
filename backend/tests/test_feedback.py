@@ -54,6 +54,64 @@ def test_a_valid_submission_is_stored(client: Any) -> None:
     assert entry["lang"] == "de"
 
 
+def test_a_submission_can_name_the_thread_it_came_from(client: Any) -> None:
+    """The browser echoes back the `conversation_id` the server sent it on `done`."""
+    response = client.post(
+        "/feedback",
+        json={
+            "category": "bug",
+            "message": "Die Antwort war falsch.",
+            "lang": "de",
+            "conversation_id": "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90",
+        },
+    )
+    assert response.status_code == 204
+    assert client.store.feedback[0]["conversation_id"] == "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90"
+
+
+def test_a_submission_from_no_thread_is_stored_unlinked(client: Any) -> None:
+    response = client.post(
+        "/feedback",
+        json={"category": "other", "message": "Schöne Karte.", "lang": "de"},
+    )
+    assert response.status_code == 204
+    assert client.store.feedback[0]["conversation_id"] is None
+
+
+@pytest.mark.parametrize(
+    "conversation_id",
+    [12345, {"id": "c1"}, ["c1"], "   ", "c" * 65],
+)
+def test_an_unusable_thread_id_does_not_cost_the_user_their_feedback(
+    client: Any, conversation_id: Any
+) -> None:
+    """The only producer of this field is our own frontend, so a malformed one is a
+    client bug - and a client bug must not discard what a real person typed."""
+    response = client.post(
+        "/feedback",
+        json={
+            "category": "bug",
+            "message": "Etwas stimmt nicht.",
+            "lang": "de",
+            "conversation_id": conversation_id,
+        },
+    )
+    assert response.status_code == 204
+    entry = client.store.feedback[0]
+    assert entry["message"] == "Etwas stimmt nicht."
+    assert entry["conversation_id"] is None
+
+
+def test_an_unusable_thread_id_is_logged(client: Any, caplog: Any) -> None:
+    """Dropping the link is deliberate, but it is never silent."""
+    with caplog.at_level("WARNING", logger="app.feedback"):
+        client.post(
+            "/feedback",
+            json={"category": "bug", "message": "x", "lang": "de", "conversation_id": "c" * 65},
+        )
+    assert any("conversation_id" in record.message for record in caplog.records)
+
+
 def test_a_valid_onboarding_submission_is_stored(client: Any) -> None:
     response = client.post(
         "/feedback",

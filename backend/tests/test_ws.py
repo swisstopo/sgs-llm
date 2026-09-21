@@ -262,18 +262,51 @@ def test_the_conversation_id_rotates_only_on_a_fresh_thread(settings) -> None:
     )
     with TestClient(app).websocket_connect("/ws/v1") as ws:
         ws.send_text(_user_message(message_id="m1"))
-        _drain(ws, "m1")
+        first = _drain(ws, "m1")
         # A follow-up carries history, so it belongs to the same conversation.
         ws.send_text(_user_message(message_id="m2", history=[{"role": "user", "content": "a"}]))
-        _drain(ws, "m2")
+        second = _drain(ws, "m2")
         # The chat header's "+" reset sends no history: a new conversation.
         ws.send_text(_user_message(message_id="m3"))
-        _drain(ws, "m3")
+        third = _drain(ws, "m3")
 
     ids = [turn["conversation_id"] for turn in store.turns]
     assert len(ids) == 3
     assert ids[0] == ids[1]
     assert ids[2] != ids[0]
+    # `done` tells the browser the id the turn was stored under, which is what lets a
+    # later feedback submission name the thread it came from.
+    assert [_first(frames, "done")["conversation_id"] for frames in (first, second, third)] == ids
+
+
+def test_the_id_from_done_is_accepted_as_a_feedback_thread(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The round trip the feature exists for: chat, then feedback naming that chat."""
+    from app.feedback import router as feedback_router
+
+    monkeypatch.setattr("app.feedback.get_settings", lambda: settings)
+    store = FakeStore()
+    app = build_app(settings=settings, models=FakeModels([text_result("ok")]), store=store)
+    app.include_router(feedback_router)
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message())
+        announced = _first(_drain(ws), "done")["conversation_id"]
+
+    response = client.post(
+        "/feedback",
+        json={
+            "category": "bug",
+            "message": "Die Antwort war falsch.",
+            "lang": "de",
+            "conversation_id": announced,
+        },
+    )
+
+    assert response.status_code == 204
+    assert store.feedback[0]["conversation_id"] == store.turns[0]["conversation_id"]
 
 
 def test_every_turn_is_logged_including_failures(settings) -> None:
