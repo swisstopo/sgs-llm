@@ -7,6 +7,7 @@ export interface FeedbackPayload {
   message: string;
   email?: string;
   lang: string;
+  conversation_id?: string;
 }
 
 /** Submits feedback as JSON to the configured endpoint; throws on failure. */

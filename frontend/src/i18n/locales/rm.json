@@ -174,7 +174,8 @@
     "submit": "Trametter",
     "sending": "Al trametter …",
     "success": "Grazia fitg per tia resposta!",
-    "error": "La resposta n'ha betg pudì vegnir tramessa. Emprova per plaschair anc ina giada."
+    "error": "La resposta n'ha betg pudì vegnir tramessa. Emprova per plaschair anc ina giada.",
+    "conversationIncluded": "Tia conversaziun actuala vegn agiuntada a quest resun."
   },
   "about": {
     "description": "SGS LLM è in prototip open-source che renda accessiblas las geodatas federalas svizras tras lingua natirala: ina interfatscha da chat, ina charta interactiva e connecturs als servetschs uffizials da swisstopo. Il project vegn sviluppà en il context da la Strategia svizra da geoinfurmaziun (SGS).",

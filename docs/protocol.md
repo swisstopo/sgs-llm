@@ -44,8 +44,10 @@ it. The frontend supplies it like this:
    [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts) rebuilds `done` as
    `{ type, message_id }`, so today it discards `conversation_id` before any caller
    sees it.
-2. Keep the `conversation_id` of the most recent `done` — one field on the chat service,
-   overwritten on every `done`, cleared by nothing.
+2. Keep the `conversation_id` of the most recent `done` for the current chat. Clear it
+   when the user starts a new conversation, and ignore late events from the previous
+   chat. The server still assigns a new id after a WebSocket reconnect; this link
+   therefore identifies the latest stored segment, not necessarily every visible turn.
 3. When the feedback form is submitted, include that value in the JSON body:
 
    ```json
@@ -71,6 +73,11 @@ that sends a malformed id will not do so unnoticed.
 The id is only as trustworthy as the client that echoes it, which is fine for what it is
 for: grouping a pilot's feedback with the conversation that prompted it. Nothing is
 authorised by it.
+
+The admin feedback drawer can open the linked conversation using the existing
+`/admin/api/records/conversations` endpoint. It follows pagination within the dashboard's
+selected dates and labels the transcript with that range. Messages outside the range
+are not included; if no match is found, the administrator can widen the date selection.
 
 ## Client → server events
 

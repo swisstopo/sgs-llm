@@ -53,6 +53,12 @@ export class ChatService {
   private readonly messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
   private readonly busySubject = new BehaviorSubject<boolean>(false);
   private readonly modelSubject = new BehaviorSubject<ModelPreference>('primary');
+  private latestConversationId?: string;
+
+  /** Server identity for the latest finished turn in the visible chat. */
+  get conversationId(): string | undefined {
+    return this.latestConversationId;
+  }
 
   constructor(
     private readonly client: AgentClient,
@@ -134,6 +140,7 @@ export class ChatService {
     if (this.busy) {
       this.cancel();
     }
+    this.latestConversationId = undefined;
     this.messagesSubject.next([]);
     this.busySubject.next(false);
   }
@@ -196,6 +203,10 @@ export class ChatService {
         }));
         break;
       case 'done':
+        // A cancelled/reset chat can still finish after a new chat has started.
+        // Never attach its identity to the new chat or clear the new turn's busy state.
+        if (this.messages.at(-1)?.id !== event.message_id) return;
+        this.latestConversationId = event.conversation_id;
         this.updateAssistant(event.message_id, (message) =>
           // Terminal without final/error (protocol violation): mark as error.
           message.status === 'streaming'
