@@ -33,7 +33,8 @@ curl -s http://63.182.197.164:8000/v1/chat/completions \
 
 ## When it is up
 
-**Weekdays 06:30–19:00 Europe/Zurich. Down every night and all weekend.**
+**User-facing availability: weekdays 06:40–19:00 Europe/Zurich.**
+The instance runs from 06:30–19:00 on weekdays and is down every night and all weekend.
 
 The EC2 instance starts at 06:30. The frontend presents Apertus as available
 Monday–Friday from **06:40–19:00 Europe/Zurich**, leaving ten minutes for the
@@ -117,7 +118,8 @@ directions**:
 
 Being unreachable is **not** cached. The router marks a Bedrock model unavailable
 for the life of the process when it is denied, which is right for an SCP deny and
-wrong here: this endpoint returns on its own at 06:30, and caching it dead would
+wrong here: this instance restarts at 06:30 and is offered to users from 06:40,
+so caching it dead would
 keep it dead until the ECS task was replaced.
 
 Three settings differ from the Bedrock path, all in the environment contract

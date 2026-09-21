@@ -232,7 +232,7 @@ on. Two findings decide how it can be used:
   tool use.
 
 **Apertus is deployed and the backend can use it.** It runs on EC2 `g6.2xlarge`
-with vLLM in `eu-central-1`, on a weekday 06:30-19:00 Europe/Zurich schedule —
+with vLLM in `eu-central-1`, available on weekdays 06:40–19:00 Europe/Zurich —
 the operational card is [`apertus-endpoint.md`](./apertus-endpoint.md). The
 backend reaches it as a third selectable model, and because it is self-hosted
 rather than a Bedrock profile it behaves differently from Claude and Mistral in
@@ -241,7 +241,7 @@ three ways that matter:
 | | Claude / Mistral | Apertus |
 | --- | --- | --- |
 | Reached by | Bedrock Converse, task IAM role | OpenAI-compatible HTTP, shared bearer key |
-| Available | always | weekdays 06:30-19:00 Europe/Zurich |
+| Available | always | weekdays 06:40–19:00 Europe/Zurich |
 | Context | 200k | 28,000 tokens, one conversation at a time |
 | Selected by | `model: "primary" \| "secondary"` | `model: "apertus"`, explicit only |
 
