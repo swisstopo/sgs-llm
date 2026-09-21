@@ -12,12 +12,19 @@ import json
 import shutil
 import tempfile
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
+
+# Thousands of small boundary files make serial request latency dominate deploys.
+# Bound concurrency across files rather than starting another thread pool per file.
+TRANSFER_WORKERS = 8
+TRANSFER_CONFIG = TransferConfig(use_threads=False)
 
 
 def location(uri: str) -> tuple[str, str]:
@@ -73,15 +80,21 @@ def fetch(s3: Any, uri: str, output: Path) -> None:
     # Stage first: a broken download cannot mix new vectors with an old database.
     with tempfile.TemporaryDirectory(prefix="sgs-index-") as temporary:
         staging = Path(temporary)
-        for name, digest in files.items():
+
+        def download(item: tuple[str, str | None]) -> None:
+            name, digest = item
             relative = Path(name)
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError("Invalid index bundle path")
             path = staging / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            s3.download_file(bucket, prefix + name, str(path))
+            s3.download_file(bucket, prefix + name, str(path), Config=TRANSFER_CONFIG)
             if not path.stat().st_size or (digest and checksum(path) != digest):
                 raise ValueError(f"Empty or corrupt index file: {name}")
+
+        with ThreadPoolExecutor(max_workers=TRANSFER_WORKERS) as transfers:
+            # Consume every result so a failed transfer aborts before copying the bundle.
+            list(transfers.map(download, files.items()))
         output.mkdir(parents=True, exist_ok=True)
         if "meta.json" not in files:
             (output / "meta.json").unlink(missing_ok=True)
@@ -100,8 +113,14 @@ def publish(s3: Any, uri: str, directory: Path) -> str:
         for path in sorted(directory.rglob("*"))
         if path.is_file()
     }
-    for name in files:
-        s3.upload_file(str(directory / name), bucket, prefix + name)
+
+    def upload(name: str) -> None:
+        s3.upload_file(
+            str(directory / name), bucket, prefix + name, Config=TRANSFER_CONFIG
+        )
+
+    with ThreadPoolExecutor(max_workers=TRANSFER_WORKERS) as transfers:
+        list(transfers.map(upload, files))
     # An interrupted upload leaves an unreferenced release. Readers see either the old
     # complete bundle or this complete bundle, never an in-place multi-object sync.
     pointer = {"prefix": prefix, "built_at": metadata["built_at"], "files": files}

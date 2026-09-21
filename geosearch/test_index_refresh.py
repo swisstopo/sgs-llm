@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import threading
 from datetime import datetime
 
 import boto3
@@ -211,6 +212,38 @@ def test_corrupted_release_does_not_overwrite_existing_download(bundle, storage)
     with pytest.raises(ValueError, match="corrupt"):
         fetch(storage, uri, output)
     assert sentinel.read_bytes() == b"existing database"
+
+
+@pytest.mark.parametrize("operation", ["download_file", "upload_file"])
+def test_bundle_transfers_overlap_without_nested_thread_pools(
+    bundle, storage, monkeypatch, operation
+):
+    uri = "s3://test-index/index"
+    publish(storage, uri, bundle)
+    original = getattr(storage, operation)
+    pair = threading.Barrier(2)
+    lock = threading.Lock()
+    calls = 0
+
+    def transfer(*args, **kwargs):
+        nonlocal calls
+        with lock:
+            calls += 1
+            number = calls
+        assert kwargs["Config"].use_threads is False
+        if number <= 2:
+            # A serial transfer loop cannot reach the second request to release this.
+            pair.wait(timeout=5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(storage, operation, transfer)
+    if operation == "download_file":
+        output = bundle.parent / "parallel-download"
+        fetch(storage, uri, output)
+        assert validate_bundle(output) == validate_bundle(bundle)
+    else:
+        publish(storage, uri, bundle)
+    assert calls >= 2
 
 
 def test_legacy_prefix_ignores_abandoned_release_files(bundle, storage):
