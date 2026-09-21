@@ -56,18 +56,19 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 import yaml  # noqa: E402
-from mcp_dummy.server import build_server  # noqa: E402
-from mcp_dummy.swisstopo import Swisstopo  # noqa: E402
-
 from app.agent.loop import TurnStats, run_turn  # noqa: E402
-from app.agent.models import ModelHandle, configured_model_handle  # noqa: E402
+from app.agent.models import ModelHandle, configured_model_handle, resolve_system  # noqa: E402
 from app.agent.prompts import prompt_variant_for  # noqa: E402
 from app.agent.router import ModelRouter  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.mcp.client import ToolGateway  # noqa: E402
 from app.protocol import UserMessage  # noqa: E402
 from app.store.artifacts import ArtifactStore  # noqa: E402
+
 from evals.checks import Observation, evaluate  # noqa: E402
+from evals.parcel_discovery import without_parcel_hints  # noqa: E402
+from mcp_dummy.server import build_server  # noqa: E402
+from mcp_dummy.swisstopo import Swisstopo  # noqa: E402
 
 APERTUS_KEYWORD = "apertus"
 
@@ -178,6 +179,7 @@ async def ask(
     handle: ModelHandle,
     gateway: ToolGateway,
     settings: Settings,
+    parcel_hints: bool = True,
 ) -> Observation:
     """Runs one question through the real agent loop."""
     payload: dict[str, Any] = {
@@ -200,6 +202,8 @@ async def ask(
     class Pinned:
         async def converse_with_fallback(self, **kwargs: Any) -> Any:
             kwargs["pinned"] = handle
+            if not parcel_hints:
+                kwargs["system"] = without_parcel_hints(resolve_system(kwargs["system"], handle))
             return await models.converse_with_fallback(**kwargs)
 
     turn = run_turn(
@@ -291,6 +295,7 @@ async def run_model(
     sink: Callable[[dict[str, Any]], None] | None = None,
     mcp_url: str = "",
     question_set: str = "",
+    parcel_hints: bool = True,
 ) -> list[dict[str, Any]]:
     models = ModelRouter(settings)
     rows: list[dict[str, Any]] = []
@@ -312,6 +317,7 @@ async def run_model(
                     handle=handle,
                     gateway=gateway,
                     settings=settings,
+                    parcel_hints=parcel_hints,
                 )
                 verdict = evaluate(question, observed)
 
@@ -329,7 +335,8 @@ async def run_model(
                 row = {
                     "model": str(handle),
                     "question_set": question_set,
-                    "prompt_variant": prompt_variant_for(handle.model_id),
+                    "prompt_variant": prompt_variant_for(handle.model_id)
+                    + ("" if parcel_hints else ":without-parcel-hints-v1"),
                     "catalog_layers": settings.enable_catalog_layers,
                     # Two servers answer the same question differently, so rows from them
                     # are not a controlled comparison and the report says so.
@@ -545,7 +552,13 @@ async def main() -> None:
         "raster layers at all. Every result row records which was used, so rows recorded "
         "under one setting are not a controlled comparison against the other.",
     )
+    parser.add_argument(
+        "--without-parcel-hints", action="store_true",
+        help="Evaluation only: remove the parcel dataset name/id hint. Requires --mcp-url.",
+    )
     args = parser.parse_args()
+    if args.without_parcel_hints and not args.mcp_url and not args.list:
+        parser.error("--without-parcel-hints requires a real geosearch --mcp-url")
 
     questions = load_questions(args.questions, args.only, args.ids)
     if not questions:
@@ -595,6 +608,7 @@ async def main() -> None:
                     sink=sink,
                     mcp_url=args.mcp_url,
                     question_set=question_set_hash(args.questions),
+                    parcel_hints=not args.without_parcel_hints,
                 )
             )
 

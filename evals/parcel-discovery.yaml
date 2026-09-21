@@ -1,0 +1,33 @@
+# Fresh turns: no dataset names or ids in questions, history or map context.
+- id: parcel-discovery-egrid-de
+  lang: de
+  category: parcel_discovery
+  question: Zeige mir die Parzelle mit EGRID CH 3435 4679 1597
+  expect:
+    must_chain_tools: [search_layers, identify_at_point, display_layer]
+    must_call_tool: [geocode_location, describe_layer]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: de
+    must_mention: [Belp]
+
+- id: parcel-discovery-egrid-fr
+  lang: fr
+  category: parcel_discovery
+  question: Montre la parcelle avec EGRID CH343546791597
+  expect:
+    must_chain_tools: [search_layers, identify_at_point, display_layer]
+    must_call_tool: [geocode_location, describe_layer]
+    must_produce_layer: true
+    must_not_fail_tools: true
+    answer_lang: fr
+    must_mention: [Belp]
+
+- id: parcel-discovery-plan-de
+  lang: de
+  category: parcel_discovery
+  question: Zeige mir den Katasterplan der Gemeinde Belp
+  expect:
+    must_chain_tools: [search_layers, display_catalog_layer]
+    must_not_fail_tools: true
+    answer_lang: de
