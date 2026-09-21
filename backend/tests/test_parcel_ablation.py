@@ -39,7 +39,10 @@ async def test_real_loop_model_input_uses_requested_variant(settings, parcel_hin
     models = FakeModels([text_result("Antwort")])
     observation = await ask(
         {"id": "no-hint", "question": "Zeige mir eine Parzelle", "lang": "de"},
-        models=models, handle=HANDLE, gateway=FakeGateway(NO_TOOLS), settings=settings,
+        models=models,
+        handle=HANDLE,
+        gateway=FakeGateway(NO_TOOLS),
+        settings=settings,
         parcel_hints=parcel_hints,
     )
     assert observation.answer == "Antwort"

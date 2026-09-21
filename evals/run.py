@@ -553,7 +553,8 @@ async def main() -> None:
         "under one setting are not a controlled comparison against the other.",
     )
     parser.add_argument(
-        "--without-parcel-hints", action="store_true",
+        "--without-parcel-hints",
+        action="store_true",
         help="Evaluation only: remove the parcel dataset name/id hint. Requires --mcp-url.",
     )
     args = parser.parse_args()
