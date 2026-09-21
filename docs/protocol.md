@@ -110,7 +110,9 @@ are not included; if no match is found, the administrator can widen the date sel
   The server defaults to `primary` for older clients.
 
   `apertus` differs from the two Bedrock choices in ways a client should surface:
-  it is **available on weekdays 06:30-19:00 Europe/Zurich only**, answers far more
+  it is **available on weekdays 06:40–19:00 Europe/Zurich only**, allowing ten minutes
+  after the instance starts at 06:30 for model loading (see
+  [Apertus operating hours](./apertus-endpoint.md#when-it-is-up)). It answers far more
   slowly (about 24 s for a 400-token answer), and serves **one conversation at a
   time** — a second concurrent request queues. Outside that window the turn ends
   with `error` `model_unavailable` and a localized message naming the schedule; it
