@@ -85,6 +85,25 @@ class TestFeedback:
         assert item["ts"].endswith("Z")
         assert isinstance(item["expires_at"], int)
 
+    async def test_a_conversation_id_links_the_feedback_to_its_thread(self) -> None:
+        table = FakeTable()
+        store = _store(SETTINGS, {"sgs-llm-feedback": table})
+
+        await store.record_feedback(
+            category="bug", message="Karte lädt nicht", lang="de", conversation_id="c1"
+        )
+
+        assert table.items[0]["conversation_id"] == "c1"
+
+    async def test_feedback_from_no_thread_carries_no_conversation_attribute(self) -> None:
+        """Absent, never an empty string - the same rule the onboarding answers follow."""
+        table = FakeTable()
+        store = _store(SETTINGS, {"sgs-llm-feedback": table})
+
+        await store.record_feedback(category="bug", message="x", lang="de", conversation_id=None)
+
+        assert "conversation_id" not in table.items[0]
+
     async def test_ttl_reflects_the_configured_retention(self) -> None:
         table = FakeTable()
         store = _store(SETTINGS, {"sgs-llm-feedback": table})

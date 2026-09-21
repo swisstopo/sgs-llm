@@ -25,8 +25,52 @@ of requiring a new field: **one conversation per WebSocket connection, starting 
 whenever a `user_message` arrives with empty or absent `history`** - which is exactly what
 the chat header's "+" reset produces.
 
+The derived id is not private: every [`done`](#done) event carries the
+`conversation_id` of the turn it terminates, so a client that wants to refer to a
+thread later reads it from there. It changes only when the server starts a new
+conversation, so a client that stores the last one it saw always holds the thread the
+user is looking at.
+
 An explicit optional `conversation_id` on `user_message` is a candidate for v1.1
 alongside `final_delta`; nothing depends on it today.
+
+### Attaching a thread to feedback
+
+`POST /feedback` accepts an **optional** `conversation_id` alongside the form fields,
+which links the submission to the conversation the user was looking at when they wrote
+it. The frontend supplies it like this:
+
+1. Carry the field through the parser first: `parseServerEvent` in
+   [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts) rebuilds `done` as
+   `{ type, message_id }`, so today it discards `conversation_id` before any caller
+   sees it.
+2. Keep the `conversation_id` of the most recent `done` — one field on the chat service,
+   overwritten on every `done`, cleared by nothing.
+3. When the feedback form is submitted, include that value in the JSON body:
+
+   ```json
+   {
+     "category": "bug",
+     "message": "Die Antwort war falsch.",
+     "lang": "de",
+     "conversation_id": "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90"
+   }
+   ```
+
+4. Send **no** `conversation_id` at all when there is nothing to link — a user who opens
+   the feedback panel without having chatted, or after a page reload that lost the id.
+   Omit the key rather than sending `null` or `""`.
+
+The field is optional on purpose: a client that never sends one keeps working unchanged,
+and the submission is stored either way. A value the server cannot use — not a string,
+blank, or longer than 64 characters — is **dropped, not rejected**: the response is still
+`204` and the feedback is stored without the link, because a bug in the client must not
+discard what a person typed. The server logs a warning when that happens, so a frontend
+that sends a malformed id will not do so unnoticed.
+
+The id is only as trustworthy as the client that echoes it, which is fine for what it is
+for: grouping a pilot's feedback with the conversation that prompted it. Nothing is
+authorised by it.
 
 ## Client → server events
 
@@ -191,10 +235,20 @@ code.
 ### `done`
 
 ```json
-{ "type": "done", "message_id": "9f1f6e8c-…" }
+{
+  "type": "done",
+  "message_id": "9f1f6e8c-…",
+  "conversation_id": "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90"
+}
 ```
 
 Always the terminal event of an exchange.
+
+- `conversation_id` — optional; the thread this turn was grouped under, as described
+  in [Conversation identity](#conversation-identity). It is the only place the client
+  is told a thread id, and it is what [feedback](#attaching-a-thread-to-feedback)
+  attaches to. A client that does not need it ignores it, per the forward-compatibility
+  rule below.
 
 ## Exchange rules
 

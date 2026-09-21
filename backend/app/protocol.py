@@ -139,6 +139,9 @@ class Error(_ServerModel):
 class Done(_ServerModel):
     type: Literal["done"] = "done"
     message_id: str
+    # The browser holds no thread identity of its own (docs/protocol.md), so this is
+    # where it learns which conversation to name when the user submits feedback.
+    conversation_id: str | None = None
 
 
 ServerEvent = Intermediate | Final | Error | Done

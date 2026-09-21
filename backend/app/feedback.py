@@ -40,6 +40,8 @@ ONBOARDING_CONSENT_VERSION = "v2"
 MAX_BODY_BYTES = 32_768
 MAX_MESSAGE_CHARS = 8_000
 MAX_EMAIL_CHARS = 320
+# A uuid4 is 36 characters; the cap only bounds what a buggy client can store.
+MAX_CONVERSATION_ID_CHARS = 64
 
 CORS_HEADERS = {
     "access-control-allow-origin": "*",
@@ -53,6 +55,22 @@ router = APIRouter()
 def _store(request: Request) -> Store:
     store: Store = request.app.state.store
     return store
+
+
+def _conversation_id(value: Any) -> str | None:
+    """The thread the browser named, or None when it named none we can use.
+
+    A value we cannot store is dropped rather than rejected: the only producer is our
+    own frontend, so a malformed id is our bug, and it must not discard what a real
+    person typed. Truncating instead would be worse - a cut id is a join key that
+    silently matches nothing.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and 0 < len(stripped := value.strip()) <= MAX_CONVERSATION_ID_CHARS:
+        return stripped
+    logger.warning("dropping an unusable conversation_id on a feedback submission")
+    return None
 
 
 def _validate(data: Any) -> dict[str, Any] | None:
@@ -77,6 +95,7 @@ def _validate(data: Any) -> dict[str, Any] | None:
         "email": (
             email.strip()[:MAX_EMAIL_CHARS] if isinstance(email, str) and email.strip() else None
         ),
+        "conversation_id": _conversation_id(data.get("conversation_id")),
     }
 
 

@@ -145,8 +145,13 @@ class Store:
         message: str,
         lang: str,
         email: str | None = None,
+        conversation_id: str | None = None,
     ) -> str:
-        """Stores one submitted feedback form. Returns the generated id."""
+        """Stores one submitted feedback form. Returns the generated id.
+
+        ``conversation_id`` is the thread the browser was looking at, absent when it
+        sent none; it joins to the partition key of the conversations table.
+        """
         moment = _now()
         entry_id = str(uuid.uuid4())
         item: dict[str, Any] = {
@@ -165,6 +170,8 @@ class Store:
             item["expires_at"] = _expires_at(moment, self._settings.feedback_ttl_days)
         if email:
             item["email"] = email
+        if conversation_id:
+            item["conversation_id"] = conversation_id
         await self._put(self._settings.feedback_table, item)
         return entry_id
 
