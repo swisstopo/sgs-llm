@@ -14,10 +14,11 @@ from app.protocol import (
     Intermediate,
     LayerSpec,
     UserMessage,
+    coerce_conversation_id,
     coerce_layer_spec,
     parse_client_event,
 )
-from tests.conftest import SERVER_EVENTS_SCHEMA
+from tests.conftest import CLIENT_EVENTS_SCHEMA, SERVER_EVENTS_SCHEMA
 
 
 def test_parses_a_user_message() -> None:
@@ -143,6 +144,51 @@ def test_frames_omit_absent_optionals() -> None:
 
     final = json.loads(Final(message_id="m", content_markdown="answer").frame())
     assert "layers" not in final
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90", "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90"),
+        ("  padded  ", "padded"),
+        ("", None),
+        ("   ", None),
+        ("c" * 65, None),
+        (None, None),
+        (12345, None),
+        ({"id": "c1"}, None),
+    ],
+)
+def test_coerce_conversation_id(value: object, expected: str | None) -> None:
+    assert coerce_conversation_id(value) == expected
+
+
+def test_a_user_message_may_name_its_thread() -> None:
+    event = parse_client_event(
+        json.dumps(
+            {"type": "user_message", "id": "m1", "content": "Hallo", "conversation_id": "c1"}
+        )
+    )
+    assert isinstance(event, UserMessage)
+    assert event.conversation_id == "c1"
+
+
+def test_an_unusable_thread_id_never_costs_the_client_its_turn() -> None:
+    """A pydantic constraint here would drop the whole frame: parse_client_event returns
+    None for anything that fails validation, and the user's message would vanish."""
+    event = parse_client_event(
+        json.dumps({"type": "user_message", "id": "m1", "content": "Hallo", "conversation_id": 7})
+    )
+    assert isinstance(event, UserMessage)
+    assert coerce_conversation_id(event.conversation_id) is None
+
+
+def test_the_published_schema_declares_the_conversation_id_on_user_message() -> None:
+    schema = json.loads(CLIENT_EVENTS_SCHEMA.read_text(encoding="utf-8"))
+    assert schema["$defs"]["userMessage"]["properties"]["conversation_id"] == {
+        "type": "string",
+        "maxLength": 64,
+    }
 
 
 def test_done_names_the_thread_the_turn_belonged_to() -> None:

@@ -31,6 +31,7 @@ from .protocol import (
     ProtocolLang,
     ServerEvent,
     UserMessage,
+    coerce_conversation_id,
     coerce_lang,
     parse_client_event,
 )
@@ -73,6 +74,7 @@ class Exchange:
         self.conversation_id = str(uuid.uuid4())
         self.task: asyncio.Task[None] | None = None
         self.active_message_id: str | None = None
+        self.turns_seen = 0
 
     async def send(self, event: ServerEvent) -> None:
         if self._websocket.client_state is not WebSocketState.CONNECTED:
@@ -86,11 +88,31 @@ class Exchange:
     def rotate_conversation(self) -> None:
         """Starts a new conversation.
 
-        Protocol v1 carries no conversation_id, so a turn arriving with no history starts
-        a new thread. The chat header's "+" reset produces that (ChatService). See
-        docs/protocol.md.
+        The fallback for a client that names no thread: a turn arriving with no history
+        starts a new one. See docs/protocol.md.
         """
         self.conversation_id = str(uuid.uuid4())
+
+    def resolve_conversation(self, message: UserMessage) -> None:
+        """Settles which thread this turn belongs to, before it is served or logged.
+
+        A client that names a thread owns thread identity outright, which is the only
+        thing that survives a reconnect - the socket does not, and neither does anything
+        derived from it. A client that names none keeps the original derivation.
+        """
+        named = coerce_conversation_id(message.conversation_id)
+        if self.turns_seen == 0 and message.history:
+            # A first message carrying history is a chat continuing on a new socket.
+            # Counting it is how the split this fixes can be measured in production.
+            logger.info("thread continued on a new connection (stitched=%s)", named is not None)
+        self.turns_seen += 1
+        if named is not None:
+            self.conversation_id = named
+            return
+        if message.conversation_id is not None:
+            logger.warning("ignoring an unusable conversation_id on message %s", message.id)
+        if not message.history:
+            self.rotate_conversation()
 
 
 @router.websocket("/ws/v1")
@@ -235,8 +257,7 @@ async def _accept_message(
         await _terminate(exchange, message.id, code="bad_request", text=i18n.too_many(lang))
         return
 
-    if not message.history:
-        exchange.rotate_conversation()
+    exchange.resolve_conversation(message)
 
     exchange.active_message_id = message.id
     exchange.task = asyncio.create_task(

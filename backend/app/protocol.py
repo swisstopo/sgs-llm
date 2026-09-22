@@ -26,6 +26,9 @@ ErrorCode = Literal["internal", "timeout", "bad_request", "cancelled", "model_un
 # [minLon, minLat, maxLon, maxLat] in WGS84.
 BBox = tuple[float, float, float, float]
 
+# A uuid4 is 36 characters; the cap only bounds what a buggy client can store.
+MAX_CONVERSATION_ID_CHARS = 64
+
 
 class _ClientModel(BaseModel):
     # Forward compatibility: the frontend may add fields before the backend knows
@@ -51,6 +54,10 @@ class UserMessage(_ClientModel):
     model: ModelPreference = "primary"
     history: list[HistoryEntry] = Field(default_factory=list)
     map_context: MapContext | None = None
+    # Deliberately unconstrained and untyped as `object`: a constraint here would fail
+    # validation for the whole frame, and parse_client_event drops a frame it cannot
+    # validate - the user would lose the message. Pass it through coerce_conversation_id.
+    conversation_id: object = None
 
     @property
     def language(self) -> ProtocolLang:
@@ -145,6 +152,17 @@ class Done(_ServerModel):
 
 
 ServerEvent = Intermediate | Final | Error | Done
+
+
+def coerce_conversation_id(value: object) -> str | None:
+    """A client-supplied thread id, or None for anything that cannot be stored.
+
+    Sanitised rather than rejected, and never truncated: a cut id is a join key that
+    silently matches nothing. Callers decide what to do without one and log the drop.
+    """
+    if isinstance(value, str) and 0 < len(stripped := value.strip()) <= MAX_CONVERSATION_ID_CHARS:
+        return stripped
+    return None
 
 
 def coerce_lang(value: object) -> ProtocolLang:
