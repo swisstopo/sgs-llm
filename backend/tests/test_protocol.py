@@ -151,7 +151,12 @@ def test_frames_omit_absent_optionals() -> None:
     "value,expected",
     [
         ("3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90", "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90"),
-        ("  padded  ", "padded"),
+        ("  padded  ", None),
+        ("\u2800", None),
+        ("\u3164", None),
+        ("\u0430dmin-thread", None),
+        ('x"},"junk":{"S":"y', None),
+        ("\ud800", None),
         ("", None),
         ("   ", None),
         ("c" * 65, None),
@@ -198,7 +203,7 @@ def test_the_published_schema_bounds_the_conversation_id_as_the_server_does(
     at_limit = "c" * MAX_CONVERSATION_ID_CHARS
     assert coerce_conversation_id(at_limit) == at_limit
     assert client_event_validator.is_valid({**frame, "conversation_id": at_limit})
-    for rejected in ("", "c" * (MAX_CONVERSATION_ID_CHARS + 1)):
+    for rejected in ("", "c" * (MAX_CONVERSATION_ID_CHARS + 1), "chat 1", '"'):
         assert not client_event_validator.is_valid({**frame, "conversation_id": rejected})
         assert coerce_conversation_id(rejected) is None
 

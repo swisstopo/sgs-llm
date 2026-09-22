@@ -52,15 +52,20 @@ in [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts), and the mint
 beside `latestConversationId` in
 [`frontend/src/services/ChatService.ts`](../frontend/src/services/ChatService.ts).
 
-The id is a string of 1 to 64 printable characters - a control character would end up in
-a storage key, a log line and an operator console. An id the server cannot use is
-**ignored, not rejected**: the turn is still served, and it is grouped by the derivation
-above. The server never fails a frame over this field, because a rejected frame would
-cost the user the message they typed.
+The id is 1 to 64 characters from `A-Z a-z 0-9 . _ : -`, which a `crypto.randomUUID()`
+satisfies. The charset is narrow because the value becomes a storage key, a log field and
+a label in the operator console. An id outside it is **ignored, not rejected**: the turn
+is still served, and it is grouped by the derivation above. The server never fails a
+frame over this field, because a rejected frame would cost the user the message they
+typed.
 
 The server does not verify that a thread id belongs to the client sending it, and it is
-not a secret - it is an analytics grouping key. Nothing is authorised by it, and no
-conversation is ever served back to a client by id.
+not a secret - it is an analytics grouping key. Nothing is authorised by it and no
+conversation is ever served back to a chat client by id, but the consequence is worth
+stating plainly: a client that knows another thread's id can append turns to it, and an
+operator reading that transcript in the admin console would not be able to tell. Guessing
+a uuid4 is not practical, and the id is never shown to anyone but an operator, so the
+exposure is accepted deliberately rather than by omission.
 
 ### Attaching a thread to feedback
 

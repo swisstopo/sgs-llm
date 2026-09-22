@@ -428,6 +428,56 @@ def test_a_rejected_turn_reports_the_thread_the_client_named(settings) -> None:
     assert store.turns == []
 
 
+def test_a_chat_continuing_on_a_new_connection_is_counted(settings, caplog) -> None:
+    """The production measurement of the split: it must fire once per reconnect, and
+    not for a second turn on a socket that never dropped."""
+    app = build_app(
+        settings=settings, models=FakeModels([text_result("a"), text_result("b"), text_result("c")])
+    )
+    client = TestClient(app)
+    with caplog.at_level("INFO", logger="app.ws"):
+        with client.websocket_connect("/ws/v1") as ws:
+            ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+            _drain(ws, "m1")
+            ws.send_text(
+                _user_message(
+                    message_id="m2",
+                    conversation_id="chat-1",
+                    history=[{"role": "user", "content": "Hallo"}],
+                )
+            )
+            _drain(ws, "m2")
+        with client.websocket_connect("/ws/v1") as ws:
+            ws.send_text(
+                _user_message(
+                    message_id="m3",
+                    conversation_id="chat-1",
+                    history=[{"role": "user", "content": "Hallo"}],
+                )
+            )
+            _drain(ws, "m3")
+
+    assert [
+        record.message for record in caplog.records if "thread continued" in record.message
+    ] == ["thread continued on a new connection (stitched=True)"]
+
+
+def test_a_rejected_first_frame_does_not_look_like_a_reconnect(settings, caplog) -> None:
+    """The counter used to start at the first *accepted* turn, so a socket whose opening
+    frame was refused reported its second one as a continuation."""
+    app = build_app(settings=settings, models=FakeModels([text_result("a")]))
+    with (
+        caplog.at_level("INFO", logger="app.ws"),
+        TestClient(app).websocket_connect("/ws/v1") as ws,
+    ):
+        ws.send_text(_user_message("x" * (settings.max_message_chars + 1), message_id="m1"))
+        _drain(ws, "m1")
+        ws.send_text(_user_message(message_id="m2", history=[{"role": "user", "content": "Hallo"}]))
+        _drain(ws, "m2")
+
+    assert not [record for record in caplog.records if "thread continued" in record.message]
+
+
 def test_every_turn_is_logged_including_failures(settings) -> None:
     store = FakeStore()
     app = build_app(

@@ -12,7 +12,7 @@
         "id": { "type": "string", "minLength": 1 },
         "content": { "type": "string", "minLength": 1 },
         "lang": { "enum": ["de", "fr", "it", "en", "rm"] },
-        "conversation_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "conversation_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$", "maxLength": 64 },
         "model": { "enum": ["primary", "secondary", "apertus"], "default": "primary" },
         "history": {
           "type": "array",

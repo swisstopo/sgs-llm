@@ -78,6 +78,14 @@ def test_a_submission_from_no_thread_is_stored_unlinked(client: Any) -> None:
     assert client.store.feedback[0]["conversation_id"] is None
 
 
+def test_a_submission_from_no_thread_logs_nothing(client: Any, caplog: Any) -> None:
+    """Most feedback carries no thread at all. The drop warning is for a malformed id,
+    so an absent one must not fill the log on the common path."""
+    with caplog.at_level("WARNING", logger="app.feedback"):
+        client.post("/feedback", json={"category": "other", "message": "Gut.", "lang": "de"})
+    assert not [record for record in caplog.records if "conversation_id" in record.message]
+
+
 @pytest.mark.parametrize(
     "conversation_id",
     [12345, {"id": "c1"}, ["c1"], "   ", "c" * 65],

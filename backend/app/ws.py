@@ -74,7 +74,7 @@ class Exchange:
         self.conversation_id = str(uuid.uuid4())
         self.task: asyncio.Task[None] | None = None
         self.active_message_id: str | None = None
-        self.turns_accepted = 0
+        self.frames_seen = 0
 
     async def send(self, event: ServerEvent) -> None:
         if self._websocket.client_state is not WebSocketState.CONNECTED:
@@ -231,6 +231,13 @@ async def _accept_message(
     # of the turn already running.
     named = exchange.adopt_named_conversation(message)
 
+    if exchange.frames_seen == 0 and message.history:
+        # A connection whose first message already carries history is a chat continuing
+        # on a new socket. Counting it here rather than past the gates below is what
+        # makes it a count of reconnects and not of accepted turns.
+        logger.info("thread continued on a new connection (stitched=%s)", named)
+    exchange.frames_seen += 1
+
     if not websocket.app.state.gateway.is_production:
         # Refused here, not in the loop, so run_turn stays usable against the stand-in
         # (evals/run.py). Before the limiter: refusing is free, so it costs no allowance.
@@ -261,12 +268,6 @@ async def _accept_message(
             logger.warning("ignoring an unusable conversation_id on message %s", message.id)
         if not message.history:
             exchange.rotate_conversation()
-
-    if exchange.turns_accepted == 0 and message.history:
-        # A first accepted turn carrying history is a chat continuing on a new socket.
-        # Counting it is how the split this fixes is measured in production.
-        logger.info("thread continued on a new connection (stitched=%s)", named)
-    exchange.turns_accepted += 1
 
     exchange.active_message_id = message.id
     exchange.task = asyncio.create_task(

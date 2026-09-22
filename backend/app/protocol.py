@@ -12,6 +12,7 @@ the frontend's guards would reject.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -28,6 +29,7 @@ BBox = tuple[float, float, float, float]
 
 # A uuid4 is 36 characters; the cap only bounds what a buggy client can store.
 MAX_CONVERSATION_ID_CHARS = 64
+_CONVERSATION_ID = re.compile(rf"[A-Za-z0-9._:-]{{1,{MAX_CONVERSATION_ID_CHARS}}}")
 
 
 class _ClientModel(BaseModel):
@@ -157,17 +159,21 @@ ServerEvent = Intermediate | Final | Error | Done
 def coerce_conversation_id(value: object) -> str | None:
     """A client-supplied thread id, or None for anything that cannot be stored.
 
-    Sanitised rather than rejected, and never truncated: a cut id is a join key that
+    Rejected rather than repaired, and never truncated: a cut id is a join key that
     silently matches nothing. Callers decide what to do without one and log the drop.
+
+    The charset is deliberately narrower than "a printable string". This value becomes a
+    DynamoDB partition key, a log field, a shell-quoted argument in scripts/read-db.sh
+    and a label in the operator console, and a uuid4 - which docs/protocol.md tells
+    clients to send - fits it with room to spare. Excluded on purpose: a lone surrogate,
+    which no longer reaches send_text and kills an exchange mid-flight; a quote, which no
+    longer reaches a query built by string interpolation; and the blank-rendering
+    characters (U+2800, U+3164) and homoglyphs that would make two distinct threads
+    indistinguishable to whoever reads them.
     """
-    if not isinstance(value, str):
-        return None
-    stripped = value.strip()
-    if not 0 < len(stripped) <= MAX_CONVERSATION_ID_CHARS:
-        return None
-    # It becomes a DynamoDB partition key, a log field and an admin grouping key, so a
-    # newline, a NUL or a zero-width space in it is somebody else's problem later.
-    return stripped if stripped.isprintable() else None
+    return (
+        value if isinstance(value, str) and _CONVERSATION_ID.fullmatch(value) is not None else None
+    )
 
 
 def coerce_lang(value: object) -> ProtocolLang:
