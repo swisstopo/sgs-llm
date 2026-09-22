@@ -31,9 +31,9 @@ screen is the same chat.
 
 **A client that sends no `conversation_id` gets the original v1 derivation:** one
 conversation per WebSocket connection, starting a new one whenever a `user_message`
-arrives with empty or absent `history`. That keeps older clients and
-[`mock-agent/`](../mock-agent/) working unchanged, but it splits a chat into a separate
-stored thread on every reconnect, which is why a client that cares should send the field.
+arrives with empty or absent `history`. That keeps older clients working
+unchanged, but it splits a chat into a separate stored thread on every reconnect, which
+is why a client that cares should send the field.
 
 Whichever way the id was settled, every [`done`](#done) event carries the
 `conversation_id` of the turn it terminates, so a client can always read back the thread
@@ -47,10 +47,16 @@ for `user_message.id` - and send it on every `user_message` of that chat. Mint a
 when the user starts a new conversation (the chat header's "+"). Nothing else changes it:
 not a reconnect, not an error, not a cancelled turn.
 
-The id is a string of 1 to 64 characters. An id the server cannot use is **ignored, not
-rejected**: the turn is still served, and it is grouped by the derivation above. The
-server never fails a frame over this field, because a rejected frame would cost the user
-the message they typed.
+In this repository's frontend that is two files: the optional field on `UserMessageEvent`
+in [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts), and the mint/reset
+beside `latestConversationId` in
+[`frontend/src/services/ChatService.ts`](../frontend/src/services/ChatService.ts).
+
+The id is a string of 1 to 64 printable characters - a control character would end up in
+a storage key, a log line and an operator console. An id the server cannot use is
+**ignored, not rejected**: the turn is still served, and it is grouped by the derivation
+above. The server never fails a frame over this field, because a rejected frame would
+cost the user the message they typed.
 
 The server does not verify that a thread id belongs to the client sending it, and it is
 not a secret - it is an analytics grouping key. Nothing is authorised by it, and no

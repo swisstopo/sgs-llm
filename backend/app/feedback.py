@@ -55,7 +55,7 @@ def _store(request: Request) -> Store:
     return store
 
 
-def _conversation_id(value: Any) -> str | None:
+def _conversation_id(value: object) -> str | None:
     """The thread the browser named, or None when it named none we can use.
 
     Dropped rather than rejected: the only producer is our own frontend, so a malformed

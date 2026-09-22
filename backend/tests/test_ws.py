@@ -390,6 +390,44 @@ def test_an_unusable_thread_id_costs_the_client_nothing(settings, conversation_i
     assert _first(frames, "done")["conversation_id"] == stored
 
 
+def test_a_turn_recorded_without_a_geodata_server_keeps_the_named_thread(settings) -> None:
+    """This branch records the only measure of demand while no MCP server is configured,
+    and it returns before the served path's bookkeeping - so it needs the thread too."""
+    store = FakeStore()
+    app = build_app(
+        settings=settings,
+        models=FakeModels([text_result("a")]),
+        gateway=FakeGateway(NO_TOOLS, is_production=False),
+        store=store,
+    )
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+        frames = _drain(ws, "m1")
+
+    assert [turn["conversation_id"] for turn in store.turns] == ["chat-1"]
+    assert _first(frames, "done")["conversation_id"] == "chat-1"
+
+
+def test_a_rejected_turn_reports_the_thread_the_client_named(settings) -> None:
+    """`done` must never name a thread nothing is stored under: a client keeping the
+    latest `done.conversation_id` would repoint its feedback at a phantom."""
+    store = FakeStore()
+    app = build_app(settings=settings, models=FakeModels([text_result("a")]), store=store)
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(
+            _user_message(
+                "x" * (settings.max_message_chars + 1),
+                message_id="m1",
+                conversation_id="chat-1",
+            )
+        )
+        frames = _drain(ws, "m1")
+
+    assert _first(frames, "error")["code"] == "bad_request"
+    assert _first(frames, "done")["conversation_id"] == "chat-1"
+    assert store.turns == []
+
+
 def test_every_turn_is_logged_including_failures(settings) -> None:
     store = FakeStore()
     app = build_app(

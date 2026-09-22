@@ -7,6 +7,7 @@ import json
 import pytest
 
 from app.protocol import (
+    MAX_CONVERSATION_ID_CHARS,
     CatalogLayerRef,
     Done,
     Error,
@@ -18,7 +19,7 @@ from app.protocol import (
     coerce_layer_spec,
     parse_client_event,
 )
-from tests.conftest import CLIENT_EVENTS_SCHEMA, SERVER_EVENTS_SCHEMA
+from tests.conftest import SERVER_EVENTS_SCHEMA
 
 
 def test_parses_a_user_message() -> None:
@@ -154,6 +155,9 @@ def test_frames_omit_absent_optionals() -> None:
         ("", None),
         ("   ", None),
         ("c" * 65, None),
+        ("a\nb", None),
+        ("chat\x00-1", None),
+        ("\u200b", None),
         (None, None),
         (12345, None),
         ({"id": "c1"}, None),
@@ -183,12 +187,20 @@ def test_an_unusable_thread_id_never_costs_the_client_its_turn() -> None:
     assert coerce_conversation_id(event.conversation_id) is None
 
 
-def test_the_published_schema_declares_the_conversation_id_on_user_message() -> None:
-    schema = json.loads(CLIENT_EVENTS_SCHEMA.read_text(encoding="utf-8"))
-    assert schema["$defs"]["userMessage"]["properties"]["conversation_id"] == {
-        "type": "string",
-        "maxLength": 64,
-    }
+def test_the_published_schema_bounds_the_conversation_id_as_the_server_does(
+    client_event_validator,
+) -> None:
+    """Validated through the published schema against the server's own limit, so the
+    two cannot drift: asserting the file's literal content would pass either way."""
+    frame = {"type": "user_message", "id": "m1", "content": "Hallo", "lang": "de"}
+    # The boundary is what pins the two together: an id the server would accept has to
+    # be one the published schema accepts, whichever way the limit later moves.
+    at_limit = "c" * MAX_CONVERSATION_ID_CHARS
+    assert coerce_conversation_id(at_limit) == at_limit
+    assert client_event_validator.is_valid({**frame, "conversation_id": at_limit})
+    for rejected in ("", "c" * (MAX_CONVERSATION_ID_CHARS + 1)):
+        assert not client_event_validator.is_valid({**frame, "conversation_id": rejected})
+        assert coerce_conversation_id(rejected) is None
 
 
 def test_done_names_the_thread_the_turn_belonged_to() -> None:

@@ -160,9 +160,14 @@ def coerce_conversation_id(value: object) -> str | None:
     Sanitised rather than rejected, and never truncated: a cut id is a join key that
     silently matches nothing. Callers decide what to do without one and log the drop.
     """
-    if isinstance(value, str) and 0 < len(stripped := value.strip()) <= MAX_CONVERSATION_ID_CHARS:
-        return stripped
-    return None
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not 0 < len(stripped) <= MAX_CONVERSATION_ID_CHARS:
+        return None
+    # It becomes a DynamoDB partition key, a log field and an admin grouping key, so a
+    # newline, a NUL or a zero-width space in it is somebody else's problem later.
+    return stripped if stripped.isprintable() else None
 
 
 def coerce_lang(value: object) -> ProtocolLang:
