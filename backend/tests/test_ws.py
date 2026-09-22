@@ -309,6 +309,175 @@ def test_the_id_from_done_is_accepted_as_a_feedback_thread(
     assert store.feedback[0]["conversation_id"] == store.turns[0]["conversation_id"]
 
 
+def test_a_client_named_thread_survives_a_reconnect(settings) -> None:
+    """The defect this exists for: AgentClient reconnects transparently, so a chat the
+    user never interrupted used to be stored as two threads."""
+    store = FakeStore()
+    app = build_app(
+        settings=settings,
+        models=FakeModels([text_result("a"), text_result("b")]),
+        store=store,
+    )
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+        _drain(ws, "m1")
+    # The socket dropped and reopened; the chat, and its history, are still on screen.
+    with client.websocket_connect("/ws/v1") as ws:
+        ws.send_text(
+            _user_message(
+                message_id="m2",
+                conversation_id="chat-1",
+                history=[{"role": "user", "content": "Hallo"}],
+            )
+        )
+        second = _drain(ws, "m2")
+
+    assert [turn["conversation_id"] for turn in store.turns] == ["chat-1", "chat-1"]
+    assert _first(second, "done")["conversation_id"] == "chat-1"
+
+
+def test_a_named_thread_is_not_rotated_by_an_empty_history(settings) -> None:
+    """A client that owns thread identity owns it completely: the server's own
+    new-thread-on-empty-history rule must not fire underneath it."""
+    store = FakeStore()
+    app = build_app(
+        settings=settings,
+        models=FakeModels([text_result("a"), text_result("b")]),
+        store=store,
+    )
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+        _drain(ws, "m1")
+        ws.send_text(_user_message(message_id="m2", conversation_id="chat-1"))
+        _drain(ws, "m2")
+
+    assert [turn["conversation_id"] for turn in store.turns] == ["chat-1", "chat-1"]
+
+
+def test_a_new_thread_id_starts_a_new_thread(settings) -> None:
+    """What the chat header's "+" produces once the client mints the id."""
+    store = FakeStore()
+    app = build_app(
+        settings=settings,
+        models=FakeModels([text_result("a"), text_result("b")]),
+        store=store,
+    )
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+        _drain(ws, "m1")
+        ws.send_text(_user_message(message_id="m2", conversation_id="chat-2"))
+        _drain(ws, "m2")
+
+    assert [turn["conversation_id"] for turn in store.turns] == ["chat-1", "chat-2"]
+
+
+@pytest.mark.parametrize("conversation_id", ["c" * 65, "   ", 12345])
+def test_an_unusable_thread_id_costs_the_client_nothing(settings, conversation_id) -> None:
+    """It falls back to the derivation; above all the turn is still answered, which a
+    pydantic constraint on the field would not have done - parse_client_event drops a
+    frame it cannot validate, and the user's message would vanish."""
+    store = FakeStore()
+    app = build_app(settings=settings, models=FakeModels([text_result("a")]), store=store)
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(message_id="m1", conversation_id=conversation_id))
+        frames = _drain(ws, "m1")
+
+    assert [frame["type"] for frame in frames].count("final") == 1
+    stored = store.turns[0]["conversation_id"]
+    assert stored not in (conversation_id, None, "")
+    assert _first(frames, "done")["conversation_id"] == stored
+
+
+def test_a_turn_recorded_without_a_geodata_server_keeps_the_named_thread(settings) -> None:
+    """This branch records the only measure of demand while no MCP server is configured,
+    and it returns before the served path's bookkeeping - so it needs the thread too."""
+    store = FakeStore()
+    app = build_app(
+        settings=settings,
+        models=FakeModels([text_result("a")]),
+        gateway=FakeGateway(NO_TOOLS, is_production=False),
+        store=store,
+    )
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+        frames = _drain(ws, "m1")
+
+    assert [turn["conversation_id"] for turn in store.turns] == ["chat-1"]
+    assert _first(frames, "done")["conversation_id"] == "chat-1"
+
+
+def test_a_rejected_turn_reports_the_thread_the_client_named(settings) -> None:
+    """`done` must never name a thread nothing is stored under: a client keeping the
+    latest `done.conversation_id` would repoint its feedback at a phantom."""
+    store = FakeStore()
+    app = build_app(settings=settings, models=FakeModels([text_result("a")]), store=store)
+    with TestClient(app).websocket_connect("/ws/v1") as ws:
+        ws.send_text(
+            _user_message(
+                "x" * (settings.max_message_chars + 1),
+                message_id="m1",
+                conversation_id="chat-1",
+            )
+        )
+        frames = _drain(ws, "m1")
+
+    assert _first(frames, "error")["code"] == "bad_request"
+    assert _first(frames, "done")["conversation_id"] == "chat-1"
+    assert store.turns == []
+
+
+def test_a_chat_continuing_on_a_new_connection_is_counted(settings, caplog) -> None:
+    """The production measurement of the split: it must fire once per reconnect, and
+    not for a second turn on a socket that never dropped."""
+    app = build_app(
+        settings=settings, models=FakeModels([text_result("a"), text_result("b"), text_result("c")])
+    )
+    client = TestClient(app)
+    with caplog.at_level("INFO", logger="app.ws"):
+        with client.websocket_connect("/ws/v1") as ws:
+            ws.send_text(_user_message(message_id="m1", conversation_id="chat-1"))
+            _drain(ws, "m1")
+            ws.send_text(
+                _user_message(
+                    message_id="m2",
+                    conversation_id="chat-1",
+                    history=[{"role": "user", "content": "Hallo"}],
+                )
+            )
+            _drain(ws, "m2")
+        with client.websocket_connect("/ws/v1") as ws:
+            ws.send_text(
+                _user_message(
+                    message_id="m3",
+                    conversation_id="chat-1",
+                    history=[{"role": "user", "content": "Hallo"}],
+                )
+            )
+            _drain(ws, "m3")
+
+    assert [
+        record.message for record in caplog.records if "thread continued" in record.message
+    ] == ["thread continued on a new connection (stitched=True)"]
+
+
+def test_a_rejected_first_frame_does_not_look_like_a_reconnect(settings, caplog) -> None:
+    """The counter used to start at the first *accepted* turn, so a socket whose opening
+    frame was refused reported its second one as a continuation."""
+    app = build_app(settings=settings, models=FakeModels([text_result("a")]))
+    with (
+        caplog.at_level("INFO", logger="app.ws"),
+        TestClient(app).websocket_connect("/ws/v1") as ws,
+    ):
+        ws.send_text(_user_message("x" * (settings.max_message_chars + 1), message_id="m1"))
+        _drain(ws, "m1")
+        ws.send_text(_user_message(message_id="m2", history=[{"role": "user", "content": "Hallo"}]))
+        _drain(ws, "m2")
+
+    assert not [record for record in caplog.records if "thread continued" in record.message]
+
+
 def test_every_turn_is_logged_including_failures(settings) -> None:
     store = FakeStore()
     app = build_app(

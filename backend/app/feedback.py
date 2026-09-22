@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .protocol import coerce_lang
+from .protocol import coerce_conversation_id, coerce_lang
 from .security import key_matches
 from .store.dynamo import Store
 
@@ -40,8 +40,6 @@ ONBOARDING_CONSENT_VERSION = "v2"
 MAX_BODY_BYTES = 32_768
 MAX_MESSAGE_CHARS = 8_000
 MAX_EMAIL_CHARS = 320
-# A uuid4 is 36 characters; the cap only bounds what a buggy client can store.
-MAX_CONVERSATION_ID_CHARS = 64
 
 CORS_HEADERS = {
     "access-control-allow-origin": "*",
@@ -57,20 +55,18 @@ def _store(request: Request) -> Store:
     return store
 
 
-def _conversation_id(value: Any) -> str | None:
+def _conversation_id(value: object) -> str | None:
     """The thread the browser named, or None when it named none we can use.
 
-    A value we cannot store is dropped rather than rejected: the only producer is our
-    own frontend, so a malformed id is our bug, and it must not discard what a real
-    person typed. Truncating instead would be worse - a cut id is a join key that
-    silently matches nothing.
+    Dropped rather than rejected: the only producer is our own frontend, so a malformed
+    id is our bug, and it must not discard what a real person typed.
     """
     if value is None:
         return None
-    if isinstance(value, str) and 0 < len(stripped := value.strip()) <= MAX_CONVERSATION_ID_CHARS:
-        return stripped
-    logger.warning("dropping an unusable conversation_id on a feedback submission")
-    return None
+    coerced = coerce_conversation_id(value)
+    if coerced is None:
+        logger.warning("dropping an unusable conversation_id on a feedback submission")
+    return coerced
 
 
 def _validate(data: Any) -> dict[str, Any] | None:

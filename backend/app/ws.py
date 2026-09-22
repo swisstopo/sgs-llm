@@ -31,6 +31,7 @@ from .protocol import (
     ProtocolLang,
     ServerEvent,
     UserMessage,
+    coerce_conversation_id,
     coerce_lang,
     parse_client_event,
 )
@@ -73,6 +74,7 @@ class Exchange:
         self.conversation_id = str(uuid.uuid4())
         self.task: asyncio.Task[None] | None = None
         self.active_message_id: str | None = None
+        self.frames_seen = 0
 
     async def send(self, event: ServerEvent) -> None:
         if self._websocket.client_state is not WebSocketState.CONNECTED:
@@ -86,11 +88,24 @@ class Exchange:
     def rotate_conversation(self) -> None:
         """Starts a new conversation.
 
-        Protocol v1 carries no conversation_id, so a turn arriving with no history starts
-        a new thread. The chat header's "+" reset produces that (ChatService). See
-        docs/protocol.md.
+        The fallback for a client that names no thread: a turn arriving with no history
+        starts a new one. See docs/protocol.md.
         """
         self.conversation_id = str(uuid.uuid4())
+
+    def adopt_named_conversation(self, message: UserMessage) -> bool:
+        """Takes the thread the client named, if it named one that can be used.
+
+        A client that names a thread owns thread identity outright, which is the only
+        thing that survives a reconnect - the socket does not, and neither does anything
+        derived from it. This runs before the gates that reject or record a turn, so
+        every `done` and every stored row names the thread the client meant.
+        """
+        named = coerce_conversation_id(message.conversation_id)
+        if named is None:
+            return False
+        self.conversation_id = named
+        return True
 
 
 @router.websocket("/ws/v1")
@@ -212,6 +227,17 @@ async def _accept_message(
         await _terminate(exchange, message.id, code="bad_request", text=i18n.interleaved(lang))
         return
 
+    # After the interleave guard: a frame arriving mid-turn must not repoint the thread
+    # of the turn already running.
+    named = exchange.adopt_named_conversation(message)
+
+    if exchange.frames_seen == 0 and message.history:
+        # A connection whose first message already carries history is a chat continuing
+        # on a new socket. Counting it here rather than past the gates below is what
+        # makes it a count of reconnects and not of accepted turns.
+        logger.info("thread continued on a new connection (stitched=%s)", named)
+    exchange.frames_seen += 1
+
     if not websocket.app.state.gateway.is_production:
         # Refused here, not in the loop, so run_turn stays usable against the stand-in
         # (evals/run.py). Before the limiter: refusing is free, so it costs no allowance.
@@ -235,12 +261,23 @@ async def _accept_message(
         await _terminate(exchange, message.id, code="bad_request", text=i18n.too_many(lang))
         return
 
-    if not message.history:
-        exchange.rotate_conversation()
+    if not named:
+        # Warned about only past the limiter, so an unauthenticated client cannot drive
+        # the log at will.
+        if message.conversation_id is not None:
+            logger.warning("ignoring an unusable conversation_id on message %s", message.id)
+        if not message.history:
+            exchange.rotate_conversation()
 
     exchange.active_message_id = message.id
     exchange.task = asyncio.create_task(
-        _run(message, websocket=websocket, exchange=exchange, base_url=base_url)
+        _run(
+            message,
+            websocket=websocket,
+            exchange=exchange,
+            conversation_id=exchange.conversation_id,
+            base_url=base_url,
+        )
     )
 
 
@@ -287,6 +324,7 @@ async def _run(
     *,
     websocket: WebSocket,
     exchange: Exchange,
+    conversation_id: str,
     base_url: str,
 ) -> None:
     settings = get_settings()
@@ -339,13 +377,13 @@ async def _run(
             )
             terminated = True
     finally:
-        await exchange.send(Done(message_id=message.id, conversation_id=exchange.conversation_id))
+        await exchange.send(Done(message_id=message.id, conversation_id=conversation_id))
         exchange.active_message_id = None
         elapsed_ms = int((asyncio.get_running_loop().time() - started) * 1000)
         # Last statement of the turn task: anything escaping here surfaces as an
         # unretrieved task exception long after the user had their answer.
         try:
-            await _log_turn(websocket, message, exchange.conversation_id, stats, elapsed_ms)
+            await _log_turn(websocket, message, conversation_id, stats, elapsed_ms)
         except Exception:
             logger.warning("failed to log turn %s", message.id, exc_info=True)
 

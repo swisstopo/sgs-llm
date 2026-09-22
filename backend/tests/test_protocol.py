@@ -7,6 +7,7 @@ import json
 import pytest
 
 from app.protocol import (
+    MAX_CONVERSATION_ID_CHARS,
     CatalogLayerRef,
     Done,
     Error,
@@ -14,6 +15,7 @@ from app.protocol import (
     Intermediate,
     LayerSpec,
     UserMessage,
+    coerce_conversation_id,
     coerce_layer_spec,
     parse_client_event,
 )
@@ -143,6 +145,67 @@ def test_frames_omit_absent_optionals() -> None:
 
     final = json.loads(Final(message_id="m", content_markdown="answer").frame())
     assert "layers" not in final
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90", "3f2a8c9e-1d4b-4f67-9a10-8c7e5d2b1a90"),
+        ("  padded  ", None),
+        ("\u2800", None),
+        ("\u3164", None),
+        ("\u0430dmin-thread", None),
+        ('x"},"junk":{"S":"y', None),
+        ("\ud800", None),
+        ("", None),
+        ("   ", None),
+        ("c" * 65, None),
+        ("a\nb", None),
+        ("chat\x00-1", None),
+        ("\u200b", None),
+        (None, None),
+        (12345, None),
+        ({"id": "c1"}, None),
+    ],
+)
+def test_coerce_conversation_id(value: object, expected: str | None) -> None:
+    assert coerce_conversation_id(value) == expected
+
+
+def test_a_user_message_may_name_its_thread() -> None:
+    event = parse_client_event(
+        json.dumps(
+            {"type": "user_message", "id": "m1", "content": "Hallo", "conversation_id": "c1"}
+        )
+    )
+    assert isinstance(event, UserMessage)
+    assert event.conversation_id == "c1"
+
+
+def test_an_unusable_thread_id_never_costs_the_client_its_turn() -> None:
+    """A pydantic constraint here would drop the whole frame: parse_client_event returns
+    None for anything that fails validation, and the user's message would vanish."""
+    event = parse_client_event(
+        json.dumps({"type": "user_message", "id": "m1", "content": "Hallo", "conversation_id": 7})
+    )
+    assert isinstance(event, UserMessage)
+    assert coerce_conversation_id(event.conversation_id) is None
+
+
+def test_the_published_schema_bounds_the_conversation_id_as_the_server_does(
+    client_event_validator,
+) -> None:
+    """Validated through the published schema against the server's own limit, so the
+    two cannot drift: asserting the file's literal content would pass either way."""
+    frame = {"type": "user_message", "id": "m1", "content": "Hallo", "lang": "de"}
+    # The boundary is what pins the two together: an id the server would accept has to
+    # be one the published schema accepts, whichever way the limit later moves.
+    at_limit = "c" * MAX_CONVERSATION_ID_CHARS
+    assert coerce_conversation_id(at_limit) == at_limit
+    assert client_event_validator.is_valid({**frame, "conversation_id": at_limit})
+    for rejected in ("", "c" * (MAX_CONVERSATION_ID_CHARS + 1), "chat 1", '"'):
+        assert not client_event_validator.is_valid({**frame, "conversation_id": rejected})
+        assert coerce_conversation_id(rejected) is None
 
 
 def test_done_names_the_thread_the_turn_belonged_to() -> None:

@@ -18,21 +18,54 @@ JSON Schemas are in [`docs/protocol/`](./protocol/). The bundled
 
 ## Conversation identity
 
-Protocol v1 carries no `conversation_id`: the server is stateless and receives the
-`history` it needs on every turn. The backend still has to group turns to store them
-([`deployment.md`](./deployment.md#what-gets-stored)), so it derives the grouping instead
-of requiring a new field: **one conversation per WebSocket connection, starting a new one
-whenever a `user_message` arrives with empty or absent `history`** - which is exactly what
-the chat header's "+" reset produces.
+The backend groups turns to store them
+([`deployment.md`](./deployment.md#what-gets-stored)), and **the client owns that
+grouping**: a `user_message` may carry an optional `conversation_id`, which is the thread
+the turn belongs to. The server takes it as given, for as long as the client keeps
+sending it, and starts a new thread when the client sends a different one.
 
-The derived id is not private: every [`done`](#done) event carries the
-`conversation_id` of the turn it terminates, so a client that wants to refer to a
-thread later reads it from there. It changes only when the server starts a new
-conversation, so a client that stores the last one it saw always holds the thread the
-user is looking at.
+This is what survives a reconnect. The client reconnects with exponential backoff
+(`AgentClient`) without the user noticing, and nothing on the server outlives the socket,
+so an id the server derived cannot span one. Only the client knows that the chat on
+screen is the same chat.
 
-An explicit optional `conversation_id` on `user_message` is a candidate for v1.1
-alongside `final_delta`; nothing depends on it today.
+**A client that sends no `conversation_id` gets the original v1 derivation:** one
+conversation per WebSocket connection, starting a new one whenever a `user_message`
+arrives with empty or absent `history`. That keeps older clients working
+unchanged, but it splits a chat into a separate stored thread on every reconnect, which
+is why a client that cares should send the field.
+
+Whichever way the id was settled, every [`done`](#done) event carries the
+`conversation_id` of the turn it terminates, so a client can always read back the thread
+a turn was stored under - and that is what [feedback](#attaching-a-thread-to-feedback)
+attaches to.
+
+### What a client should send
+
+Mint a thread id when a chat starts - `crypto.randomUUID()`, as the client already does
+for `user_message.id` - and send it on every `user_message` of that chat. Mint a new one
+when the user starts a new conversation (the chat header's "+"). Nothing else changes it:
+not a reconnect, not an error, not a cancelled turn.
+
+In this repository's frontend that is two files: the optional field on `UserMessageEvent`
+in [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts), and the mint/reset
+beside `latestConversationId` in
+[`frontend/src/services/ChatService.ts`](../frontend/src/services/ChatService.ts).
+
+The id is 1 to 64 characters from `A-Z a-z 0-9 . _ : -`, which a `crypto.randomUUID()`
+satisfies. The charset is narrow because the value becomes a storage key, a log field and
+a label in the operator console. An id outside it is **ignored, not rejected**: the turn
+is still served, and it is grouped by the derivation above. The server never fails a
+frame over this field, because a rejected frame would cost the user the message they
+typed.
+
+The server does not verify that a thread id belongs to the client sending it, and it is
+not a secret - it is an analytics grouping key. Nothing is authorised by it and no
+conversation is ever served back to a chat client by id, but the consequence is worth
+stating plainly: a client that knows another thread's id can append turns to it, and an
+operator reading that transcript in the admin console would not be able to tell. Guessing
+a uuid4 is not practical, and the id is never shown to anyone but an operator, so the
+exposure is accepted deliberately rather than by omission.
 
 ### Attaching a thread to feedback
 
@@ -40,14 +73,14 @@ alongside `final_delta`; nothing depends on it today.
 which links the submission to the conversation the user was looking at when they wrote
 it. The frontend supplies it like this:
 
-1. Carry the field through the parser first: `parseServerEvent` in
-   [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts) rebuilds `done` as
-   `{ type, message_id }`, so today it discards `conversation_id` before any caller
-   sees it.
-2. Keep the `conversation_id` of the most recent `done` for the current chat. Clear it
-   when the user starts a new conversation, and ignore late events from the previous
-   chat. The server still assigns a new id after a WebSocket reconnect; this link
-   therefore identifies the latest stored segment, not necessarily every visible turn.
+1. Use the thread id the client minted for the chat on screen — the same value it sends
+   on every `user_message`, per [What a client should send](#what-a-client-should-send).
+   It covers every turn of the chat, including the ones served across a reconnect.
+2. A client that mints none instead keeps the `conversation_id` of the most recent
+   `done`, clearing it when the user starts a new conversation and ignoring late events
+   from the previous chat. That link identifies the latest stored segment rather than
+   every visible turn, because the server's own derivation starts a new thread on each
+   reconnect.
 3. When the feedback form is submitted, include that value in the JSON body:
 
    ```json
@@ -103,6 +136,9 @@ are not included; if no match is found, the administrator can widen the date sel
 
 - `id` — client-generated unique id. All server events for this exchange
   echo it as `message_id`.
+- `conversation_id` — optional; the thread this turn belongs to, 1 to 64 characters.
+  See [Conversation identity](#conversation-identity) for how to choose it and what
+  happens when it is absent.
 - `lang` — `de | fr | it | en | rm`. Server responses (labels, markdown)
   should be in this language.
 - `model` — optional model routing preference. `primary` pins the complete turn to
@@ -337,5 +373,3 @@ in a key shipped to the browser.
 - `final_delta` — token-level streaming of `content_markdown` before the
   consolidated `final`. Backends should be designed so the final text can
   also be streamed incrementally.
-- `conversation_id` on `user_message` - an explicit thread id, replacing the
-  derivation described in [Conversation identity](#conversation-identity).

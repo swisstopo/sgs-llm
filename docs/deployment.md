@@ -877,7 +877,7 @@ browser records completion only after durable persistence succeeds.
 
 | Attribute | Role |
 | --- | --- |
-| `conversation_id` | partition key |
+| `conversation_id` | partition key; the thread id the client sent, or one the server derived per connection when it sent none ([`protocol.md`](./protocol.md#conversation-identity)) |
 | `turn` | sort key, `"<iso-timestamp>#<message_id>"` — one Query returns a conversation in order |
 | `log_date` + `ts` | `ByDay` GSI |
 | `message_id`, `lang` | the turn's protocol id and request language |
