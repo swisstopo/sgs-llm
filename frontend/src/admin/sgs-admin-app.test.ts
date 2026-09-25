@@ -94,7 +94,13 @@ describe('admin conversation records', () => {
     expect(root?.querySelector('.inline-transcript')?.textContent).toContain(
       'Now compare it with Bern',
     );
-    const expandedText = root?.querySelector('.inline-transcript')?.textContent ?? '';
+    const diagnostics = root?.querySelector<HTMLDetailsElement>('.technical-details');
+    expect(diagnostics?.open).toBe(false);
+    expect(root?.querySelector('.conversation-timeline')?.textContent).not.toContain('test-model');
+    expect(root?.querySelector('.conversation-timeline')?.textContent).toContain(
+      'could not complete',
+    );
+    const expandedText = diagnostics?.textContent ?? '';
     expect(expandedText).toContain('conversation-1');
     expect(expandedText).toContain('message-2');
     expect(expandedText).toContain('test-model');
