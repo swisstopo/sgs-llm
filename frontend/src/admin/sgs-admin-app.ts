@@ -961,7 +961,7 @@ export class SgsAdminApp extends LitElement {
     }
     .scrim {
       position: fixed;
-      inset: 3.5rem 0 0;
+      inset: 0;
       z-index: 4;
       border: 0;
       background: rgb(28 40 52 / 22%);
@@ -1042,6 +1042,15 @@ export class SgsAdminApp extends LitElement {
       overflow-wrap: anywhere;
       font-size: 0.95rem;
       line-height: 1.65;
+    }
+    .feedback-contact {
+      margin: 0.8rem 0 0;
+      font-size: 0.8rem;
+      overflow-wrap: anywhere;
+    }
+    .feedback-contact span {
+      color: #62707c;
+      margin-right: 0.5rem;
     }
     .conversation-context {
       color: #74808a;
@@ -1352,6 +1361,7 @@ export class SgsAdminApp extends LitElement {
   @state() private linkedConversation?: AdminRecord;
   @state() private conversationLookup: 'idle' | 'loading' | 'ready' | 'missing' | 'failed' = 'idle';
   private conversationRequest?: AbortController;
+  private drawerTrigger?: HTMLElement;
   @state() private expandedConversationId = '';
   @state() private from = this.isoDaysAgo(6);
   @state() private to = this.isoDaysAgo(0);
@@ -1380,17 +1390,25 @@ export class SgsAdminApp extends LitElement {
   }
 
   override render() {
-    return html`<a class="skip" href="#admin-content">Skip to content</a
-      >${this.renderHeader()}${this.loading
-        ? this.renderLoading()
-        : this.authenticated
-          ? this.renderDashboard()
-          : this.renderLogin()}${this.selected ? this.renderDrawer(this.selected) : nothing}`;
+    return html`<div class="admin-page" ?inert=${Boolean(this.selected)}>
+        <a class="skip" href="#admin-content">Skip to content</a>
+        ${this.renderHeader()}${this.loading
+          ? this.renderLoading()
+          : this.authenticated
+            ? this.renderDashboard()
+            : this.renderLogin()}
+      </div>
+      ${this.selected ? this.renderDrawer(this.selected) : nothing}`;
   }
 
   protected override updated(changed: Map<PropertyKey, unknown>): void {
-    if (changed.has('selected') && this.selected) {
+    if (!changed.has('selected')) return;
+    if (this.selected) {
       this.renderRoot.querySelector<HTMLElement>('.drawer')?.focus();
+    } else {
+      // Restore focus after Lit removes inert from the underlying page.
+      if (this.drawerTrigger?.isConnected) this.drawerTrigger.focus();
+      this.drawerTrigger = undefined;
     }
   }
 
@@ -1680,7 +1698,7 @@ export class SgsAdminApp extends LitElement {
       class="record-row feedback-row ${this.selected === record ? 'selected' : ''}"
       aria-label=${`${this.text.feedback}: ${this.recordContent(record)}`}
       aria-haspopup="dialog"
-      @click=${() => this.selectRecord(record)}
+      @click=${(event: Event) => this.selectRecord(record, event.currentTarget as HTMLElement)}
     >
       <time>${this.formatDate(record.started_at ?? record.ts ?? record.log_date)}</time
       ><span class="lang">${String(record.lang ?? '—')}</span
@@ -1725,7 +1743,7 @@ export class SgsAdminApp extends LitElement {
     return html`<button
       class="record-row profile-grid profile-record ${this.selected === record ? 'selected' : ''}"
       aria-label=${`${this.text.details}: ${userType}, ${experience}, ${intendedUse}`}
-      @click=${() => this.selectRecord(record)}
+      @click=${(event: Event) => this.selectRecord(record, event.currentTarget as HTMLElement)}
     >
       <time>${this.formatDate(record.ts ?? record.log_date)}</time>
       <span class="lang">${String(record.lang ?? '—')}</span>
@@ -1864,6 +1882,11 @@ export class SgsAdminApp extends LitElement {
           ${record.lang ? html`<span class="lang">${String(record.lang)}</span>` : nothing}
         </div>
         <p class="feedback-message">${String(record.message ?? '—')}</p>
+        ${record.email
+          ? html`<p class="feedback-contact">
+              <span>${this.text.email}</span>${String(record.email)}
+            </p>`
+          : nothing}
       </section>
       ${record.conversation_id
         ? this.renderFeedbackConversation(record)
@@ -1871,11 +1894,13 @@ export class SgsAdminApp extends LitElement {
       <details class="technical-details">
         <summary>${this.text.technicalDetails}</summary>
         <dl>
-          ${metadata.map(
-            ([key, value]) =>
-              html`<dt>${key.replaceAll('_', ' ')}</dt>
-                <dd>${Array.isArray(value) ? value.join(', ') : String(value)}</dd>`,
-          )}
+          ${metadata
+            .filter(([key]) => key !== 'email')
+            .map(
+              ([key, value]) =>
+                html`<dt>${key.replaceAll('_', ' ')}</dt>
+                  <dd>${Array.isArray(value) ? value.join(', ') : String(value)}</dd>`,
+            )}
         </dl>
         ${this.linkedConversation
           ? this.renderConversationDiagnostics(this.linkedConversation)
@@ -2131,7 +2156,7 @@ export class SgsAdminApp extends LitElement {
     }
     this.from = from;
     this.to = to;
-    this.selected = undefined;
+    this.closeDrawer();
     this.expandedConversationId = '';
     await this.loadAll();
   }
@@ -2169,7 +2194,7 @@ export class SgsAdminApp extends LitElement {
   }
   private async switchKind(kind: RecordKind) {
     this.kind = kind;
-    this.selected = undefined;
+    this.closeDrawer();
     this.expandedConversationId = '';
     this.records = [];
     this.nextCursor = null;
@@ -2184,10 +2209,10 @@ export class SgsAdminApp extends LitElement {
     this.linkedConversation = undefined;
     this.conversationLookup = 'idle';
     this.selected = undefined;
-    this.renderRoot.querySelector<HTMLButtonElement>('.record-row.selected')?.focus();
   }
-  private selectRecord(record: AdminRecord) {
+  private selectRecord(record: AdminRecord, trigger: HTMLElement) {
     this.closeDrawer();
+    this.drawerTrigger = trigger;
     this.selected = record;
     if (this.kind === 'feedback' && record.conversation_id) {
       void this.loadFeedbackConversation(record);
@@ -2231,6 +2256,7 @@ export class SgsAdminApp extends LitElement {
   }
   private async signOut() {
     await logout();
+    this.closeDrawer();
     this.authenticated = false;
     this.authError = '';
   }

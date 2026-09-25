@@ -177,4 +177,39 @@ describe('feedback conversation in admin', () => {
     );
     expect(element.shadowRoot?.querySelector('.drawer')?.textContent).not.toContain('Old question');
   });
+  it('keeps the submitter’s contact email visible outside technical details', async () => {
+    const { element, open } = await setup();
+    element.records = [
+      {
+        id: 'contact-feedback',
+        category: 'question',
+        message: 'Which data is used?',
+        email: 'reviewer@example.com',
+      },
+    ];
+    await element.updateComplete;
+    await open();
+    expect(element.shadowRoot?.querySelector('.feedback-contact')?.textContent).toContain(
+      'reviewer@example.com',
+    );
+    expect(element.shadowRoot?.querySelector('.technical-details')?.textContent).not.toContain(
+      'reviewer@example.com',
+    );
+  });
+
+  it('makes the background inert and restores focus after closing with Escape', async () => {
+    const { element, fetchMock, open } = await setup();
+    fetchMock.mockResolvedValueOnce(json({ items: [], next_cursor: null }));
+    const row = element.shadowRoot!.querySelector<HTMLButtonElement>('.record-row')!;
+    row.focus();
+    await open();
+    const drawer = element.shadowRoot!.querySelector<HTMLElement>('.drawer')!;
+    expect(element.shadowRoot!.querySelector('.admin-page')?.hasAttribute('inert')).toBe(true);
+    expect(element.shadowRoot!.activeElement).toBe(drawer);
+    drawer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await element.updateComplete;
+    expect(element.shadowRoot!.querySelector('.drawer')).toBeNull();
+    expect(element.shadowRoot!.querySelector('.admin-page')?.hasAttribute('inert')).toBe(false);
+    expect(element.shadowRoot!.activeElement).toBe(row);
+  });
 });
