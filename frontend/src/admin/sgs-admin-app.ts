@@ -4,6 +4,7 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { SUPPORTED_LANGUAGES, changeLanguage, currentLanguage, t } from '../i18n/i18n';
 import type { AppLanguage } from '../i18n/i18n';
 import { renderMarkdown } from '../markdown/renderMarkdown';
+import { FEEDBACK_CATEGORIES } from '../feedback/submitFeedback';
 import {
   GEODATA_EXPERIENCE_LEVELS,
   INTENDED_USES,
@@ -19,7 +20,12 @@ const UNANSWERED = 'unknown';
 type RecordKind = 'conversations' | 'profiles' | 'feedback';
 const copy = {
   en: {
-    viewConversation: 'View conversation',
+    technicalDetails: 'Technical details',
+    retry: 'Try again',
+    conversationUnlinked: 'No conversation attached to this feedback.',
+    responseIncomplete: 'The assistant could not complete this response.',
+    user: 'User',
+    assistant: 'Assistant',
     linkedConversation: 'Linked conversation',
     conversationLoading: 'Loading conversation…',
     conversationMissing:
@@ -85,7 +91,12 @@ const copy = {
     failed: 'The dashboard could not load. Check your access and try again.',
   },
   de: {
-    viewConversation: 'Gespräch anzeigen',
+    technicalDetails: 'Technische Details',
+    retry: 'Erneut versuchen',
+    conversationUnlinked: 'Mit diesem Feedback ist kein Gespräch verknüpft.',
+    responseIncomplete: 'Der Assistent konnte diese Antwort nicht abschliessen.',
+    user: 'Nutzer',
+    assistant: 'Assistent',
     linkedConversation: 'Verknüpftes Gespräch',
     conversationLoading: 'Gespräch wird geladen…',
     conversationMissing:
@@ -152,7 +163,12 @@ const copy = {
     failed: 'Die Übersicht konnte nicht geladen werden. Zugriff prüfen und erneut versuchen.',
   },
   fr: {
-    viewConversation: 'Voir la conversation',
+    technicalDetails: 'Détails techniques',
+    retry: 'Réessayer',
+    conversationUnlinked: 'Aucune conversation associée à ce feedback.',
+    responseIncomplete: 'L’assistant n’a pas pu terminer cette réponse.',
+    user: 'Utilisateur',
+    assistant: 'Assistant',
     linkedConversation: 'Conversation associée',
     conversationLoading: 'Chargement de la conversation…',
     conversationMissing:
@@ -218,7 +234,12 @@ const copy = {
     failed: "Impossible de charger la vue d'ensemble. Vérifiez votre accès.",
   },
   it: {
-    viewConversation: 'Visualizza conversazione',
+    technicalDetails: 'Dettagli tecnici',
+    retry: 'Riprova',
+    conversationUnlinked: 'Nessuna conversazione associata a questo feedback.',
+    responseIncomplete: 'L’assistente non ha potuto completare questa risposta.',
+    user: 'Utente',
+    assistant: 'Assistente',
     linkedConversation: 'Conversazione collegata',
     conversationLoading: 'Caricamento della conversazione…',
     conversationMissing:
@@ -284,7 +305,12 @@ const copy = {
     failed: 'Impossibile caricare la panoramica. Verifica il tuo accesso.',
   },
   rm: {
-    viewConversation: 'Mussar la conversaziun',
+    technicalDetails: 'Detagls tecnics',
+    retry: 'Empruvar anc ina giada',
+    conversationUnlinked: 'Nag ina conversaziun colliada cun quest resun.',
+    responseIncomplete: 'L’assistent n’ha betg pudì terminar questa resposta.',
+    user: 'Utilisader',
+    assistant: 'Assistent',
     linkedConversation: 'Conversaziun colliada',
     conversationLoading: 'Chargiar la conversaziun…',
     conversationMissing:
@@ -825,8 +851,8 @@ export class SgsAdminApp extends LitElement {
       background: #fafbfb;
     }
     .thread-detail {
-      width: min(48rem, calc(100% - 16.5rem));
-      margin-left: 16.5rem;
+      width: min(48rem, 100%);
+      margin: 0 auto;
     }
     .thread-overview {
       display: grid;
@@ -947,7 +973,7 @@ export class SgsAdminApp extends LitElement {
       top: 3.5rem;
       right: 0;
       bottom: 0;
-      width: min(34rem, calc(100vw - 2rem));
+      width: min(46rem, 100vw);
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
       background: #fff;
@@ -976,6 +1002,73 @@ export class SgsAdminApp extends LitElement {
     }
     .icon-button:hover {
       background: #f0f2f4;
+    }
+    .technical-details {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid #e4e8eb;
+    }
+    .technical-details summary {
+      cursor: pointer;
+      color: #62707c;
+      font-size: 0.75rem;
+    }
+    .technical-details[open] summary {
+      margin-bottom: 1rem;
+    }
+    .feedback-context {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 0.75rem;
+      color: #62707c;
+      font-size: 0.75rem;
+      margin-bottom: 0.9rem;
+    }
+    .category-badge {
+      padding: 0.25rem 0.55rem;
+      border-radius: 0.25rem;
+      background: #f0f2f4;
+      color: #36434e;
+      font-weight: 650;
+      font-size: 0.72rem;
+    }
+    .feedback-message {
+      margin: 0;
+      padding: 1rem 1.2rem;
+      border-left: 3px solid #d8232a;
+      background: #fff7f7;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+    .conversation-context {
+      color: #74808a;
+      font-size: 0.72rem;
+      margin: 0.35rem 0 1rem;
+    }
+    .drawer .conversation-title {
+      color: #25333e;
+      font-size: 0.95rem;
+      margin-bottom: 0;
+    }
+    .response-error {
+      color: #a4151b;
+      font-size: 0.8rem;
+    }
+    .feedback-row .record-copy strong {
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-weight: 500;
+      line-height: 1.5;
+    }
+    .feedback-row .record-copy .category-badge {
+      display: inline-block;
+      margin-bottom: 0.35rem;
     }
     .drawer-body {
       overflow-y: auto;
@@ -1584,13 +1677,17 @@ export class SgsAdminApp extends LitElement {
     if (this.kind === 'conversations') return this.renderConversationRecord(record);
     if (this.kind === 'profiles') return this.renderProfileRecord(record);
     return html`<button
-      class="record-row ${this.selected === record ? 'selected' : ''}"
-      aria-label=${this.text.details}
+      class="record-row feedback-row ${this.selected === record ? 'selected' : ''}"
+      aria-label=${`${this.text.feedback}: ${this.recordContent(record)}`}
+      aria-haspopup="dialog"
       @click=${() => this.selectRecord(record)}
     >
       <time>${this.formatDate(record.started_at ?? record.ts ?? record.log_date)}</time
       ><span class="lang">${String(record.lang ?? '—')}</span
-      ><span class="record-copy"><strong>${this.recordContent(record)}</strong></span>
+      ><span class="record-copy"
+        ><span class="category-badge">${this.feedbackCategory(record)}</span
+        ><strong>${this.recordContent(record)}</strong></span
+      >
     </button>`;
   }
 
@@ -1666,8 +1763,11 @@ export class SgsAdminApp extends LitElement {
             aria-label=${this.text.conversationDetails}
           >
             <div class="thread-detail">
-              ${this.renderConversationOverview(record, turns)}
               ${this.renderConversationTimeline(turns)}
+              <details class="technical-details">
+                <summary>${this.text.technicalDetails}</summary>
+                ${this.renderConversationDiagnostics(record)}
+              </details>
             </div>
           </div>`
         : nothing}
@@ -1698,80 +1798,126 @@ export class SgsAdminApp extends LitElement {
       ></button>
       <aside
         class="drawer"
-        aria-label=${this.text.details}
+        role="dialog"
+        aria-modal="true"
+        aria-label=${this.kind === 'feedback' ? this.text.feedback : this.text.details}
         tabindex="-1"
         @keydown=${this.drawerKeydown}
       >
         <header class="drawer-head">
-          <h2>${this.recordSummary(record).title}</h2>
+          <h2>
+            ${this.kind === 'feedback' ? this.text.feedback : this.recordSummary(record).title}
+          </h2>
           <button class="icon-button" aria-label=${this.text.close} @click=${this.closeDrawer}>
             ×
           </button>
         </header>
         <div class="drawer-body">
-          <section>
-            <h3>${this.text.metadata}</h3>
-            <dl>
-              ${metadata.map(
-                ([key, value]) =>
-                  html`<dt>${key.replaceAll('_', ' ')}</dt>
-                    <dd>${Array.isArray(value) ? value.join(', ') : value}</dd>`,
-              )}
-            </dl>
-          </section>
-          ${turns.length > 0
-            ? this.renderConversationTimeline(turns)
-            : nothing}${record.user_message
-            ? html`<section>
-                <h3>${this.text.userMessage}</h3>
-                <pre class="content-block">${record.user_message}</pre>
-              </section>`
-            : nothing}${record.assistant_markdown
-            ? html`<section>
-                <h3>${this.text.answer}</h3>
-                <div class="content-block markdown">
-                  ${unsafeHTML(renderMarkdown(String(record.assistant_markdown)))}
-                </div>
-              </section>`
-            : nothing}${record.message
-            ? html`<section>
-                <h3>${this.text.feedbackMessage}</h3>
-                <pre class="content-block">${record.message}</pre>
-              </section>`
-            : nothing}
-          ${this.kind === 'feedback' && record.conversation_id
-            ? this.renderFeedbackConversation(record)
-            : nothing}
+          ${this.kind === 'feedback'
+            ? this.renderFeedbackDetail(record, metadata)
+            : html`<section>
+                  <h3>${this.text.metadata}</h3>
+                  <dl>
+                    ${metadata.map(
+                      ([key, value]) =>
+                        html`<dt>${key.replaceAll('_', ' ')}</dt>
+                          <dd>${Array.isArray(value) ? value.join(', ') : value}</dd>`,
+                    )}
+                  </dl>
+                </section>
+                ${turns.length > 0
+                  ? this.renderConversationTimeline(turns)
+                  : nothing}${record.user_message
+                  ? html`<section>
+                      <h3>${this.text.userMessage}</h3>
+                      <pre class="content-block">${record.user_message}</pre>
+                    </section>`
+                  : nothing}${record.assistant_markdown
+                  ? html`<section>
+                      <h3>${this.text.answer}</h3>
+                      <div class="content-block markdown">
+                        ${unsafeHTML(renderMarkdown(String(record.assistant_markdown)))}
+                      </div>
+                    </section>`
+                  : nothing}${record.message
+                  ? html`<section>
+                      <h3>${this.text.feedbackMessage}</h3>
+                      <pre class="content-block">${record.message}</pre>
+                    </section>`
+                  : nothing} `}
         </div>
       </aside>`;
   }
 
+  private feedbackCategory(record: AdminRecord) {
+    const category = String(record.category ?? 'other');
+    return FEEDBACK_CATEGORIES.some((value) => value === category)
+      ? t(`feedback.categories.${category}`)
+      : this.text.feedback;
+  }
+
+  private renderFeedbackDetail(record: AdminRecord, metadata: [string, unknown][]) {
+    return html` <section aria-label=${this.text.feedbackMessage}>
+        <div class="feedback-context">
+          <span class="category-badge">${this.feedbackCategory(record)}</span>
+          <time>${this.formatDate(record.ts ?? record.log_date)}</time>
+          ${record.lang ? html`<span class="lang">${String(record.lang)}</span>` : nothing}
+        </div>
+        <p class="feedback-message">${String(record.message ?? '—')}</p>
+      </section>
+      ${record.conversation_id
+        ? this.renderFeedbackConversation(record)
+        : html`<p class="conversation-context">${this.text.conversationUnlinked}</p>`}
+      <details class="technical-details">
+        <summary>${this.text.technicalDetails}</summary>
+        <dl>
+          ${metadata.map(
+            ([key, value]) =>
+              html`<dt>${key.replaceAll('_', ' ')}</dt>
+                <dd>${Array.isArray(value) ? value.join(', ') : String(value)}</dd>`,
+          )}
+        </dl>
+        ${this.linkedConversation
+          ? this.renderConversationDiagnostics(this.linkedConversation)
+          : nothing}
+      </details>`;
+  }
+
   private renderFeedbackConversation(record: AdminRecord) {
-    return html`<section aria-live="polite">
-      <p class="note">${this.text.conversationPeriod} ${this.from} – ${this.to}</p>
-      ${this.conversationLookup !== 'ready'
-        ? html`<button
-            class="button"
-            ?disabled=${this.conversationLookup === 'loading'}
-            @click=${() => this.loadFeedbackConversation(record)}
-          >
-            ${this.conversationLookup === 'loading'
-              ? this.text.conversationLoading
-              : this.text.viewConversation}
+    return html`<section
+      class="feedback-conversation"
+      aria-busy=${this.conversationLookup === 'loading'}
+    >
+      <h3 class="conversation-title">${this.text.linkedConversation}</h3>
+      <p class="conversation-context">${this.text.conversationPeriod} ${this.from} – ${this.to}</p>
+      <div role="status">
+        ${this.conversationLookup === 'loading'
+          ? html`<p>${this.text.conversationLoading}</p>`
+          : this.conversationLookup === 'missing'
+            ? html`<p>${this.text.conversationMissing}</p>`
+            : this.conversationLookup === 'failed'
+              ? html`<p>${this.text.conversationFailed}</p>`
+              : nothing}
+      </div>
+      ${this.conversationLookup === 'failed' || this.conversationLookup === 'missing'
+        ? html`<button class="button" @click=${() => this.loadFeedbackConversation(record)}>
+            ${this.text.retry}
           </button>`
         : nothing}
-      ${this.conversationLookup === 'missing'
-        ? html`<p>${this.text.conversationMissing}</p>`
-        : this.conversationLookup === 'failed'
-          ? html`<p>${this.text.conversationFailed}</p>`
-          : nothing}
       ${this.linkedConversation
-        ? this.renderConversationTimeline(
-            this.conversationTurns(this.linkedConversation),
-            this.text.linkedConversation,
-          )
+        ? this.renderConversationTimeline(this.conversationTurns(this.linkedConversation), '')
         : nothing}
     </section>`;
+  }
+
+  private renderConversationDiagnostics(record: AdminRecord) {
+    const turns = this.conversationTurns(record);
+    return html`${this.renderConversationOverview(record, turns)}
+    ${turns.map(
+      (turn, index) =>
+        html`<h4>${this.text.messages} · ${index + 1}</h4>
+          ${this.renderTurnMetadata(turn)}`,
+    )}`;
   }
 
   private async loadFeedbackConversation(record: AdminRecord) {
@@ -1788,8 +1934,9 @@ export class SgsAdminApp extends LitElement {
         request.signal,
       );
       if (request.signal.aborted || this.selected !== record) return;
-      this.linkedConversation = conversation;
-      this.conversationLookup = conversation ? 'ready' : 'missing';
+      this.linkedConversation =
+        conversation && this.conversationTurns(conversation).length > 0 ? conversation : undefined;
+      this.conversationLookup = this.linkedConversation ? 'ready' : 'missing';
     } catch {
       if (!request.signal.aborted && this.selected === record) this.conversationLookup = 'failed';
     }
@@ -1800,21 +1947,22 @@ export class SgsAdminApp extends LitElement {
     heading: string = this.text.conversationDetails,
   ) {
     return html`<section class="conversation-timeline">
-      <h3>${heading}</h3>
+      ${heading ? html`<h3>${heading}</h3>` : nothing}
       ${turns.map(
-        (turn, index) =>
+        (turn) =>
           html`<article class="conversation-turn">
             <div class="turn-heading">
-              <strong>#${index + 1}</strong><time>${this.formatDate(turn.ts)}</time>
+              <strong>${this.text.user}</strong><time>${this.formatDate(turn.ts)}</time>
             </div>
-            ${this.renderTurnMetadata(turn)}
-            <h4>${this.text.userMessage}</h4>
             <pre class="content-block user-block">${String(turn.user_message ?? '—')}</pre>
             ${turn.assistant_markdown
-              ? html`<h4>${this.text.answer}</h4>
+              ? html`<h4>${this.text.assistant}</h4>
                   <div class="content-block markdown assistant-block">
                     ${unsafeHTML(renderMarkdown(String(turn.assistant_markdown)))}
                   </div>`
+              : nothing}
+            ${turn.error_code
+              ? html`<p class="response-error">${this.text.responseIncomplete}</p>`
               : nothing}
           </article>`,
       )}
@@ -2036,13 +2184,32 @@ export class SgsAdminApp extends LitElement {
     this.linkedConversation = undefined;
     this.conversationLookup = 'idle';
     this.selected = undefined;
+    this.renderRoot.querySelector<HTMLButtonElement>('.record-row.selected')?.focus();
   }
   private selectRecord(record: AdminRecord) {
     this.closeDrawer();
     this.selected = record;
+    if (this.kind === 'feedback' && record.conversation_id) {
+      void this.loadFeedbackConversation(record);
+    }
   }
   private drawerKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') this.closeDrawer();
+    if (event.key !== 'Tab') return;
+    const drawer = this.renderRoot.querySelector<HTMLElement>('.drawer');
+    const controls = [
+      ...(drawer?.querySelectorAll<HTMLElement>('button, summary, a[href]') ?? []),
+    ].filter((control) => control.getClientRects().length > 0 && !control.hasAttribute('disabled'));
+    const first = controls[0];
+    const last = controls.at(-1);
+    const active = (this.renderRoot as ShadowRoot).activeElement;
+    if (event.shiftKey && (active === first || active === drawer)) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
   private async submitAuthentication(event: SubmitEvent) {
     event.preventDefault();
