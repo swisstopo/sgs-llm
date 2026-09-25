@@ -30,6 +30,8 @@ export interface UserMessageEvent {
   type: 'user_message';
   /** Client-generated unique id, echoed as `message_id` in server events. */
   id: string;
+  /** Client-chosen chat identity, reused across turns and WebSocket reconnects. */
+  conversation_id?: string;
   content: string;
   lang: ProtocolLang;
   /** Agent model routing: Claude primary, Mistral secondary, or self-hosted Apertus. */

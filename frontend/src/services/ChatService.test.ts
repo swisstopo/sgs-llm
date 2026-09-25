@@ -201,33 +201,75 @@ describe('ChatService', () => {
     }
   });
 
-  it('tracks the server conversation id and updates it when the server changes threads', () => {
-    service.send('first');
-    client.events$.next({ type: 'done', message_id: lastUserMessageId(), conversation_id: 'c1' });
-    expect(service.conversationId).toBe('c1');
-    service.send('after reconnect');
-    client.events$.next({ type: 'done', message_id: lastUserMessageId(), conversation_id: 'c2' });
-    expect(service.conversationId).toBe('c2');
-    service.send('older server without an id');
-    client.events$.next({ type: 'done', message_id: lastUserMessageId() });
+  it('names the chat before the first response and keeps its identity across turns', () => {
     expect(service.conversationId).toBeUndefined();
+    service.send('first');
+    const conversationId = service.conversationId;
+    expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(client.sent.at(-1)).toMatchObject({ conversation_id: conversationId });
+    expect(conversationId).not.toBe(lastUserMessageId());
+    client.events$.next({
+      type: 'done',
+      message_id: lastUserMessageId(),
+      conversation_id: 'other',
+    });
+    expect(service.conversationId).toBe(conversationId);
+    service.send('second');
+    expect(client.sent.at(-1)).toMatchObject({ conversation_id: conversationId });
+    client.events$.next({ type: 'done', message_id: lastUserMessageId() });
+    expect(service.conversationId).toBe(conversationId);
   });
 
-  it('clears the feedback link on reset and ignores late completion from the old chat', () => {
+  it('leaves an empty chat unlinked when input is blank or the connection is closed', () => {
+    expect(service.send('   ')).toBe(false);
+    expect(service.conversationId).toBeUndefined();
+    client.sendResult = false;
+    expect(service.send('first')).toBe(false);
+    expect(service.conversationId).toBeUndefined();
+    expect(service.messages).toEqual([]);
+    client.sendResult = true;
+    expect(service.send('retry')).toBe(true);
+    expect(client.sent.at(-1)).toMatchObject({ conversation_id: service.conversationId });
+    expect(service.conversationId).toBeDefined();
+  });
+
+  it.each(['internal', 'cancelled'] as const)('keeps the chat identity after %s', (code) => {
+    service.send('first');
+    const conversationId = service.conversationId;
+    const id = lastUserMessageId();
+    if (code === 'cancelled') service.cancel();
+    client.events$.next({ type: 'error', message_id: id, code, message: 'stopped' });
+    client.events$.next({ type: 'done', message_id: id });
+    client.sendResult = false;
+    expect(service.send('while disconnected')).toBe(false);
+    expect(service.conversationId).toBe(conversationId);
+    client.sendResult = true;
+    expect(service.send('try again')).toBe(true);
+    expect(client.sent.at(-1)).toMatchObject({ conversation_id: conversationId });
+  });
+
+  it('starts a new identity on reset and ignores late completion from the old chat', () => {
     service.send('old chat');
     const oldId = lastUserMessageId();
-    client.events$.next({ type: 'done', message_id: oldId, conversation_id: 'old-thread' });
+    const oldConversationId = service.conversationId;
     service.clear();
     expect(service.conversationId).toBeUndefined();
-    service.send('new chat');
-    client.events$.next({ type: 'done', message_id: oldId, conversation_id: 'old-thread' });
+    client.events$.next({ type: 'done', message_id: oldId, conversation_id: oldConversationId });
     expect(service.conversationId).toBeUndefined();
+    service.send('new chat');
+    const newConversationId = service.conversationId;
+    expect(newConversationId).toBeDefined();
+    expect(newConversationId).not.toBe(oldConversationId);
+    expect(client.sent.at(-1)).toMatchObject({ conversation_id: newConversationId, history: [] });
+    client.events$.next({ type: 'done', message_id: oldId, conversation_id: oldConversationId });
+    expect(service.conversationId).toBe(newConversationId);
     expect(service.busy).toBe(true);
     client.events$.next({
       type: 'done',
       message_id: lastUserMessageId(),
-      conversation_id: 'new-thread',
+      conversation_id: newConversationId,
     });
-    expect(service.conversationId).toBe('new-thread');
+    expect(service.conversationId).toBe(newConversationId);
+    expect(service.busy).toBe(false);
   });
 });

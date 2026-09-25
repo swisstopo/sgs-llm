@@ -53,11 +53,11 @@ export class ChatService {
   private readonly messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
   private readonly busySubject = new BehaviorSubject<boolean>(false);
   private readonly modelSubject = new BehaviorSubject<ModelPreference>('primary');
-  private latestConversationId?: string;
+  private currentConversationId?: string;
 
-  /** Server identity for the latest finished turn in the visible chat. */
+  /** Identity shared by every turn in the visible chat; absent until the first send. */
   get conversationId(): string | undefined {
-    return this.latestConversationId;
+    return this.currentConversationId;
   }
 
   constructor(
@@ -105,9 +105,11 @@ export class ChatService {
       return false;
     }
     const id = crypto.randomUUID();
+    const conversationId = this.currentConversationId ?? crypto.randomUUID();
     const sent = this.client.send({
       type: 'user_message',
       id,
+      conversation_id: conversationId,
       content: trimmed,
       lang: currentLanguage(),
       model: this.model,
@@ -117,6 +119,7 @@ export class ChatService {
     if (!sent) {
       return false;
     }
+    this.currentConversationId = conversationId;
     this.messagesSubject.next([
       ...this.messages,
       { role: 'user', id, content: trimmed },
@@ -140,7 +143,7 @@ export class ChatService {
     if (this.busy) {
       this.cancel();
     }
-    this.latestConversationId = undefined;
+    this.currentConversationId = undefined;
     this.messagesSubject.next([]);
     this.busySubject.next(false);
   }
@@ -204,9 +207,8 @@ export class ChatService {
         break;
       case 'done':
         // A cancelled/reset chat can still finish after a new chat has started.
-        // Never attach its identity to the new chat or clear the new turn's busy state.
+        // Never clear the new turn's busy state.
         if (this.messages.at(-1)?.id !== event.message_id) return;
-        this.latestConversationId = event.conversation_id;
         this.updateAssistant(event.message_id, (message) =>
           // Terminal without final/error (protocol violation): mark as error.
           message.status === 'streaming'

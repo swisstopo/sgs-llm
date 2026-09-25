@@ -39,19 +39,20 @@ async function setup() {
 }
 
 describe('feedback conversation link', () => {
-  it('submits the current server id and leaves a new empty chat unlinked', async () => {
+  it('submits the client chat id before a response and leaves a new empty chat unlinked', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
-    const { chat, events, sent, panel } = await setup();
+    const { chat, panel } = await setup();
     chat.send('Where is Bern?');
-    events.next({ type: 'done', message_id: sent[0]!.id, conversation_id: 'thread-1' });
+    const conversationId = chat.conversationId;
+    expect(conversationId).toBeDefined();
     await panel.updateComplete;
     expect(panel.shadowRoot?.textContent).toContain('Your current conversation will be included');
     panel.shadowRoot!.querySelector('textarea')!.value = 'The answer needs detail';
     panel.shadowRoot!.querySelector<HTMLButtonElement>('button.submit')!.click();
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toMatchObject({
-      conversation_id: 'thread-1',
+      conversation_id: conversationId,
       message: 'The answer needs detail',
     });
     panel.remove();
@@ -77,7 +78,7 @@ describe('feedback conversation link', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { chat, events, sent, panel } = await setup();
     chat.send('A question');
-    events.next({ type: 'done', message_id: sent[0]!.id, conversation_id: 'thread-2' });
+    events.next({ type: 'done', message_id: sent[0]!.id, conversation_id: chat.conversationId });
     panel.shadowRoot!.querySelector('textarea')!.value = 'Please keep this text';
     panel.shadowRoot!.querySelector<HTMLButtonElement>('button.submit')!.click();
     await vi.waitFor(() => expect(panel.shadowRoot?.textContent).toContain('could not be sent'));

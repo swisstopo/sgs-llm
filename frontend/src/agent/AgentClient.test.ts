@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentClient } from './AgentClient';
+import { ChatService } from '../services/ChatService';
 import type { ServerEvent } from '../protocol/v1';
+
+vi.mock('../i18n/i18n', () => ({ currentLanguage: () => 'de' }));
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -112,6 +115,57 @@ describe('AgentClient', () => {
 
     FakeWebSocket.instances[2]!.simulateOpen();
     expect(client.status).toBe('open');
+  });
+
+  it('sends one chat identity over replacement sockets and rotates it for a new chat', () => {
+    const client = createClient();
+    const chat = new ChatService(client);
+    const first = FakeWebSocket.instances[0]!;
+    first.simulateOpen();
+    expect(chat.send('Where is Bern?')).toBe(true);
+    const firstTurn = JSON.parse(first.sent[0]!);
+    expect(firstTurn.conversation_id).toBeDefined();
+    expect(firstTurn.conversation_id).toBe(chat.conversationId);
+    first.simulateMessage({
+      type: 'final',
+      message_id: firstTurn.id,
+      content_markdown: 'In Switzerland.',
+    });
+    first.simulateMessage({
+      type: 'done',
+      message_id: firstTurn.id,
+      conversation_id: firstTurn.conversation_id,
+    });
+    first.simulateClose();
+    expect(chat.send('while disconnected')).toBe(false);
+    expect(chat.conversationId).toBe(firstTurn.conversation_id);
+
+    vi.advanceTimersByTime(100);
+    const second = FakeWebSocket.instances[1]!;
+    second.simulateOpen();
+    expect(chat.send('Show it on the map')).toBe(true);
+    const secondTurn = JSON.parse(second.sent[0]!);
+    expect(secondTurn.id).not.toBe(firstTurn.id);
+    expect(secondTurn.conversation_id).toBe(firstTurn.conversation_id);
+    expect(secondTurn.history).toEqual([
+      { role: 'user', content: 'Where is Bern?' },
+      { role: 'assistant', content: 'In Switzerland.' },
+    ]);
+    second.simulateMessage({
+      type: 'done',
+      message_id: secondTurn.id,
+      conversation_id: secondTurn.conversation_id,
+    });
+    expect(chat.conversationId).toBe(firstTurn.conversation_id);
+
+    chat.clear();
+    expect(chat.conversationId).toBeUndefined();
+    expect(chat.send('A new conversation')).toBe(true);
+    const newTurn = JSON.parse(second.sent[1]!);
+    expect(newTurn.conversation_id).toBe(chat.conversationId);
+    expect(newTurn.conversation_id).not.toBe(firstTurn.conversation_id);
+    expect(newTurn.history).toEqual([]);
+    client.close();
   });
 
   it('does not reconnect after an explicit close', () => {

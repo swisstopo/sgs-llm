@@ -49,7 +49,7 @@ not a reconnect, not an error, not a cancelled turn.
 
 In this repository's frontend that is two files: the optional field on `UserMessageEvent`
 in [`frontend/src/protocol/v1.ts`](../frontend/src/protocol/v1.ts), and the mint/reset
-beside `latestConversationId` in
+beside `currentConversationId` in
 [`frontend/src/services/ChatService.ts`](../frontend/src/services/ChatService.ts).
 
 The id is 1 to 64 characters from `A-Z a-z 0-9 . _ : -`, which a `crypto.randomUUID()`
