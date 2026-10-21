@@ -57,6 +57,9 @@ MAX_DIVISIONS = 500
 # Complete feature layers only. A partial first-N layer would make the displayed map,
 # count, and later analysis calls disagree with the real result.
 MAX_LAYER_FEATURES = 100_000
+# Return a tool result before the MCP client's 60-second read deadline, leaving time
+# for the agent to explain the limitation or offer the official catalogue layer.
+FEATURE_FETCH_TIMEOUT_SECONDS = 45.0
 LAYER_LIMIT_ERROR = (
     "Result contains more than 100,000 features. Narrow the place, area, or dataset."
 )
@@ -376,9 +379,11 @@ def build_server(
     async def describe_layer(layer_id: str, lang: str = "de") -> dict[str, Any]:
         """Inspect one official GeoAdmin layer before querying it.
 
-        Returns its description, owner, complete field schema, render/query capability,
+        Returns its description, owner, field schema with sample values, render/query capability,
         timestamps, legend, details, and download link. Use it when field names or the
         meaning and availability of a dataset matter; do not guess attribute names.
+        Sample values are examples, not a complete enumeration. A display-only layer
+        still returns metadata, with empty fields and a query_note explaining the limit.
         """
         layer = await swisstopo.describe_layer(layer_id, lang)
         if layer is None:
@@ -620,6 +625,8 @@ def build_server(
         Never describe measurements of whole selected objects as inside-place totals.
 
         Fetches every feature or returns an error; partial results are never cached.
+        Loading is limited to 45 seconds. On timeout, narrow the area or use
+        display_catalog_layer to offer the official map without feature analysis.
 
         Returns a summary plus a `result_id` handle - not the features themselves. Pass
         the handle to analyze_features for figures, or to display_layer to put it on the map.
@@ -634,9 +641,7 @@ def build_server(
             except DivisionLookupError as exc:
                 return {"error": str(exc), "candidates": exc.candidates}
             if row is None:
-                return {
-                    "error": f"No Swiss place named '{place}'. Call search_locations first."
-                }
+                return {"error": f"No Swiss place named '{place}'. Call search_locations first."}
             boundary = store.get_geojson(row["s3_key"]).get("features") or []
             clipped_to = f"{row['kind']} {row['name']}"
             # The boundary decides what is inside; its box is only how much to ask for.
@@ -648,10 +653,17 @@ def build_server(
             }
 
         try:
-            features = await swisstopo.fetch_features(
-                layer_id, bbox, lang=lang, time_instant=time
-            )
-        except IncompleteFeatureFetch as exc:
+            async with asyncio.timeout(FEATURE_FETCH_TIMEOUT_SECONDS):
+                features = await swisstopo.fetch_features(
+                    layer_id, bbox, lang=lang, time_instant=time, boundary=boundary
+                )
+        except TimeoutError:
+            return {
+                "error": "Feature loading exceeded its 45-second budget. Narrow the area "
+                "or use display_catalog_layer to show the official map without feature analysis.",
+                "complete": False,
+            }
+        except (IncompleteFeatureFetch, GeometryProcessingError) as exc:
             return {"error": str(exc), "complete": False}
         except LayerNotQueryable:
             # An answerable fact, not a failure. Reported as one so the model picks a
@@ -660,9 +672,9 @@ def build_server(
                 "feature_count": 0,
                 "queryable": False,
                 "note": (
-                    f"Dataset '{layer_id}' cannot be queried feature-by-feature - it is "
-                    "raster or image-based. Call search_layers again and choose a "
-                    "vector-based dataset; do not retry this layer_id."
+                    f"Dataset '{layer_id}' has no vector feature table through this service. "
+                    "Use display_catalog_layer to show the official map, or choose a "
+                    "vector dataset for feature analysis; do not retry this layer_id."
                 ),
             }
 
@@ -671,10 +683,7 @@ def build_server(
             features = [
                 f
                 for f in features
-                if any(
-                    needle in str(v).lower()
-                    for v in (f.get("properties") or {}).values()
-                )
+                if any(needle in str(v).lower() for v in (f.get("properties") or {}).values())
             ]
         if filters and features:
             features, filter_error = _apply_filters(features, filters)
@@ -695,7 +704,9 @@ def build_server(
         if clipped_to:
             assert row is not None  # a scope is only set after resolving a division
             spatial_scope["division_ref"] = row["s3_key"]
-            spatial_scope["selected_by" if spatial_mode == "intersects" else "clipped_to"] = clipped_to
+            spatial_scope["selected_by" if spatial_mode == "intersects" else "clipped_to"] = (
+                clipped_to
+            )
         # Whole-object selection is not clipping; keep that distinction in later analysis.
         if spatial_mode == "intersects":
             clipped_to = None

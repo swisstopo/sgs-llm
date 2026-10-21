@@ -147,6 +147,18 @@ def _boundary_area(boundary: list[dict[str, Any]]) -> Any:
         ) from exc
 
 
+def intersecting_bboxes(
+    bboxes: list[tuple[float, float, float, float]],
+    boundary: list[dict[str, Any]],
+) -> list[tuple[float, float, float, float]]:
+    """Keep query cells touching any part of the complete place boundary."""
+    from shapely.geometry import box
+    from shapely.prepared import prep
+
+    area = prep(_boundary_area(boundary))
+    return [bounds for bounds in bboxes if area.intersects(box(*bounds))]
+
+
 def select_intersecting(
     features: list[dict[str, Any]], boundary: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:

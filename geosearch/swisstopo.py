@@ -24,6 +24,7 @@ import httpx
 from pyproj import Transformer
 
 from .elevation import MAX_SAMPLES, PROFILE_URL, project_route, summarize_profile
+from .geometry import intersecting_bboxes
 
 logger = logging.getLogger(__name__)
 
@@ -102,14 +103,20 @@ class IncompleteFeatureFetch(RuntimeError):
 class LayerNotQueryable(Exception):
     """The dataset exists but has no queryable feature table.
 
-    identify answers HTTP 400 for raster layers. That is a fact about the dataset, not
-    a transport failure, and the agent has to hear it as one - told merely that the
-    tool failed, models retry the same layer until they run out of iterations.
+    A specific HTTP 400 response says no vector table is available. Other bad-request
+    responses are not evidence about dataset capabilities.
     """
 
     def __init__(self, layer_id: str) -> None:
         super().__init__(layer_id)
         self.layer_id = layer_id
+
+
+def _missing_vector_table(exc: httpx.HTTPStatusError) -> bool:
+    return (
+        exc.response.status_code == 400
+        and "no vector table was found" in exc.response.text.casefold()
+    )
 
 
 def strip_markup(text: Any) -> str:
@@ -355,26 +362,40 @@ class Swisstopo:
         if not isinstance(config, dict):
             return None
         metadata = (await self.layer_metadata(lang)).get(layer_id) or {}
-        schema = await self._get(f"{ECH_MAPSERVER}/{layer_id}", {"lang": lang})
+        has_vector_table = True
+        try:
+            schema = await self._get(f"{ECH_MAPSERVER}/{layer_id}", {"lang": lang})
+        except httpx.HTTPStatusError as exc:
+            if not _missing_vector_table(exc):
+                raise
+            has_vector_table = False
+            schema = {}
         fields = []
         for field in schema.get("fields") or []:
             if not isinstance(field, dict) or not isinstance(field.get("name"), str):
                 continue
-            fields.append(
-                {
-                    "name": field["name"],
-                    "alias": field.get("alias"),
-                    "type": field.get("type"),
-                }
-            )
+            field_metadata = {
+                "name": field["name"],
+                "alias": field.get("alias"),
+                "type": field.get("type"),
+            }
+            values = field.get("values")
+            if isinstance(values, list):
+                field_metadata["sample_values"] = [
+                    value
+                    for value in values
+                    if isinstance(value, (str, int, float, bool))
+                    and (not isinstance(value, str) or len(value) <= 500)
+                ][:5]
+            fields.append(field_metadata)
         timestamps = [str(value) for value in (config.get("timestamps") or [])]
-        return {
+        result = {
             "layer_id": layer_id,
             "title": strip_markup(config.get("label")) or layer_id,
             "description": strip_markup(metadata.get("abstract")),
             "owner": metadata.get("dataOwner"),
             "attribution": config.get("attribution") or ATTRIBUTION_FALLBACK,
-            "queryable": bool(config.get("tooltip")),
+            "queryable": has_vector_table and bool(config.get("tooltip")),
             "displayable": config.get("type") in ("wmts", "wms", "geojson"),
             "layer_type": config.get("type"),
             "geometry_type": schema.get("geometryType"),
@@ -387,6 +408,13 @@ class Swisstopo:
             "legend_url": f"{ECH_MAPSERVER}/{layer_id}/legend?lang={lang}",
             "data_status": metadata.get("dataStatus"),
         }
+        if not has_vector_table:
+            result["query_note"] = (
+                "No vector feature table is available through this service. "
+                "Use display_catalog_layer to show the official map; "
+                "feature filtering and feature analysis are unavailable."
+            )
+        return result
 
     async def identify_at_point(
         self,
@@ -480,12 +508,17 @@ class Swisstopo:
         grid: int = 8,
         time_instant: str | None = None,
         max_features: int | None = None,
+        boundary: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """Every *current* feature of one layer inside a WGS84 bbox.
 
         The bbox is split into `grid` x `grid` cells queried concurrently, each
         paginated to exhaustion, then deduplicated by feature id - a feature straddling
         a cell boundary is returned by both cells.
+
+        With a named `boundary`, only cells intersecting any boundary component are
+        requested. This is an optimization, not a substitute for later exact selection
+        or clipping; whole source geometries are preserved.
 
         `time_instant` defaults to the layer's newest published timestamp rather than to
         "no filter": on a time-enabled layer identify returns every vintage of every
@@ -498,10 +531,17 @@ class Swisstopo:
         dx = (maxx - minx) / grid
         dy = (maxy - miny) / grid
         cells = [
-            (minx + col * dx, miny + row * dy, minx + (col + 1) * dx, miny + (row + 1) * dy)
+            (
+                minx + col * dx,
+                miny + row * dy,
+                minx + (col + 1) * dx,
+                miny + (row + 1) * dy,
+            )
             for row in range(grid)
             for col in range(grid)
         ]
+        if boundary is not None:
+            cells = intersecting_bboxes(cells, boundary)
 
         results = await asyncio.gather(
             *(self._fetch_cell(layer_id, cell, lang, time_instant) for cell in cells),
@@ -585,7 +625,7 @@ class Swisstopo:
                 try:
                     payload = await self._get(IDENTIFY, {**params, "offset": page * PAGE})
                 except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code == 400:
+                    if _missing_vector_table(exc):
                         raise LayerNotQueryable(layer_id) from exc
                     raise
 

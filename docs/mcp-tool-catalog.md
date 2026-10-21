@@ -178,6 +178,17 @@ The follow-up must create a **Personalized result layer** containing one address
 
 > Describe the layer `ch.swisstopo-vd.stand-oerebkataster`, including its fields, owner, map service, legend, and download options.
 
+Field records may also include `sample_values`: at most five scalar examples from the
+official schema, with strings longer than 500 characters omitted. These are examples,
+not a complete enumeration of valid values. Empty strings and comma-separated species
+names are preserved so categorical filters can use the actual upstream representation.
+
+A valid catalogue layer without a vector feature table still returns its description,
+owner, legend, service and download links, and display capability. It has `fields: []`,
+`geometry_type: null`, `queryable: false`, and a `query_note` explaining that the official
+map can be offered through `display_catalog_layer` while feature filtering/analysis is
+unavailable through this service. Unrelated upstream errors remain errors.
+
 ### Configuration acceptance tests
 
 | Case | Direct MCP input | Expected check |
@@ -185,6 +196,9 @@ The follow-up must create a **Personalized result layer** containing one address
 | ÖREB schema | `{"layer_id":"ch.swisstopo-vd.stand-oerebkataster","lang":"en"}` | Complete schema includes both ÖREB extract fields. |
 | Queryable vector | `{"layer_id":"ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill","lang":"de"}` | Query and geometry capabilities are present. |
 | Raster/tiles | `{"layer_id":"ch.bafu.hydroweb-warnkarte_national","lang":"fr"}` | Display capability and rendering metadata are present. |
+| Organic soils | `{"layer_id":"ch.agroscope.abschaetzung-organische_boeden","lang":"en"}` | Metadata and display capability survive the missing vector table; empty fields and an explicit query limitation. |
+| Species dispersal | `{"layer_id":"ch.agroscope.amphibien-ausbreitungskarten_bombia_variegata","lang":"en"}` | Metadata and official-layer display remain available without feature analysis. |
+| Agricultural attributes | `{"layer_id":"ch.agroscope.amphibien-bedeutung_parzellen","lang":"en"}` | Field examples preserve categorical labels and comma-separated species values. |
 | Unknown ID | `{"layer_id":"ch.invalid.does-not-exist","lang":"en"}` | Explicit unknown-layer error. |
 
 ---
@@ -358,6 +372,15 @@ A failed query cell, exhausted pagination, or unusable geometry prevents a compl
 result from being cached or reported as a total. Spatial errors return `complete: false`
 without a result handle. Invalid geometry is repaired before clipping; selection preserves
 the original geometry and uses a repaired geometry only for its predicate.
+
+For named areas, loading skips grid cells that do not intersect any component of the
+complete boundary. Cells touching the boundary remain included; exact clipping or
+whole-object selection still follows the fetch. Bounding-box-only coverage is unchanged.
+
+Feature loading has a 45-second budget. Expiry cancels outstanding and queued requests
+and returns `complete: false` with narrowing or official-map display guidance, without a
+partial count or result handle. This bounds feature retrieval; it is not a guarantee
+about the total duration of a multi-tool chat request.
 
 ### Input
 
